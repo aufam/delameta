@@ -12,8 +12,7 @@ C++ framework for socket and serial programming
   cd etl
   mkdir build
   cmake -B build
-  make -C build
-  sudo make install -C build
+  cmake --build build --target install
   ```
 
 ## <a id="installation"></a>Installation
