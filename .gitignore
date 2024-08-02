@@ -1,0 +1,9 @@
+/*[Bb]uild*
+/*[Dd]ebug*
+/*[Rr]elease*
+__pycache__
+
+.*
+!.gitignore
+!.gitmodules
+compile_commands.json
