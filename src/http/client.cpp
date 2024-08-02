@@ -27,12 +27,9 @@ auto http::Client::request(http::RequestWriter req) -> Result<http::ResponseRead
 }
 
 auto http::Client::New(const char* file, int line, Args args) -> Result<http::Client> {
-    auto [client, err] = tcp::Client::New(file, line, args);
-    if (err) {
-        return Err(std::move(*err));
-    } else {
-        return Ok(http::Client(std::move(*client)));
-    }
+    return tcp::Client::New(file, line, args).then([](tcp::Client cli) {
+        return http::Client(std::move(cli));
+    });
 }
 
 http::Client::Client(tcp::Client&& other) : tcp::Client(std::move(other)) {}

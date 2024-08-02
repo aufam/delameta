@@ -25,7 +25,7 @@ void file_handler_init(Server& app) {
         });
     });
 
-    static auto read_file = app.Get("/read_file", std::tuple{arg::arg("filename"), arg::response},
+    static auto read_file = app.Get("/download", std::tuple{arg::arg("filename"), arg::response},
     [](std::string filename, Ref<ResponseWriter> res) -> Server::Result<void> {
         return open_file(filename, O_RDONLY).then([&](File file) {
             res->headers["Content-Length"] = std::to_string(file.size);
@@ -34,7 +34,7 @@ void file_handler_init(Server& app) {
         });
     });
 
-    static auto write_file = app.Put("/write_file", std::tuple{arg::arg("filename"), arg::body},
+    static auto write_file = app.Put("/upload", std::tuple{arg::arg("filename"), arg::body},
     [](std::string filename, delameta::Stream body_stream) -> Server::Result<void> {
         return open_file(filename, O_WRONLY | O_CREAT | O_TRUNC).then([&](File file) {
             file.stream << body_stream;
