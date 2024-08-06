@@ -27,8 +27,8 @@ auto tcp::Server::New(const char* file, int line, Args args) -> Result<Server> {
     struct sockaddr_in server_addr;
     server_addr.sin_family = AF_INET;
     server_addr.sin_port = ::htons(args.port);
-    if (::inet_pton(AF_INET, args.host.c_str(), &server_addr.sin_addr) <= 0)
-        return log_errno();
+    if (int res = ::inet_pton(AF_INET, args.host.c_str(), &server_addr.sin_addr); res <= 0)
+        return res == 0 ? Err(Error{-1, "Invalid network address format for host: " + args.host}) : log_errno();
     
     auto [server, err] = Socket::New(file, line, AF_INET, SOCK_STREAM, 0);
     if (err) return Err(std::move(*err));
