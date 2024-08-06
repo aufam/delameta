@@ -1,7 +1,7 @@
 #ifndef PROJECT_DELAMETA_TCP_SERVER_H
 #define PROJECT_DELAMETA_TCP_SERVER_H
 
-#include "delameta/socket/stream.h"
+#include "delameta/socket.h"
 
 namespace Project::delameta::tcp {
 
@@ -23,11 +23,11 @@ namespace Project::delameta::tcp {
         void stop();
 
     protected:
-        explicit Server(socket::Stream* stream);
-        socket::Stream* stream;
+        explicit Server(Socket* socket);
+        Socket* socket;
         
-        using StreamSessionHandler = std::function<void(
-            socket::Stream& stream, 
+        using StreamSessionHandler = std::function<Stream(
+            Socket& socket, 
             const std::string& client_ip, 
             const std::vector<uint8_t>& data
         )>;
@@ -35,8 +35,8 @@ namespace Project::delameta::tcp {
         StreamSessionHandler handler;
         std::function<void()> on_stop;
 
-        virtual void execute_stream_session(
-            socket::Stream& stream, 
+        virtual Stream execute_stream_session(
+            Socket& socket, 
             const std::string& client_ip, 
             const std::vector<uint8_t>& data
         );

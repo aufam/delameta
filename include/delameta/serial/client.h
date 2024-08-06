@@ -1,7 +1,7 @@
 #ifndef PROJECT_DELAMETA_TCP_CLIENT_H
 #define PROJECT_DELAMETA_TCP_CLIENT_H
 
-#include "delameta/file_descriptor/stream.h"
+#include "delameta/file_descriptor.h"
 
 namespace Project::delameta::serial {
 
@@ -19,11 +19,11 @@ namespace Project::delameta::serial {
         static Result<Client> New(const char* file, int line, Args args);
         virtual ~Client();
 
-        Result<std::vector<uint8_t>> request(delameta::Stream in_stream);
+        Result<std::vector<uint8_t>> request(Stream& in_stream);
 
     protected:
-        explicit Client(file_descriptor::Stream* stream);
-        file_descriptor::Stream* stream;
+        explicit Client(FileDescriptor* fd);
+        FileDescriptor* fd;
     };
 }
 

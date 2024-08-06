@@ -57,7 +57,7 @@ static Result<int> get_baudrate(const char* file, int line, int baud) {
     }
 }
 
-auto delameta_detail_create_serial(const char* file, int line, std::string port, int baud) -> Result<file_descriptor::Stream> {
+auto delameta_detail_create_serial(const char* file, int line, std::string port, int baud) -> Result<FileDescriptor> {
     auto log_errno = [file, line]() {
         int code = errno;
         std::string what = ::strerror(code);
@@ -78,7 +78,7 @@ auto delameta_detail_create_serial(const char* file, int line, std::string port,
         ::closedir(dir);
     } 
 
-    auto [serial, err] = file_descriptor::Stream::Open(file, line, port.c_str(), O_RDWR | O_NOCTTY | O_SYNC);
+    auto [serial, err] = FileDescriptor::Open(file, line, port.c_str(), O_RDWR | O_NOCTTY | O_SYNC);
     if (err) return Err(std::move(*err));
 
     struct termios tty = {};
@@ -114,16 +114,16 @@ auto delameta_detail_create_serial(const char* file, int line, std::string port,
 }
 
 auto serial::Server::New(const char* file, int line, Args args) -> Result<Server> {
-    return delameta_detail_create_serial(file, line, args.port, args.baud).then([&](file_descriptor::Stream serial) {
+    return delameta_detail_create_serial(file, line, args.port, args.baud).then([&](FileDescriptor serial) {
         info(file, line, "Created serial server: " + std::to_string(serial.fd));
-        return Server(new file_descriptor::Stream(std::move(serial)));
+        return Server(new FileDescriptor(std::move(serial)));
     });
 }
 
-serial::Server::Server(file_descriptor::Stream* stream) : stream(stream) {}
+serial::Server::Server(FileDescriptor* fd) : fd(fd) {}
 
 serial::Server::Server(Server&& other) 
-    : stream(std::exchange(other.stream, nullptr))
+    : fd(std::exchange(other.fd, nullptr))
     , handler(std::move(other.handler))
     , on_stop(std::move(other.on_stop)) {}
 
@@ -133,7 +133,7 @@ auto serial::Server::operator=(Server&& other) -> Server& {
     }
 
     this->~Server();
-    stream = std::exchange(other.stream, nullptr);
+    fd = std::exchange(other.fd, nullptr);
     handler = std::move(other.handler);
     on_stop = std::move(other.on_stop);
     return *this;
@@ -141,15 +141,15 @@ auto serial::Server::operator=(Server&& other) -> Server& {
 
 serial::Server::~Server() {
     stop();
-    if (stream) {
-        delete stream;
-        stream = nullptr;
+    if (fd) {
+        delete fd;
+        fd = nullptr;
     }
 }
 
 auto serial::Server::start() -> Result<void> {
-    if (stream == nullptr) {
-        std::string what = "No server stream created";
+    if (fd == nullptr) {
+        std::string what = "No server fd created";
         warning(__FILE__, __LINE__, what);
         return Err(Error{-1, what});
     }
@@ -167,16 +167,16 @@ auto serial::Server::start() -> Result<void> {
         on_stop = {};
     };
  
-    while (is_running and delameta_detail_is_fd_alive(stream->fd)) {
-        auto read_result = stream->read();
+    while (is_running and delameta_detail_is_fd_alive(fd->fd)) {
+        auto read_result = fd->read();
         if (read_result.is_err()) {
             break;
         }
 
         std::lock_guard<std::mutex> lock(mtx);
         threads.emplace_back([this, data=std::move(read_result.unwrap()), &threads, &mtx, &is_running]() mutable {
-            execute_stream_session(*stream, data);
-            stream->write();
+            auto stream = execute_stream_session(*fd, data);
+            stream >> *fd;
 
             // remove this thread from threads
             if (is_running) {
@@ -201,8 +201,9 @@ void serial::Server::stop() {
     }
 }
 
-void serial::Server::execute_stream_session(file_descriptor::Stream& stream, const std::vector<uint8_t>& data) {
+Stream serial::Server::execute_stream_session(FileDescriptor& fd, const std::vector<uint8_t>& data) {
     if (handler) {
-        handler(stream, data);
+        return handler(fd, data);
     }
+    return {};
 }

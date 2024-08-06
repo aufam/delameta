@@ -1,11 +1,11 @@
-#include "delameta/socket/stream.h"
+#include "delameta/socket.h"
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <cerrno>
 #include <cstring>
 #include <thread>
-#include "../delameta.h"
+#include "delameta.h"
 
 using namespace Project;
 using namespace Project::delameta;
@@ -15,61 +15,59 @@ using etl::Err;
 using etl::Ok;
 using etl::defer;
 
-static auto log_err(const char* file, int line) {
+static auto log_errno(const char* file, int line) {
     int code = errno;
     std::string what = ::strerror(code);
     warning(file, line, what);
-    return Err(Error{code, what});
+    return Err(Error{code, std::move(what)});
 };
 
-static auto log_err(const char* file, int line, socket::Stream* s, Error err) {
+static auto log_err(const char* file, int line, Socket* s, Error err) {
     warning(file, line, "Socket " + std::to_string(s->socket) + ": Error: " + err.what);
     return Err(err);
 };
 
-static auto log_received_ok(const char* file, size_t line, socket::Stream* s, std::vector<uint8_t>& res) {
+static auto log_received_ok(const char* file, size_t line, Socket* s, std::vector<uint8_t>& res) {
     info(file, line, "Socket " + std::to_string(s->socket) + " received " + std::to_string(res.size()) + " bytes");
     return Ok(std::move(res));
 };
 
-static auto log_sent_ok(const char* file, size_t line, socket::Stream* s, size_t n) {
+static auto log_sent_ok(const char* file, size_t line, Socket* s, size_t n) {
     info(file, line, "Socket " + std::to_string(s->socket) + " sent " + std::to_string(n) + " bytes");
     return Ok();
 };
 
-auto socket::Stream::New(const char* file, int line, int __domain, int __type, int __protocol) -> Result<Stream> {
+auto Socket::New(const char* file, int line, int __domain, int __type, int __protocol) -> Result<Socket> {
     int socket = ::socket(__domain, __type, __protocol);
     if (socket < 0) {
-        return log_err(file, line);
+        return log_errno(file, line);
     } else {
         info(file, line, "Created socket: " + std::to_string(socket));
-        return Ok(Stream(file, line, socket));
+        return Ok(Socket(file, line, socket));
     }
 }
 
-auto socket::Stream::Accept(const char* file, int line, int __fd, void* __addr, void* __addr_len) -> Result<Stream> {
+auto Socket::Accept(const char* file, int line, int __fd, void* __addr, void* __addr_len) -> Result<Socket> {
     int socket = ::accept(__fd, (sockaddr *__restrict__)__addr, (socklen_t *__restrict__)__addr_len);
     if (socket < 0) {
         return Err(Error{errno, ::strerror(errno)});
     } else {
         info(file, line, "Accepted socket: " + std::to_string(socket));
-        return Ok(Stream(file, line, socket));
+        return Ok(Socket(file, line, socket));
     }
 }
 
-socket::Stream::Stream(const char* file, int line, int socket) 
-    : delameta::Stream()
+Socket::Socket(const char* file, int line, int socket) 
+    : delameta::Descriptor()
     , socket(socket)
     , keep_alive(true)
     , timeout(-1)
     , max(-1) 
     , file(file)
-    , line(line) {
-    delameta_detail_set_non_blocking(socket);
-}
+    , line(line) { delameta_detail_set_non_blocking(socket); }
 
-socket::Stream::Stream(Stream&& other) 
-    : delameta::Stream(std::move(other))
+Socket::Socket(Socket&& other) 
+    : delameta::Descriptor()
     , socket(std::exchange(other.socket, -1))
     , keep_alive(other.keep_alive)
     , timeout(other.timeout)
@@ -77,7 +75,7 @@ socket::Stream::Stream(Stream&& other)
     , file(other.file)
     , line(other.line) {}
 
-socket::Stream::~Stream() {
+Socket::~Socket() {
     if (socket >= 0) {
         info(file, line, "Closed socket: " + std::to_string(socket));
         ::close(socket);
@@ -85,7 +83,7 @@ socket::Stream::~Stream() {
     }
 }
 
-auto socket::Stream::receive() -> Result<std::vector<uint8_t>> {
+auto Socket::read() -> Result<std::vector<uint8_t>> {
     std::vector<uint8_t> res;
     bool retried = false;
     auto start = std::chrono::high_resolution_clock::now();
@@ -131,7 +129,7 @@ auto socket::Stream::receive() -> Result<std::vector<uint8_t>> {
     return log_err(__FILE__, __LINE__, this, Error::ConnectionClosed);
 }
 
-auto socket::Stream::receive_until(size_t n) -> Result<std::vector<uint8_t>> {
+auto Socket::receive_until(size_t n) -> Result<std::vector<uint8_t>> {
     std::vector<uint8_t> res;
     res.reserve(n);
     bool retried = false;
@@ -169,36 +167,39 @@ auto socket::Stream::receive_until(size_t n) -> Result<std::vector<uint8_t>> {
     return log_err(__FILE__, __LINE__, this, Error::ConnectionClosed);
 }
 
-auto socket::Stream::send() -> Result<void> {
-    size_t total = 0;
-    Error* err = nullptr;
-
-    *this >> [this, &err, &total](std::string_view buf) {
-        if (err != nullptr) 
-            return;
-        
-        for (size_t i = 0; i < buf.size();) {
-            auto n = std::min<size_t>(MAX_HANDLE_SZ, buf.size() - i);
-            auto sent = ::send(socket, &buf[i], n, 0);
-            
-            if (sent == 0) {
-                err = new Error(Error::ConnectionClosed);
-                return;
-            } else if (sent < 0) {
-                err = new Error(errno, ::strerror(errno));
-                return;
+auto Socket::read_as_stream(size_t n) -> Stream {
+    Stream s;
+    for (int total = n; total > 0;) {
+        int size = std::min(total, MAX_HANDLE_SZ);
+        s << [this, size, buffer=std::vector<uint8_t>{}] mutable -> std::string_view {
+            auto data = this->receive_until(size);
+            if (data.is_ok()) {
+                buffer = std::move(data.unwrap());
             }
-
-            total += sent;
-            i += sent;
-        }
-    };
-
-    if (err) {
-        auto se = defer | [&]() { delete err; };
-        return log_err(__FILE__, __LINE__, this, *err);
-    } else {
-        return log_sent_ok(__FILE__, __LINE__, this, total);
+            return {reinterpret_cast<const char*>(buffer.data()), buffer.size()};
+        };
+        total -= size;
     }
+
+    return s;
+}
+
+auto Socket::write(std::string_view data) -> Result<void> {
+    size_t total = 0;
+    for (size_t i = 0; i < data.size();) {
+        auto n = std::min<size_t>(MAX_HANDLE_SZ, data.size() - i);
+        auto sent = ::send(socket, &data[i], n, 0);
+        
+        if (sent == 0) {
+            return log_err(__FILE__, __LINE__, this, Error::ConnectionClosed);
+        } else if (sent < 0) {
+            return log_errno(__FILE__, __LINE__);
+        }
+
+        total += sent;
+        i += sent;
+    }
+
+    return log_sent_ok(__FILE__, __LINE__, this, total);
 }
 

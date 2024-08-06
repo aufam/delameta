@@ -30,11 +30,41 @@ auto http::Server::reroute(std::string path, etl::Ref<const RequestReader> req, 
     return Ok();
 }
 
-void http::Server::execute_stream_session(socket::Stream& stream, const std::string& client_ip, const std::vector<uint8_t>& data) {
+Stream http::Server::execute_stream_session(Socket& socket, const std::string& client_ip, const std::vector<uint8_t>& data) {
     auto start = std::chrono::high_resolution_clock::now();
-    auto req = http::RequestReader(stream, data);
+    auto req = http::RequestReader(socket, data);
     auto res = http::ResponseWriter{};
 
+    // handle connection
+    auto it = req.headers.find("Connection");
+    if (it == req.headers.end()) {
+        it = req.headers.find("connection");
+    }
+    if (it != req.headers.end()) {
+        if (it->second == "keep-alive") {
+            socket.keep_alive = true;
+        } else if (it->second == "close") {
+            socket.keep_alive = false;
+        }
+    }
+
+    // handle keep alive
+    it = req.headers.find("Keep-Alive");
+    if (it == req.headers.end()) {
+        it = req.headers.find("keep-alive");
+    }
+    if (it != req.headers.end()) {
+        std::string_view value = it->second;
+        auto timeout_idx = value.find("timeout=");
+        if (timeout_idx < value.size()) {
+            socket.timeout = ::atoi(value.data() + timeout_idx + 9);
+        }
+        auto max_idx = value.find("max=");
+        if (max_idx < value.size()) {
+            socket.max = ::atoi(value.data() + max_idx + 5);
+        }
+    }
+    
     // TODO: version handling
     res.version = req.version;
 
@@ -69,9 +99,9 @@ void http::Server::execute_stream_session(socket::Stream& stream, const std::str
     }
     if (res.body.empty() && res.body_stream.rules.empty()) res.headers["Content-Length"] = "0";
 
-    for (auto &[header, fn] : global_headers) {
-        auto head = fn(req, res);
-        if (not head.empty()) res.headers[header] = std::move(head);
+    for (auto &[key, fn] : global_headers) {
+        auto value = fn(req, res);
+        if (not value.empty()) res.headers[key] = std::move(value);
     }
 
     auto elapsed = std::chrono::high_resolution_clock::now() - start;
@@ -79,7 +109,7 @@ void http::Server::execute_stream_session(socket::Stream& stream, const std::str
     if (show_response_time) res.headers["X-Response-Time"] = std::to_string(elapsed_ms) + "ms";
     if (logger) logger(client_ip, req, res);
 
-    stream << res.dump();
+    return res.dump();
 }
 
 static auto status_to_string(int status) -> std::string {

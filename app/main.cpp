@@ -9,6 +9,8 @@ using Project::delameta::panic;
 void example_init(Server& app);
 void file_handler_init(Server& app);
 void serial_handler_init(Server& app);
+void modbus_rtu_init(Server& app);
+void larkin_init(Server& app);
 
 int main() {
     auto app = Server::New(__FILE__, __LINE__, {"0.0.0.0", 5000}).expect([](Error err) {
@@ -18,6 +20,8 @@ int main() {
     example_init(app);
     file_handler_init(app);
     serial_handler_init(app);
+    modbus_rtu_init(app);
+    larkin_init(app);
 
     on_sigint([&]() { app.stop(); });
 

@@ -7,7 +7,7 @@ using namespace Project::delameta;
 void delameta_detail_http_request_response_reader_parse_headers_body(
     etl::StringView sv, 
     std::unordered_map<std::string_view, std::string_view>& headers, 
-    socket::Stream& in_stream,
+    Descriptor& desc,
     delameta::Stream& body_stream
 );
 
@@ -30,10 +30,10 @@ auto http::ResponseWriter::dump() -> Stream {
     return s;
 }
 
-http::ResponseReader::ResponseReader(socket::Stream& in_stream, const std::vector<uint8_t>& data) : data() { parse(in_stream, data); }
-http::ResponseReader::ResponseReader(socket::Stream& in_stream, std::vector<uint8_t>&& data) : data(std::move(data)) { parse(in_stream, this->data); }
+http::ResponseReader::ResponseReader(Descriptor& desc, const std::vector<uint8_t>& data) : data() { parse(desc, data); }
+http::ResponseReader::ResponseReader(Descriptor& desc, std::vector<uint8_t>&& data) : data(std::move(data)) { parse(desc, this->data); }
 
-void http::ResponseReader::parse(socket::Stream& in_stream, const std::vector<uint8_t>& data) {
+void http::ResponseReader::parse(Descriptor& desc, const std::vector<uint8_t>& data) {
     auto sv = etl::string_view(data.data(), data.size());
     auto methods = sv.split<3>(" ");
 
@@ -51,7 +51,7 @@ void http::ResponseReader::parse(socket::Stream& in_stream, const std::vector<ui
     this->version = std::string_view(version.data(), version.len());
     this->status = status;
     this->status_string = std::string_view(status_string.data(), status_string.len());
-    delameta_detail_http_request_response_reader_parse_headers_body(sv, this->headers, in_stream, this->body_stream);
+    delameta_detail_http_request_response_reader_parse_headers_body(sv, this->headers, desc, this->body_stream);
 }
 
 http::ResponseReader::operator ResponseWriter() const {

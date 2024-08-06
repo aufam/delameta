@@ -1,7 +1,7 @@
 #ifndef PROJECT_DELAMETA_SERIAL_SERIAL_H
 #define PROJECT_DELAMETA_SERIAL_SERIAL_H
 
-#include "delameta/file_descriptor/stream.h"
+#include "delameta/file_descriptor.h"
 
 namespace Project::delameta::serial {
 
@@ -22,21 +22,15 @@ namespace Project::delameta::serial {
         void stop();
 
     protected:
-        explicit Server(file_descriptor::Stream* stream);
-        file_descriptor::Stream* stream;
+        explicit Server(FileDescriptor* fd);
+        FileDescriptor* fd;
         
-        using StreamSessionHandler = std::function<void(
-            file_descriptor::Stream& stream, 
-            const std::vector<uint8_t>& data
-        )>;
+        using StreamSessionHandler = std::function<Stream(FileDescriptor& fd, const std::vector<uint8_t>& data)>;
 
         StreamSessionHandler handler;
         std::function<void()> on_stop;
 
-        virtual void execute_stream_session(
-            file_descriptor::Stream& stream, 
-            const std::vector<uint8_t>& data
-        );
+        virtual Stream execute_stream_session(FileDescriptor& fd, const std::vector<uint8_t>& data);
     };
 }
 

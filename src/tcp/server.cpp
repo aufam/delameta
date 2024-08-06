@@ -30,7 +30,7 @@ auto tcp::Server::New(const char* file, int line, Args args) -> Result<Server> {
     if (::inet_pton(AF_INET, args.host.c_str(), &server_addr.sin_addr) <= 0)
         return log_errno();
     
-    auto [server, err] = socket::Stream::New(file, line, AF_INET, SOCK_STREAM, 0);
+    auto [server, err] = Socket::New(file, line, AF_INET, SOCK_STREAM, 0);
     if (err) return Err(std::move(*err));
 
     if (int enable = 1; ::setsockopt(server->socket, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) < 0)
@@ -43,13 +43,13 @@ auto tcp::Server::New(const char* file, int line, Args args) -> Result<Server> {
         return log_errno();
     
     info(file, line, "Created socket server: " + std::to_string(server->socket));
-    return Ok(Server(new socket::Stream(std::move(*server))));
+    return Ok(Server(new Socket(std::move(*server))));
 }
 
-tcp::Server::Server(socket::Stream* stream) : stream(stream) {}
+tcp::Server::Server(Socket* socket) : socket(socket) {}
 
 tcp::Server::Server(Server&& other) 
-    : stream(std::exchange(other.stream, nullptr))
+    : socket(std::exchange(other.socket, nullptr))
     , handler(std::move(other.handler))
     , on_stop(std::move(other.on_stop)) {}
 
@@ -59,7 +59,7 @@ auto tcp::Server::operator=(Server&& other) -> Server& {
     }
 
     this->~Server();
-    stream = std::exchange(other.stream, nullptr);
+    socket = std::exchange(other.socket, nullptr);
     handler = std::move(other.handler);
     on_stop = std::move(other.on_stop);
     return *this;
@@ -67,15 +67,15 @@ auto tcp::Server::operator=(Server&& other) -> Server& {
 
 tcp::Server::~Server() {
     stop();
-    if (stream) {
-        delete stream;
-        stream = nullptr;
+    if (socket) {
+        delete socket;
+        socket = nullptr;
     }
 }
 
 auto tcp::Server::start() -> Result<void> {
-    if (stream == nullptr) {
-        std::string what = "No server stream created";
+    if (socket == nullptr) {
+        std::string what = "No server socket created";
         warning(__FILE__, __LINE__, what);
         return Err(Error{-1, what});
     }
@@ -94,7 +94,7 @@ auto tcp::Server::start() -> Result<void> {
     };
 
     while (is_running) {
-        auto client = socket::Stream::Accept(__FILE__, __LINE__, stream->socket, nullptr, nullptr);
+        auto client = Socket::Accept(__FILE__, __LINE__, socket->socket, nullptr, nullptr);
         if (client.is_err()) {
             Error& err = client.unwrap_err();
             if (err.code == EWOULDBLOCK || err.code == EAGAIN) {
@@ -111,13 +111,13 @@ auto tcp::Server::start() -> Result<void> {
             auto client_ip = delameta_detail_get_ip(client.socket);
 
             for (int cnt = 1; is_running and delameta_detail_is_socket_alive(client.socket); ++cnt) {
-                auto received_result = client.receive();
+                auto received_result = client.read();
                 if (received_result.is_err()) {
                     break;
                 }
 
-                execute_stream_session(client, client_ip, received_result.unwrap());
-                client.send();
+                auto stream = execute_stream_session(client, client_ip, received_result.unwrap());
+                stream >> client;
 
                 if (not client.keep_alive) {
                     if (client.max > 0 and cnt >= client.max) {
@@ -158,8 +158,9 @@ void tcp::Server::stop() {
     }
 }
 
-void tcp::Server::execute_stream_session(socket::Stream& stream, const std::string& client_ip, const std::vector<uint8_t>& data) {
+Stream tcp::Server::execute_stream_session(Socket& stream, const std::string& client_ip, const std::vector<uint8_t>& data) {
     if (handler) {
-        handler(stream, client_ip, data);
+        return handler(stream, client_ip, data);
     }
+    return {};
 }

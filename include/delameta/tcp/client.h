@@ -1,7 +1,7 @@
 #ifndef PROJECT_DELAMETA_TCP_CLIENT_H
 #define PROJECT_DELAMETA_TCP_CLIENT_H
 
-#include "delameta/socket/stream.h"
+#include "delameta/socket.h"
 
 namespace Project::delameta::tcp {
 
@@ -19,11 +19,11 @@ namespace Project::delameta::tcp {
         static Result<Client> New(const char* file, int line, Args args);
         virtual ~Client();
 
-        Result<std::vector<uint8_t>> request(delameta::Stream in_stream);
+        Result<std::vector<uint8_t>> request(Stream& in_stream);
 
     protected:
-        explicit Client(socket::Stream* stream);
-        socket::Stream* stream;
+        explicit Client(Socket* socket);
+        Socket* socket;
     };
 }
 

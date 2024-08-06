@@ -1,10 +1,10 @@
-#include "delameta/file_descriptor/stream.h"
+#include "delameta/file_descriptor.h"
 #include <fcntl.h>
 #include <unistd.h>
 #include <cerrno>
 #include <cstring>
 #include <thread>
-#include "../delameta.h"
+#include "delameta.h"
 
 using namespace Project;
 using namespace Project::delameta;
@@ -21,22 +21,22 @@ static auto log_errno(const char* file, int line) {
     return Err(Error{code, what});
 };
 
-static auto log_err(const char* file, int line, file_descriptor::Stream* s, Error err) {
+static auto log_err(const char* file, int line, FileDescriptor* s, Error err) {
     warning(file, line, "FD " + std::to_string(s->fd) + ": Error: " + err.what);
     return Err(err);
 };
 
-static auto log_received_ok(const char* file, size_t line, file_descriptor::Stream* s, std::vector<uint8_t>& res) {
+static auto log_received_ok(const char* file, size_t line, FileDescriptor* s, std::vector<uint8_t>& res) {
     info(file, line, "FD " + std::to_string(s->fd) + " read " + std::to_string(res.size()) + " bytes");
     return Ok(std::move(res));
 };
 
-static auto log_sent_ok(const char* file, size_t line, file_descriptor::Stream* s, size_t n) {
+static auto log_sent_ok(const char* file, size_t line, FileDescriptor* s, size_t n) {
     info(file, line, "FD " + std::to_string(s->fd) + " write " + std::to_string(n) + " bytes");
     return Ok();
 };
 
-auto file_descriptor::Stream::Open(const char* file, int line, const char* __file, int __oflag) -> Result<Stream> {
+auto FileDescriptor::Open(const char* file, int line, const char* __file, int __oflag) -> Result<FileDescriptor> {
     int fd;
     if (__oflag & O_WRONLY) {
         fd = ::open(__file, __oflag, 0644);
@@ -47,22 +47,25 @@ auto file_descriptor::Stream::Open(const char* file, int line, const char* __fil
         return log_errno(file, line);
     } else {
         info(file, line, "Created fd: " + std::to_string(fd));
-        return Ok(Stream(file, line, fd));
+        return Ok(FileDescriptor(file, line, fd));
     }
 }
 
-file_descriptor::Stream::Stream(const char* file, int line, int fd) : delameta::Stream(), fd(fd), timeout(-1), file(file), line(line) {
-    delameta_detail_set_non_blocking(fd);
-}
+FileDescriptor::FileDescriptor(const char* file, int line, int fd) 
+    : Descriptor()
+    , fd(fd)
+    , timeout(-1)
+    , file(file)
+    , line(line) { delameta_detail_set_non_blocking(fd); }
 
-file_descriptor::Stream::Stream(Stream&& other) 
-    : delameta::Stream(std::move(other))
+FileDescriptor::FileDescriptor(FileDescriptor&& other) 
+    : Descriptor()
     , fd(std::exchange(other.fd, -1))
     , timeout(other.timeout)
     , file(other.file)
     , line(other.line) {}
 
-file_descriptor::Stream::~Stream() {
+FileDescriptor::~FileDescriptor() {
     if (fd >= 0) {
         auto msg = "Closed fd: " + std::to_string(fd);
         info(file, line, msg);
@@ -71,7 +74,7 @@ file_descriptor::Stream::~Stream() {
     }
 }
 
-auto file_descriptor::Stream::read() -> Result<std::vector<uint8_t>> {
+auto FileDescriptor::read() -> Result<std::vector<uint8_t>> {
     std::vector<uint8_t> res;
     bool retried = false;
     auto start = std::chrono::high_resolution_clock::now();
@@ -117,7 +120,7 @@ auto file_descriptor::Stream::read() -> Result<std::vector<uint8_t>> {
     return log_err(__FILE__, __LINE__, this, Error::ConnectionClosed);
 }
 
-auto file_descriptor::Stream::read_until(size_t n) -> Result<std::vector<uint8_t>> {
+auto FileDescriptor::read_until(size_t n) -> Result<std::vector<uint8_t>> {
     std::vector<uint8_t> res;
     res.reserve(n);
     bool retried = false;
@@ -155,40 +158,43 @@ auto file_descriptor::Stream::read_until(size_t n) -> Result<std::vector<uint8_t
     return log_err(__FILE__, __LINE__, this, Error::ConnectionClosed);
 }
 
-auto file_descriptor::Stream::write() -> Result<void> {
-    size_t total = 0;
-    Error* err = nullptr;
-
-    *this >> [this, &err, &total](std::string_view buf) {
-        if (err != nullptr) 
-            return;
-        
-        for (size_t i = 0; i < buf.size();) {
-            auto n = buf.size() - i;
-            auto sent = ::write(fd, &buf[i], n);
-            
-            if (sent == 0) {
-                err = new Error(Error::ConnectionClosed);
-                return;
-            } else if (sent < 0) {
-                err = new Error(errno, ::strerror(errno));
-                return;
+auto FileDescriptor::read_as_stream(size_t n) -> Stream {
+    Stream s;
+    for (int total = n; total > 0;) {
+        int size = std::min(total, MAX_HANDLE_SZ);
+        s << [this, size, buffer=std::vector<uint8_t>{}] mutable -> std::string_view {
+            auto data = this->read_until(size);
+            if (data.is_ok()) {
+                buffer = std::move(data.unwrap());
             }
-
-            total += sent;
-            i += sent;
-        }
-    };
-
-    if (err) {
-        auto se = defer | [&]() { delete err; };
-        return log_err(__FILE__, __LINE__, this, *err);
-    } else {
-        return log_sent_ok(__FILE__, __LINE__, this, total);
+            return {reinterpret_cast<const char*>(buffer.data()), buffer.size()};
+        };
+        total -= size;
     }
+
+    return s;
 }
 
-auto file_descriptor::Stream::file_size() -> Result<size_t> {
+auto FileDescriptor::write(std::string_view data) -> Result<void> {
+    size_t total = 0;
+    for (size_t i = 0; i < data.size();) {
+        auto n = std::min<size_t>(MAX_HANDLE_SZ, data.size() - i);
+        auto sent = ::write(fd, &data[i], n);
+        
+        if (sent == 0) {
+            return log_err(__FILE__, __LINE__, this, Error::ConnectionClosed);
+        } else if (sent < 0) {
+            return log_errno(__FILE__, __LINE__);
+        }
+
+        total += sent;
+        i += sent;
+    }
+
+    return log_sent_ok(__FILE__, __LINE__, this, total);
+}
+
+auto FileDescriptor::file_size() -> Result<size_t> {
     off_t cp = lseek(fd, 0, SEEK_CUR);
     if (cp == -1)
         return log_errno(file, line);
@@ -203,19 +209,23 @@ auto file_descriptor::Stream::file_size() -> Result<size_t> {
     return Ok(size_t(size));
 }
 
-template <>
-Stream& Stream::operator<<(file_descriptor::Stream other) {
-    auto [size, size_err] = other.file_size();
+auto FileDescriptor::operator<<(Stream& other) -> FileDescriptor& {
+    other >> *this;
+    return *this;
+}
+
+auto FileDescriptor::operator>>(Stream& s) -> FileDescriptor& {
+    auto [size, size_err] = file_size();
     if (size_err) {
         return *this;
     }
 
-    auto p_stream = new file_descriptor::Stream(std::move(other));
+    auto p_fd = new FileDescriptor(std::move(*this));
 
     for (int total_size = int(*size); total_size > 0;) {
         size_t n = std::min(total_size, MAX_HANDLE_SZ);
-        *this << [p_stream, n, buffer=std::vector<uint8_t>{}]() mutable -> std::string_view {
-            auto data = p_stream->read_until(n);
+        s << [p_fd, n, buffer=std::vector<uint8_t>{}]() mutable -> std::string_view {
+            auto data = p_fd->read_until(n);
             if (data.is_ok()) {
                 buffer = std::move(data.unwrap());
             }
@@ -224,8 +234,8 @@ Stream& Stream::operator<<(file_descriptor::Stream other) {
         total_size -= n;
     }
 
-    *this << [p_stream]() mutable -> std::string_view {
-        delete p_stream;
+    s << [p_fd]() mutable -> std::string_view {
+        delete p_fd;
         return "";
     };
 

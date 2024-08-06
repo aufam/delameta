@@ -21,8 +21,9 @@ auto http::Client::request(http::RequestWriter req) -> Result<http::ResponseRead
     }
     if (req.body.empty() && req.body_stream.rules.empty()) req.headers["Content-Length"] = "0";
 
-    return tcp::Client::request(req.dump()).then([this](std::vector<uint8_t> data) {
-        return http::ResponseReader(*stream, std::move(data));
+    Stream s = req.dump();
+    return tcp::Client::request(s).then([this](std::vector<uint8_t> data) {
+        return http::ResponseReader(*socket, std::move(data));
     });
 }
 

@@ -8,14 +8,14 @@ using namespace Project::delameta;
 void delameta_detail_http_request_response_reader_parse_headers_body(
     etl::StringView sv, 
     std::unordered_map<std::string_view, std::string_view>& headers, 
-    socket::Stream& in_stream,
+    Descriptor& desc,
     delameta::Stream& body_stream
 );
 
-http::RequestReader::RequestReader(socket::Stream& in_stream, const std::vector<uint8_t>& data) : data() { parse(in_stream, data); }
-http::RequestReader::RequestReader(socket::Stream& in_stream, std::vector<uint8_t>&& data) : data(std::move(data)) { parse(in_stream, this->data); }
+http::RequestReader::RequestReader(Descriptor& desc, const std::vector<uint8_t>& data) : data() { parse(desc, data); }
+http::RequestReader::RequestReader(Descriptor& desc, std::vector<uint8_t>&& data) : data(std::move(data)) { parse(desc, this->data); }
 
-void http::RequestReader::parse(socket::Stream& in_stream, const std::vector<uint8_t>& data) {
+void http::RequestReader::parse(Descriptor& desc, const std::vector<uint8_t>& data) {
     auto sv = etl::string_view(data.data(), data.size());
 
     auto request_line = sv.split<3>(" ");
@@ -33,7 +33,7 @@ void http::RequestReader::parse(socket::Stream& in_stream, const std::vector<uin
     this->method = std::string_view(method.data(), method.len());
     this->url = std::string(path.data(), path.len());
     this->version = std::string_view(version.data(), version.len());
-    delameta_detail_http_request_response_reader_parse_headers_body(sv, this->headers, in_stream, this->body_stream);
+    delameta_detail_http_request_response_reader_parse_headers_body(sv, this->headers, desc, this->body_stream);
 
     std::string_view host = "";
     auto it = this->headers.find("Host");
@@ -85,7 +85,7 @@ http::RequestReader::operator RequestWriter() const {
 void delameta_detail_http_request_response_reader_parse_headers_body(
     etl::StringView sv, 
     std::unordered_map<std::string_view, std::string_view>& headers, 
-    socket::Stream& in_stream,
+    Descriptor& desc,
     delameta::Stream& body_stream
 ) {
     auto head_end = sv.find("\r\n\r\n");
@@ -120,51 +120,13 @@ void delameta_detail_http_request_response_reader_parse_headers_body(
         
         while (value and value.front() == ' ') 
             value = value.substr(1, value.len() - 1);
-        
 
         // handle content length
         if (not content_length_found and (key == "Content-Length" or key == "content-length")) {
             content_length_found = true;
-
             int cl = value.to_int();
-            if (cl >= int(body_length)) {
-                cl -= body_length;
-            }
-
-            while (cl > 0) {
-                int n = std::min(cl, MAX_HANDLE_SZ);
-                body_stream << [&in_stream, n, buffer=std::vector<uint8_t>{}]() mutable -> std::string_view {
-                    auto data = in_stream.receive_until(n);
-                    if (data.is_ok()) {
-                        buffer = std::move(data.unwrap());
-                    }
-                    return {reinterpret_cast<const char*>(buffer.data()), buffer.size()};
-                };
-                cl -= n;
-            }
-        }
-
-        // handle connection
-        if (not connection_found and (key == "Connection" or key == "connection")) {
-            connection_found = true;
-            if (value == "keep-alive") {
-                in_stream.keep_alive = true;
-            } else if (value == "close") {
-                in_stream.keep_alive = false;
-            }
-        }
-
-        // handle keep alive
-        if (not keep_alive_found and (key == "Keep-Alive" or key == "keep-alive")) {
-            keep_alive_found = true;
-            auto timeout_idx = value.find("timeout=");
-            if (timeout_idx < value.len()) {
-                in_stream.timeout = ::atoi(value.data() + timeout_idx + 9);
-            }
-            auto max_idx = value.find("max=");
-            if (max_idx < value.len()) {
-                in_stream.max = ::atoi(value.data() + max_idx + 5);
-            }
+            if (cl >= int(body_length)) cl -= body_length;
+            body_stream << desc.read_as_stream(cl);
         }
 
         // store the header

@@ -25,7 +25,7 @@ auto tcp::Client::New(const char* file, int line, Args args) -> Result<Client> {
     if (::inet_pton(AF_INET, args.host.c_str(), &server_addr.sin_addr) <= 0)
         return log_errno(file, line);
 
-    auto [client, err] = socket::Stream::New(file, line, AF_INET, SOCK_STREAM, 0);
+    auto [client, err] = Socket::New(file, line, AF_INET, SOCK_STREAM, 0);
     if (err) 
         return Err(std::move(*err));
     
@@ -52,12 +52,12 @@ auto tcp::Client::New(const char* file, int line, Args args) -> Result<Client> {
     } 
 
     info(file, line, "Created socket client: " + std::to_string(client->socket));
-    return Ok(Client(new socket::Stream(std::move(*client))));
+    return Ok(Client(new Socket(std::move(*client))));
 }
 
-tcp::Client::Client(socket::Stream* stream) : stream(stream) {}
+tcp::Client::Client(Socket* socket) : socket(socket) {}
 
-tcp::Client::Client(Client&& other) : stream(std::exchange(other.stream, nullptr)) {}
+tcp::Client::Client(Client&& other) : socket(std::exchange(other.socket, nullptr)) {}
 
 auto tcp::Client::operator=(Client&& other) -> Client& {
     if (this == &other) {
@@ -65,26 +65,24 @@ auto tcp::Client::operator=(Client&& other) -> Client& {
     }
 
     this->~Client();
-    stream = std::exchange(other.stream, nullptr);
+    socket = std::exchange(other.socket, nullptr);
     return *this;
 }
 
 tcp::Client::~Client() {
-    if (stream) {
-        delete stream;
-        stream = nullptr;
+    if (socket) {
+        delete socket;
+        socket = nullptr;
     }
 }
 
-auto tcp::Client::request(delameta::Stream in_stream) -> Result<std::vector<uint8_t>> {
-    if (stream == nullptr) {
-        std::string what = "No client stream created";
+auto tcp::Client::request(Stream& in_stream) -> Result<std::vector<uint8_t>> {
+    if (socket == nullptr) {
+        std::string what = "No client socket created";
         warning(__FILE__, __LINE__, what);
         return Err(Error{-1, what});
     }
 
-    *stream << in_stream;
-    stream->send();
-
-    return stream->receive();
+    in_stream >> *socket;
+    return socket->read();
 }

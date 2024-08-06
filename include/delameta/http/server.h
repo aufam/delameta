@@ -121,13 +121,9 @@ namespace Project::delameta::http {
         bool show_response_time = false;
     
     protected:
-        using tcp::Server::Server;
         Server(tcp::Server&&);
 
-        void execute_stream_session(
-            socket::Stream& stream, 
-            const std::string& client_ip, 
-            const std::vector<uint8_t>& data) override;
+        Stream execute_stream_session(Socket& socket, const std::string& client_ip, const std::vector<uint8_t>& data) override;
 
         template <typename... Args>
         struct has_stream_t;

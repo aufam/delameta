@@ -3,7 +3,7 @@
 
 #include <string>
 #include <unordered_map>
-#include "delameta/socket/stream.h"
+#include "delameta/stream.h"
 #include "delameta/url.h"
 
 namespace Project::delameta::http {
@@ -16,12 +16,12 @@ namespace Project::delameta::http {
         std::string version;
         std::unordered_map<std::string, std::string> headers = {};
         mutable std::string body = {};
-        mutable delameta::Stream body_stream = {};
+        mutable Stream body_stream = {};
     };
 
     struct RequestReader {
-        RequestReader(socket::Stream& stream, const std::vector<uint8_t>& data);
-        RequestReader(socket::Stream& stream, std::vector<uint8_t>&& data);
+        RequestReader(Descriptor& desc, const std::vector<uint8_t>& data);
+        RequestReader(Descriptor& desc, std::vector<uint8_t>&& data);
         operator RequestWriter() const;
 
         std::string_view method;
@@ -33,7 +33,7 @@ namespace Project::delameta::http {
     
     private:
         std::vector<uint8_t> data;
-        void parse(socket::Stream& stream, const std::vector<uint8_t>& data);
+        void parse(Descriptor& desc, const std::vector<uint8_t>& data);
     };
 }
 

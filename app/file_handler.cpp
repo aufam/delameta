@@ -1,16 +1,16 @@
 #include "delameta/http/server.h"
-#include "delameta/file_descriptor/stream.h"
+#include "delameta/file_descriptor.h"
 #include <fcntl.h>
 
 using namespace Project;
 using namespace delameta::http;
-using delameta::file_descriptor::Stream;
+using delameta::FileDescriptor;
 using etl::Ref;
 using etl::Err;
 using etl::Ok;
 
 struct File {
-    Stream stream;
+    FileDescriptor fd;
     size_t size;
 };
 
@@ -30,15 +30,14 @@ void file_handler_init(Server& app) {
         return open_file(filename, O_RDONLY).then([&](File file) {
             res->headers["Content-Length"] = std::to_string(file.size);
             res->headers["Content-Type"] = content_type(filename);
-            res->body_stream << std::move(file.stream);
+            file.fd >> res->body_stream;
         });
     });
 
     static auto write_file = app.Put("/upload", std::tuple{arg::arg("filename"), arg::body},
     [](std::string filename, delameta::Stream body_stream) -> Server::Result<void> {
         return open_file(filename, O_WRONLY | O_CREAT | O_TRUNC).then([&](File file) {
-            file.stream << body_stream;
-            file.stream.write();
+            file.fd << body_stream;
         });
     });
 
@@ -66,7 +65,7 @@ void file_handler_init(Server& app) {
 }
 
 static auto open_file(const std::string& filename, int flag) -> Server::Result<File> {
-    auto [stream, stream_err] = Stream::Open(__FILE__, __LINE__, filename.c_str(), flag);
+    auto [stream, stream_err] = FileDescriptor::Open(__FILE__, __LINE__, filename.c_str(), flag);
     if (stream_err) {
         return Err(Server::Error{StatusBadRequest, stream_err->what});
     }
