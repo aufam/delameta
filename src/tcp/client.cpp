@@ -52,14 +52,12 @@ auto tcp::Client::New(const char* file, int line, Args args) -> Result<Client> {
     for (auto p = hint; p != nullptr; p = p->ai_next) {
         auto [client, client_err] = Socket::New(file, line, p->ai_family, p->ai_socktype, p->ai_protocol);
         if (client_err) {
-            info(__FILE__, __LINE__, debug_sockaddr(p->ai_addr));
             err = std::move(*client_err);
             continue;
         }
         
         if (::connect(client->socket, p->ai_addr, p->ai_addrlen) != 0) {
             if (errno != EINPROGRESS) {
-                info(__FILE__, __LINE__, debug_sockaddr(p->ai_addr));
                 err = log_error(errno, ::strerror);
                 continue;
             }
@@ -73,7 +71,6 @@ auto tcp::Client::New(const char* file, int line, Args args) -> Result<Client> {
             tv.tv_usec = 0;
 
             if (::select(client->socket + 1, nullptr, &write_fds, nullptr, &tv) <= 0) {
-                info(__FILE__, __LINE__, debug_sockaddr(p->ai_addr));
                 err = log_error(errno, ::strerror);
                 continue;
             }
@@ -82,13 +79,11 @@ auto tcp::Client::New(const char* file, int line, Args args) -> Result<Client> {
             int error_code = 0;
             socklen_t len = sizeof(error_code);
             if (::getsockopt(client->socket, SOL_SOCKET, SO_ERROR, &error_code, &len) != 0 || error_code != 0){
-                info(__FILE__, __LINE__, debug_sockaddr(p->ai_addr));
                 err = log_error(errno, ::strerror);
                 continue;
             }
         } 
 
-        info(__FILE__, __LINE__, debug_sockaddr(p->ai_addr));
         info(file, line, "Created socket client: " + std::to_string(client->socket));
         return Ok(Client(new Socket(std::move(*client))));
     }

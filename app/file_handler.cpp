@@ -1,6 +1,8 @@
 #include "delameta/http/server.h"
 #include "delameta/file_descriptor.h"
 #include <fcntl.h>
+#include <dirent.h>
+#include <string>
 
 using namespace Project;
 using namespace delameta::http;
@@ -18,6 +20,23 @@ static Server::Result<File> open_file(const std::string& filename, int flag);
 static std::string content_type(const std::string& file);
 
 void file_handler_init(Server& app) {
+    app.Get("/ls", std::tuple{arg::arg("path")}, 
+    [](std::string path) -> Server::Result<std::list<std::string>> {
+        DIR* dir = opendir(path.c_str());
+        if (dir == nullptr) {
+            return Err(Server::Error{StatusBadRequest, "Error opening " + path});
+        }
+
+        struct dirent* entry;
+        std::list<std::string> items;
+        while ((entry = readdir(dir)) != nullptr) {
+            items.emplace_back(entry->d_name);
+        }
+
+        closedir(dir);
+        return Ok(std::move(items));
+    });
+
     app.Get("/file_size", std::tuple{arg::arg("filename")},
     [](std::string filename) -> Server::Result<std::string> {
         return open_file(filename, O_RDONLY).then([](File file) {

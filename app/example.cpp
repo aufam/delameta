@@ -190,9 +190,20 @@ void example_init(Server& app) {
             RequestWriter request = *req;
             request.url = url;
             return cli.request(std::move(request));
-        })
-        .except([](Error err) {
-            return Server::Error{StatusInternalServerError, err.what};
         });
+    });
+
+    app.Delete("/delete_route", std::tuple{arg::arg("path")},
+    [&](std::string path) -> Server::Result<void> {
+        auto it = std::find_if(app.routers.begin(), app.routers.end(), [&path](Server::Router& router) {
+            return router.path == path;
+        });
+
+        if (it == app.routers.end()) {
+            return Err(Server::Error{StatusBadRequest, "path " + path + " not found"});
+        }
+
+        app.routers.erase(it);
+        return Ok();
     });
 }

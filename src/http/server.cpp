@@ -7,6 +7,10 @@ using namespace Project::delameta;
 using etl::Err;
 using etl::Ok;
 
+http::Server::Error::Error(int status) : status(status), what("") {}
+http::Server::Error::Error(int status, std::string what) : status(status), what(std::move(what)) {}
+http::Server::Error::Error(delameta::Error err) : status(StatusInternalServerError), what(err.what + ": " + std::to_string(err.code)) {}
+
 static auto status_to_string(int status) -> std::string;
 
 auto http::Server::New(const char* file, int line, Args args) -> delameta::Result<Server> {

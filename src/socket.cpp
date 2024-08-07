@@ -171,7 +171,7 @@ auto Socket::read_as_stream(size_t n) -> Stream {
     Stream s;
     for (int total = n; total > 0;) {
         int size = std::min(total, MAX_HANDLE_SZ);
-        s << [this, size, buffer=std::vector<uint8_t>{}] mutable -> std::string_view {
+        s << [this, size, buffer=std::vector<uint8_t>{}]() mutable -> std::string_view {
             auto data = this->receive_until(size);
             if (data.is_ok()) {
                 buffer = std::move(data.unwrap());

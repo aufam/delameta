@@ -10,6 +10,7 @@ using Project::delameta::info;
 using Project::delameta::panic;
 
 void example_init(Server& app);
+void exec_init(Server& app);
 void file_handler_init(Server& app);
 void serial_handler_init(Server& app);
 void modbus_rtu_init(Server& app);
@@ -38,6 +39,7 @@ int main(int argc, char* argv[]) {
     });
 
     example_init(app);
+    exec_init(app);
     file_handler_init(app);
     serial_handler_init(app);
     modbus_rtu_init(app);

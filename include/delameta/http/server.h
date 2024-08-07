@@ -22,7 +22,11 @@ namespace Project::delameta::http {
 
         struct Error {
             int status;
-            std::string what = "";
+            std::string what;
+
+            Error(int status);
+            Error(int status, std::string what);
+            Error(delameta::Error);
         };
 
         template <typename T>

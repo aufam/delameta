@@ -15,7 +15,7 @@ void serial_handler_init(Server& app) {
         arg::arg("data"),
         arg::response
     },
-    [](std::string port, int baud, int timeout, std::string_view data, Ref<ResponseWriter> res) {
+    [](std::string port, int baud, int timeout, std::string_view data, Ref<ResponseWriter> res) -> Server::Result<void> {
         return Client::New(__FILE__, __LINE__, {port, baud, timeout}).and_then([&](Client cli) {
             delameta::Stream s;
             s << data;
@@ -23,8 +23,6 @@ void serial_handler_init(Server& app) {
         }).then([&](std::vector<uint8_t> data) {
             res->headers["Content-Type"] = "application/octet-stream";
             res->body = std::string(data.begin(), data.end());
-        }).except([](Error err) {
-            return Server::Error{StatusInternalServerError, err.what};
         });
     });
 }
