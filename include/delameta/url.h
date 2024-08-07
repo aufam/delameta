@@ -11,8 +11,6 @@ namespace Project::delameta {
 
         std::string url;
         std::string protocol;
-        std::string ip;
-        int port = {};
         std::string host;
         std::string path;
         std::string full_path;

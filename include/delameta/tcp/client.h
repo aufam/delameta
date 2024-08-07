@@ -12,7 +12,6 @@ namespace Project::delameta::tcp {
 
         struct Args {
             std::string host; 
-            int port; 
             int timeout = 5;
         };
 

@@ -73,14 +73,14 @@ Stream http::Server::execute_stream_session(Socket& socket, const std::string& c
     for (auto &router : routers) {
         if (router.path != req.url.path) continue;
         auto it = std::find(router.methods.begin(), router.methods.end(), req.method);
+        handled = true;
         if (it == router.methods.end()) {
             res.status = StatusMethodNotAllowed;
         } else {
             res.status = StatusOK;
             router.function(req, res);
+            break;
         }
-        handled = true;
-        break;
     }
 
     if (not handled) res.status = StatusNotFound;

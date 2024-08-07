@@ -11,8 +11,7 @@ namespace Project::delameta::tcp {
         Server& operator=(Server&&);
 
         struct Args {
-            std::string host; 
-            int port; 
+            std::string host;
             int max_socket = 4;
         };
 

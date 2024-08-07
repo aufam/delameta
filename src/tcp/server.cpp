@@ -1,12 +1,14 @@
 #include "delameta/tcp/server.h"
 #include <unistd.h>
 #include <arpa/inet.h>
+#include <netdb.h>
 #include <fcntl.h>
 #include <cerrno>
 #include <cstring>
 #include <thread>
 #include <mutex>
 #include <atomic>
+#include <etl/string_view.h>
 #include "../delameta.h"
 
 using namespace Project;
@@ -15,35 +17,51 @@ using namespace std::literals;
 
 using etl::Err;
 using etl::Ok;
+using etl::defer;
+
+auto delameta_detail_resolve_domain(const std::string& domain, bool for_binding) -> etl::Result<struct addrinfo*, int>;
 
 auto tcp::Server::New(const char* file, int line, Args args) -> Result<Server> {
-    auto log_errno = [file, line]() {
-        int code = errno;
-        std::string what = ::strerror(code);
+    auto log_error = [file, line](int code, auto err_to_str) {
+        std::string what = err_to_str(code);
         warning(file, line, what);
-        return Err(Error{code, what});
+        return Error{code, what};
     };
 
-    struct sockaddr_in server_addr;
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_port = ::htons(args.port);
-    if (int res = ::inet_pton(AF_INET, args.host.c_str(), &server_addr.sin_addr); res <= 0)
-        return res == 0 ? Err(Error{-1, "Invalid network address format for host: " + args.host}) : log_errno();
+    auto [resolve, resolve_err] = delameta_detail_resolve_domain(args.host, true);
+    if (resolve_err) return Err(log_error(*resolve_err, ::gai_strerror));
+
+    auto hint = *resolve;
+    auto se = defer | [&]() { ::freeaddrinfo(hint); };
+    Error err{-1, "Unable to resolve hostname: " + args.host};
+
+    for (auto p = hint; p != nullptr; p = p->ai_next) {
+        auto [server, server_err] = Socket::New(file, line, p->ai_family, p->ai_socktype, p->ai_protocol);
+        if (server_err) {
+            err = std::move(*server_err);
+            continue;
+        }
+
+        if (int enable = 1; ::setsockopt(server->socket, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) < 0) {
+            err = log_error(errno, ::strerror);
+            continue;
+        }
+
+        if (::bind(server->socket, p->ai_addr, p->ai_addrlen) < 0) {
+            err = log_error(errno, ::strerror);
+            continue;
+        }
+
+        if (::listen(server->socket, args.max_socket) < 0) {
+            err = log_error(errno, ::strerror);
+            continue;
+        }
     
-    auto [server, err] = Socket::New(file, line, AF_INET, SOCK_STREAM, 0);
-    if (err) return Err(std::move(*err));
-
-    if (int enable = 1; ::setsockopt(server->socket, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) < 0)
-        return log_errno();
-
-    if (::bind(server->socket, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0)
-        return log_errno();
-
-    if (::listen(server->socket, args.max_socket) < 0)
-        return log_errno();
+        info(file, line, "Created socket server: " + std::to_string(server->socket));
+        return Ok(Server(new Socket(std::move(*server))));
+    }
     
-    info(file, line, "Created socket server: " + std::to_string(server->socket));
-    return Ok(Server(new Socket(std::move(*server))));
+    return Err(std::move(err));
 }
 
 tcp::Server::Server(Socket* socket) : socket(socket) {}

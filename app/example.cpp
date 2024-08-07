@@ -25,8 +25,6 @@ JSON_DEFINE(Project::delameta::http::Server::Error,
 JSON_DEFINE(Project::delameta::URL, 
     JSON_ITEM("url", url), 
     JSON_ITEM("protocol", protocol), 
-    JSON_ITEM("ip", ip), 
-    JSON_ITEM("port", port), 
     JSON_ITEM("host", host), 
     JSON_ITEM("path", path), 
     JSON_ITEM("full_path", full_path), 
@@ -100,8 +98,14 @@ void example_init(Server& app) {
 
     // example: print hello
     app.Get("/hello", {}, 
-    [&]() {
+    []() {
         return "Hello world from delameta/" DELAMETA_VERSION;
+    });
+
+    // example: print hello with msg
+    app.Post("/hello", std::tuple{arg::json_item("msg")}, 
+    [](std::string msg) {
+        return "Hello world " + msg;
     });
 
     // example: 
@@ -171,12 +175,18 @@ void example_init(Server& app) {
         return url;
     });
 
+    // example: print url
+    app.Get("/resolve_url", std::tuple{arg::arg("url")},
+    [](std::string url) {
+        return URL(url);
+    });
+
     // example: redirect to the given path
     app.route("/redirect", {"GET", "POST", "PUT", "PATCH", "HEAD", "TRACE", "DELETE", "OPTIONS"}, 
     std::tuple{arg::request, arg::arg("url")}, 
-    [](Ref<const RequestReader> req, std::string url_str) -> Server::Result<ResponseWriter> {
+    [](Ref<const RequestReader> req, std::string url_str) -> Server::Result<ResponseReader> {
         URL url = url_str;
-        return Client::New(__FILE__, __LINE__, {url.ip, url.port}).and_then([&](Client cli) {
+        return Client::New(__FILE__, __LINE__, {url.host}).and_then([&](Client cli) {
             RequestWriter request = *req;
             request.url = url;
             return cli.request(std::move(request));

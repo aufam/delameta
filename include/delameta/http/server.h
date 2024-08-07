@@ -45,6 +45,8 @@ namespace Project::delameta::http {
         template <typename F>
         struct ArgDepends { F depends; };
 
+        struct ArgJsonItem { const char* key; };
+
         struct ArgRequest {};
         struct ArgResponse {};
         struct ArgMethod {};
@@ -222,6 +224,26 @@ namespace Project::delameta::http {
             }
         }
 
+        template <typename T> static Result<T>
+        process_arg(const ArgJsonItem& arg, const RequestReader& req, ResponseWriter&) {
+            if (req.body.empty()) req.body_stream >> [&req](std::string_view chunk) { req.body += chunk; };
+            
+            auto j = etl::Json::parse(etl::string_view(req.body.data(), req.body.size()));
+            auto err_msg = j.error_message();
+            if (err_msg) {
+                return etl::Err(Error{StatusBadRequest, std::string(err_msg.data())});
+            }
+
+            auto item = j[arg.key];
+            err_msg = item.error_message();
+            if (err_msg) {
+                return etl::Err(Error{StatusBadRequest, std::string(err_msg.data())});
+            }
+
+            auto sv = item.dump();
+            return convert_string_into<T>(std::string_view(sv.data(), sv.len()));
+        }
+
         template <typename T, typename F> static Result<T>
         process_arg(const ArgDepends<F>& arg, const RequestReader& req, ResponseWriter& res) {
             return arg.depends(req, res);
@@ -311,6 +333,8 @@ namespace Project::delameta::http {
                 res.headers["Content-Type"] = "text/plain";
             } else if constexpr (std::is_same_v<T, ResponseWriter>) {
                 res = std::move(result);
+            } else if constexpr (std::is_same_v<T, ResponseReader>) {
+                res = result;
             } else if constexpr (std::is_same_v<T, delameta::Stream>) {
                 res.body_stream = std::move(result);
             } else {
@@ -329,84 +353,6 @@ namespace Project::delameta::http {
                 return it->second;
             } else {
                 return "";
-            }
-        }
-        
-        template <typename T> static Result<T>
-        get_parameter(const std::string& key, const RequestReader& req, ResponseWriter& res) {
-            if (key == "$request") {
-                if constexpr (std::is_same_v<T, etl::Ref<const RequestReader>>) {
-                    return etl::Ok(etl::ref_const(req));
-                } else {
-                    return etl::Err(internal_error("arg type $request must be etl::Ref<const RequestReader>"));
-                }
-            } else if (key == "$response") {
-                if constexpr (std::is_same_v<T, etl::Ref<ResponseWriter>>) {
-                    return etl::Ok(etl::ref(res));
-                } else {
-                    return etl::Err(internal_error("arg type $response must be etl::Ref<ResponseWriter>"));
-                }
-            } else if (key == "$stream") {
-                if constexpr (std::is_same_v<T, delameta::Stream>) {
-                    return etl::Ok(std::move(req.body_stream));
-                } else {
-                    return etl::Err(internal_error("arg type $stream must be delameta::Stream"));
-                }
-            }
-            else if (key == "$url") {
-                return get_url<T>(req);
-            } else if (key == "$headers") {
-                return get_headers<T>(req);
-            } else if (key == "$queries") {
-                return get_queries<T>(req);
-            } else if (key == "$path") {
-                return convert_string_into<T>(req.url.path);
-            } else if (key == "$full_path") {
-                return convert_string_into<T>(req.url.full_path);
-            } else if (key == "$fragment") {
-                return convert_string_into<T>(req.url.fragment);
-            } else if (key == "$version") {
-                return convert_string_into<T>(req.version);
-            } else if (key == "$method") {
-                return convert_string_into<T>(req.method);
-            } else if (key == "$body") {
-                return convert_stream_into<T>(req);
-            } else {
-                auto content_type = get_content_type(req);
-                if (key == "$json" && content_type == "application/json") {
-                    return convert_stream_into<T>(req);
-                } else if (key == "$text" && content_type == "text/plain") {
-                    return convert_stream_into<T>(req);
-                } else {
-                    return etl::Err(internal_error("unknown arg"));
-                }
-            } 
-        }
-
-        template <typename T> static Result<T>
-        get_url(const RequestReader& req) {
-            if constexpr (std::is_same_v<T, etl::Ref<const URL>>) {
-                return etl::Ok(etl::ref_const(req.url));
-            } else {
-                return etl::Err(internal_error("arg type $url must be etl::Ref<const URL>"));
-            }
-        }
-
-        template <typename T> static Result<T>
-        get_headers(const RequestReader& req) {
-            if constexpr (std::is_same_v<T, etl::Ref<const decltype(RequestReader::headers)>>) {
-                return etl::Ok(etl::ref_const(req.headers));
-            } else {
-                return etl::Err(internal_error("arg type $headers must be etl::Ref<const decltype(RequestReader::headers)>"));
-            }
-        }
-
-        template <typename T> static Result<T>
-        get_queries(const RequestReader& req) {
-            if constexpr (std::is_same_v<T, etl::Ref<const decltype(URL::queries)>>) {
-                return etl::Ok(etl::ref_const(req.url.queries));
-            } else {
-                return etl::Err(internal_error("arg type $queries must be etl::Ref<const decltype(URL::queries)>"));
             }
         }
 
@@ -428,9 +374,7 @@ namespace Project::delameta::http {
             if constexpr (std::is_same_v<T, delameta::Stream>) {
                 return etl::Ok(std::move(req.body_stream));
             } else {
-                req.body_stream >> [&req](std::string_view chunk) {
-                    req.body += chunk;
-                };
+                if (req.body.empty()) req.body_stream >> [&req](std::string_view chunk) { req.body += chunk; };
                 return convert_string_into<T>(req.body);
             }
         }
@@ -439,9 +383,8 @@ namespace Project::delameta::http {
 
 
 namespace Project::delameta::http::arg {
-    inline Server::Arg arg(const char* name) {
-        return {name};
-    }
+    inline Server::Arg arg(const char* name) { return {name}; }
+    inline Server::ArgJsonItem json_item(const char* key) { return {key}; }
 
     template <typename F>
     auto depends(F&& depends_function) {

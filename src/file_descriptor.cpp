@@ -4,6 +4,8 @@
 #include <cerrno>
 #include <cstring>
 #include <thread>
+#include <mutex>
+#include <atomic>
 #include "delameta.h"
 
 using namespace Project;
@@ -36,16 +38,31 @@ static auto log_sent_ok(const char* file, size_t line, FileDescriptor* s, size_t
     return Ok();
 };
 
-auto FileDescriptor::Open(const char* file, int line, const char* __file, int __oflag) -> Result<FileDescriptor> {
+struct FileDescriptorHandler {
+    std::string filename;
     int fd;
-    if (__oflag & O_WRONLY) {
-        fd = ::open(__file, __oflag, 0644);
-    } else {
-        fd = ::open(__file, __oflag);
+    int counter;
+};
+
+static std::mutex handlers_mtx;
+static std::list<FileDescriptorHandler> handlers;
+
+auto FileDescriptor::Open(const char* file, int line, const char* __file, int __oflag) -> Result<FileDescriptor> {
+    std::lock_guard<std::mutex> lock(handlers_mtx);
+    auto it = std::find_if(handlers.begin(), handlers.end(), [__file](FileDescriptorHandler& h) {
+        return h.filename == __file;
+    });
+    
+    if (it != handlers.end()) {
+        it->counter++;
+        return Ok(FileDescriptor(file, line, it->fd));
     }
+
+    int fd = __oflag & O_WRONLY ? ::open(__file, __oflag, 0644) : ::open(__file, __oflag);
     if (fd < 0) {
         return log_errno(file, line);
     } else {
+        handlers.emplace_back(FileDescriptorHandler{__file, fd, 0});
         info(file, line, "Created fd: " + std::to_string(fd));
         return Ok(FileDescriptor(file, line, fd));
     }
@@ -66,12 +83,24 @@ FileDescriptor::FileDescriptor(FileDescriptor&& other)
     , line(other.line) {}
 
 FileDescriptor::~FileDescriptor() {
-    if (fd >= 0) {
-        auto msg = "Closed fd: " + std::to_string(fd);
-        info(file, line, msg);
-        ::close(fd);
-        fd = -1;
+    if (fd < 0) return;
+
+    std::lock_guard<std::mutex> lock(handlers_mtx);
+    auto it = std::find_if(handlers.begin(), handlers.end(), [this](FileDescriptorHandler& h) {
+        return h.fd == fd;
+    });
+
+    if (it == handlers.end()) {
+        panic(file, line, "Fatal Error: file descriptor not found in handler");
+        return;
     }
+
+    if (--it->counter == 0) {
+        info(file, line, "Closed fd: " + std::to_string(fd));
+        ::close(fd);
+        handlers.erase(it);
+    }
+    fd = -1;
 }
 
 auto FileDescriptor::read() -> Result<std::vector<uint8_t>> {
@@ -162,7 +191,7 @@ auto FileDescriptor::read_as_stream(size_t n) -> Stream {
     Stream s;
     for (int total = n; total > 0;) {
         int size = std::min(total, MAX_HANDLE_SZ);
-        s << [this, size, buffer=std::vector<uint8_t>{}] mutable -> std::string_view {
+        s << [this, size, buffer=std::vector<uint8_t>{}]() mutable -> std::string_view {
             auto data = this->read_until(size);
             if (data.is_ok()) {
                 buffer = std::move(data.unwrap());

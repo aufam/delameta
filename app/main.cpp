@@ -4,6 +4,7 @@
 #include "options.ipp"
 
 using Project::delameta::http::Server;
+using Project::delameta::URL;
 using Project::delameta::Error;
 using Project::delameta::info;
 using Project::delameta::panic;
@@ -15,27 +16,24 @@ void modbus_rtu_init(Server& app);
 void larkin_init(Server& app);
 
 int main(int argc, char* argv[]) {
-    std::string host = "127.0.0.1";
-    int port = 5000;
+    std::string hostname = "localhost:5000";
 
     execute_options(argc, argv, {
         {'H', "host", required_argument, [&](const char* arg) {
-            host = arg;
-        }},
-        {'p', "port", required_argument, [&](const char* arg) {
-            port = std::atoi(arg);
+            hostname = arg;
         }},
         {'h', "help", no_argument, [](const char*) {
-            std::cout << "Delameta Interface\n";
+            std::cout << "Delameta API\n";
             std::cout << "Options:\n";
-            std::cout << "-H, --host        Specify the server host. Default = localhost\n";
-            std::cout << "-p, --port        Specify the server port. Default = 5000\n";
+            std::cout << "-H, --host        Specify the server host. Default = localhost:5000\n";
             std::cout << "-h, --help        Print help\n";
             exit(0);
         }}
     });
 
-    auto app = Server::New(__FILE__, __LINE__, {host, port}).expect([](Error err) {
+    URL host = hostname;
+    info(__FILE__, __LINE__, "debug: hostname: " + hostname);
+    auto app = Server::New(__FILE__, __LINE__, {hostname}).expect([](Error err) {
         panic(__FILE__, __LINE__, err.what);
     });
 
@@ -47,7 +45,7 @@ int main(int argc, char* argv[]) {
 
     on_sigint([&]() { app.stop(); });
 
-    info(__FILE__, __LINE__, "Server is starting on " + host + ":" + std::to_string(port) + "/");
+    info(__FILE__, __LINE__, "Server is starting on " + host.host);
     app.start().expect([](Error err) {
         panic(__FILE__, __LINE__, err.what);
     });

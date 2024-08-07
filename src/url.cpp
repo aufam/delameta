@@ -1,15 +1,16 @@
 #include "delameta/url.h"
 #include <etl/string_view.h>
+#include <etl/result.h>
 #include <netdb.h>
 #include <arpa/inet.h>
 
 using namespace Project;
 using namespace Project::delameta;
+using etl::defer;
 
 static auto parse_query(etl::StringView sv) -> std::unordered_map<std::string, std::string>;
 static auto sv_percent_encoded_to_string(etl::StringView sv) -> std::string;
 static auto sv_to_string(etl::StringView sv) { return std::string(sv.data(), sv.len()); }
-static auto resolve_domain(const std::string& protocol, const std::string& input) -> std::pair<std::string, int>;
 
 static constexpr int hex_to_int(char ch) {
     return (ch >= '0' && ch <= '9') ? ch - '0' :
@@ -19,14 +20,13 @@ static constexpr int hex_to_int(char ch) {
 
 URL::URL(std::string s) : url(std::move(s)) {
     auto sv = etl::string_view(url.data(), url.size());
-
     if (sv.len() == 0)
         return;
 
-    auto domain = sv.find("://");
-    if (domain < sv.len()) {
-        this->protocol = sv_to_string(sv.substr(0, domain));
-        sv = sv.substr(domain + 3, sv.len() - (domain + 3));
+    auto pos = sv.find("://");
+    if (pos < sv.len()) {
+        this->protocol = sv_to_string(sv.substr(0, pos));
+        sv = sv.substr(pos + 3, sv.len() - (pos + 3));
     }
     
     struct { int start; int stop; bool found; } dom = {}, path = {}, que = {}, frag = {};
@@ -70,12 +70,8 @@ URL::URL(std::string s) : url(std::move(s)) {
         } 
     }
 
-    this->host = sv_to_string(sv.substr(dom.start, dom.stop - dom.start));
-    if (!this->host.empty()) {
-        auto [ip, port] = resolve_domain(this->protocol, this->host);
-        this->ip = std::move(ip);
-        this->port = port;
-    }
+    this->host = dom.found ? sv_to_string(sv.substr(dom.start, dom.stop - dom.start)) : sv_to_string(sv);
+
     if (path.found) {
         this->path = sv_to_string(sv.substr(path.start, path.stop - path.start));
         this->full_path = sv_to_string(sv.substr(path.start, sv.len() - path.start));
@@ -129,39 +125,52 @@ static const std::unordered_map<std::string, int> protocol_default_ports = {
     // Add more protocols and their default ports as needed
 };
 
-static auto resolve_domain(const std::string& protocol, const std::string& input) -> std::pair<std::string, int> {
-    auto sv = etl::string_view(input.data(), input.size());
+static constexpr auto parse_host(etl::StringView domain) -> std::pair<etl::StringView, etl::StringView> {
+    bool is_ipv6 = domain[0] == '[';
+    if (!is_ipv6)  {
+        auto pos = domain.find(":");
+        if (pos >= domain.len()) {
+            return {domain, ""};
+        }
+        return {domain.substr(0, pos), domain.substr(pos + 1, domain.len() - (pos + 1))};
+    }
+
+    auto pos = domain.find("]");
+    if (pos >= domain.len()) {
+        return {domain, ""};
+    }
+
+    auto host_sv = domain.substr(1, pos - 1);
+    etl::StringView port_sv = "";
+    if (domain[pos + 1] == ':') {
+        port_sv = domain.substr(pos + 2, domain.len() - (pos + 2));
+    }
+    return {host_sv, port_sv};
+}
+
+auto delameta_detail_resolve_domain(const std::string& domain, bool for_binding) -> etl::Result<struct addrinfo*, int> {
+    URL url = domain;
+    auto sv = etl::string_view(url.host.data(), url.host.size());
+    auto [host_sv, port_sv] = parse_host(sv);
     int port = 0;
-    bool use_https = false;  // Default to HTTP if no protocol is specified
-    auto [domain_sv, port_sv] = sv.split<2>(":");
-    std::string domain(domain_sv.data(), domain_sv.end());
+    std::string host(host_sv.data(), host_sv.len());
 
     if (port_sv.len() > 0) {
         port = port_sv.to_int();
     } else {
-        auto it = protocol_default_ports.find(protocol);
-        if (it != protocol_default_ports.end()) {
-            port = it->second;
-        } else {
-            port = use_https ? 443 : 80;
-        }
+        auto it = protocol_default_ports.find(url.protocol);
+        port = it == protocol_default_ports.end() ? 80 : it->second;
     }
 
-    struct addrinfo hints, *res;
+    struct addrinfo hints, *hint;
     std::memset(&hints, 0, sizeof(hints));
-    hints.ai_family = AF_INET; // Use AF_INET for IPv4
+    hints.ai_family = AF_UNSPEC; // Allow for IPv4 or IPv6
     hints.ai_socktype = SOCK_STREAM;
-    if (::getaddrinfo(domain.c_str(), nullptr, &hints, &res) != 0) {
-        return {std::move(domain), port}; // assuming the domain is already in ipv4 format
+    if (for_binding) hints.ai_flags = AI_PASSIVE; // For wildcard IP address
+
+    if (int code = ::getaddrinfo(host.c_str(), std::to_string(port).c_str(), &hints, &hint); code == 0) {
+        return etl::Ok(hint);
+    } else {
+        return etl::Err(code);
     }
-
-    char ip_str[INET_ADDRSTRLEN];
-    if (res != nullptr) {
-        struct sockaddr_in* ipv4 = (struct sockaddr_in*)res->ai_addr;
-        ::inet_ntop(AF_INET, &(ipv4->sin_addr), ip_str, sizeof(ip_str));
-    }
-
-    ::freeaddrinfo(res);
-
-    return {ip_str, port};
 }
