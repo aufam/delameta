@@ -40,7 +40,16 @@ set_target_properties(${PROJECT_NAME} PROPERTIES COMPILE_OPTIONS "-pthread")
 target_link_libraries(${PROJECT_NAME} PUBLIC ${CMAKE_THREAD_LIBS_INIT} stdc++fs)
 
 # etl dependency
-find_package(etl CONFIG REQUIRED)
+find_package(etl CONFIG QUIET)
+if (NOT etl_FOUND)
+    include(FetchContent)
+    FetchContent_Declare(
+        etl
+        GIT_REPOSITORY https://github.com/aufam/etl.git
+        GIT_TAG        main
+    )
+    FetchContent_MakeAvailable(etl)
+endif ()
 
 # install target
 install(TARGETS ${PROJECT_NAME}
