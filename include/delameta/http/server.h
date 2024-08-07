@@ -244,8 +244,7 @@ namespace Project::delameta::http {
                 return etl::Err(Error{StatusBadRequest, std::string(err_msg.data())});
             }
 
-            auto sv = item.dump();
-            return convert_string_into<T>(std::string_view(sv.data(), sv.len()));
+            return etl::json::deserialize<T>(item.dump()).except(internal_error);
         }
 
         template <typename T, typename F> static Result<T>

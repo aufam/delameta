@@ -15,6 +15,7 @@ void file_handler_init(Server& app);
 void serial_handler_init(Server& app);
 void modbus_rtu_init(Server& app);
 void larkin_init(Server& app);
+void jwt_init(Server& app);
 
 int main(int argc, char* argv[]) {
     std::string hostname = "localhost:5000";
@@ -44,6 +45,7 @@ int main(int argc, char* argv[]) {
     serial_handler_init(app);
     modbus_rtu_init(app);
     larkin_init(app);
+    jwt_init(app);
 
     on_sigint([&]() { app.stop(); });
 
