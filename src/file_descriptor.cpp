@@ -207,6 +207,10 @@ auto FileDescriptor::read_as_stream(size_t n) -> Stream {
 auto FileDescriptor::write(std::string_view data) -> Result<void> {
     size_t total = 0;
     for (size_t i = 0; i < data.size();) {
+        if (!delameta_detail_is_fd_alive(fd)) {
+            return log_err(__FILE__, __LINE__, this, Error::ConnectionClosed);
+        }
+
         auto n = std::min<size_t>(MAX_HANDLE_SZ, data.size() - i);
         auto sent = ::write(fd, &data[i], n);
         

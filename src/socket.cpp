@@ -187,6 +187,10 @@ auto Socket::read_as_stream(size_t n) -> Stream {
 auto Socket::write(std::string_view data) -> Result<void> {
     size_t total = 0;
     for (size_t i = 0; i < data.size();) {
+        if (!delameta_detail_is_socket_alive(socket)) {
+            return log_err(__FILE__, __LINE__, this, Error::ConnectionClosed);
+        }
+
         auto n = std::min<size_t>(MAX_HANDLE_SZ, data.size() - i);
         auto sent = ::send(socket, &data[i], n, 0);
         
