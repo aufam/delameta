@@ -13,14 +13,6 @@ http::Server::Error::Error(delameta::Error err) : status(StatusInternalServerErr
 
 static auto status_to_string(int status) -> std::string;
 
-auto http::Server::New(const char* file, int line, Args args) -> delameta::Result<Server> {
-    return tcp::Server::New(file, line, args).then([](tcp::Server server) {
-        return http::Server(std::move(server));
-    });
-}
-
-http::Server::Server(tcp::Server&& other) : tcp::Server(std::move(other)) {}
-
 auto http::Server::reroute(std::string path, etl::Ref<const RequestReader> req, etl::Ref<ResponseWriter> res) -> Result<void> {
     auto it = std::find_if(routers.begin(), routers.end(), [&](Server::Router& router) {
         return router.path == path;
@@ -34,40 +26,49 @@ auto http::Server::reroute(std::string path, etl::Ref<const RequestReader> req, 
     return Ok();
 }
 
-Stream http::Server::execute_stream_session(Socket& socket, const std::string& client_ip, const std::vector<uint8_t>& data) {
+void http::Server::bind(tcp::Server& server) {
+    server.handler = [this](Socket& socket, const std::string& client_ip, const std::vector<uint8_t>& data) -> Stream {
+        auto [req, res] = execute_stream_session(socket, data);
+
+        // handle connection
+        auto it = req.headers.find("Connection");
+        if (it == req.headers.end()) {
+            it = req.headers.find("connection");
+        }
+        if (it != req.headers.end()) {
+            if (it->second == "keep-alive") {
+                socket.keep_alive = true;
+            } else if (it->second == "close") {
+                socket.keep_alive = false;
+            }
+        }
+
+        // handle keep alive
+        it = req.headers.find("Keep-Alive");
+        if (it == req.headers.end()) {
+            it = req.headers.find("keep-alive");
+        }
+        if (it != req.headers.end()) {
+            std::string_view value = it->second;
+            auto timeout_idx = value.find("timeout=");
+            if (timeout_idx < value.size()) {
+                socket.timeout = ::atoi(value.data() + timeout_idx + 9);
+            }
+            auto max_idx = value.find("max=");
+            if (max_idx < value.size()) {
+                socket.max = ::atoi(value.data() + max_idx + 5);
+            }
+        }
+
+        if (logger) logger(client_ip, req, res);
+        return res.dump();
+    };
+}
+
+auto http::Server::execute_stream_session(Descriptor& socket, const std::vector<uint8_t>& data) -> std::pair<RequestReader, ResponseWriter> {
     auto start = std::chrono::high_resolution_clock::now();
     auto req = http::RequestReader(socket, data);
     auto res = http::ResponseWriter{};
-
-    // handle connection
-    auto it = req.headers.find("Connection");
-    if (it == req.headers.end()) {
-        it = req.headers.find("connection");
-    }
-    if (it != req.headers.end()) {
-        if (it->second == "keep-alive") {
-            socket.keep_alive = true;
-        } else if (it->second == "close") {
-            socket.keep_alive = false;
-        }
-    }
-
-    // handle keep alive
-    it = req.headers.find("Keep-Alive");
-    if (it == req.headers.end()) {
-        it = req.headers.find("keep-alive");
-    }
-    if (it != req.headers.end()) {
-        std::string_view value = it->second;
-        auto timeout_idx = value.find("timeout=");
-        if (timeout_idx < value.size()) {
-            socket.timeout = ::atoi(value.data() + timeout_idx + 9);
-        }
-        auto max_idx = value.find("max=");
-        if (max_idx < value.size()) {
-            socket.max = ::atoi(value.data() + max_idx + 5);
-        }
-    }
     
     // TODO: version handling
     res.version = req.version;
@@ -111,9 +112,8 @@ Stream http::Server::execute_stream_session(Socket& socket, const std::string& c
     auto elapsed = std::chrono::high_resolution_clock::now() - start;
     auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
     if (show_response_time) res.headers["X-Response-Time"] = std::to_string(elapsed_ms) + "ms";
-    if (logger) logger(client_ip, req, res);
 
-    return res.dump();
+    return {std::move(req), std::move(res)};
 }
 
 static auto status_to_string(int status) -> std::string {

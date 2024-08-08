@@ -9,13 +9,13 @@
 
 namespace Project::delameta::http {
 
-    class Server : public tcp::Server {
+    class Server : public Movable {
     public:
-        Server(Server&&) = default;
-        Server& operator=(Server&&) = default;
+        Server() = default;
         virtual ~Server() = default;
 
-        static delameta::Result<Server> New(const char* file, int line, Args args);
+        Server(Server&&) noexcept = default;
+        Server& operator=(Server&&) noexcept = default;
 
         using RouterFunction = std::function<void(const RequestReader&, ResponseWriter&)>;
         using HeaderGenerator = std::unordered_map<std::string, std::function<std::string(const RequestReader&, ResponseWriter&)>>;
@@ -125,15 +125,11 @@ namespace Project::delameta::http {
         std::function<void(Error, const RequestReader&, ResponseWriter&)> error_handler = default_error_handler;
         std::list<Router> routers;
         bool show_response_time = false;
+
+        void bind(tcp::Server& server);
+        std::pair<RequestReader, ResponseWriter> execute_stream_session(Descriptor& desc, const std::vector<uint8_t>& data);
     
     protected:
-        Server(tcp::Server&&);
-
-        Stream execute_stream_session(Socket& socket, const std::string& client_ip, const std::vector<uint8_t>& data) override;
-
-        template <typename... Args>
-        struct has_stream_t;
-
         template <typename... RouterArgs, typename R, typename ...HandlerArgs>
         auto route_(
             std::string path, 

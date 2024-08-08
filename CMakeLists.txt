@@ -10,7 +10,7 @@ option(BUILD_APP "Build the main app" ON)
 
 # some messages
 message("API version      : ${PROJECT_VERSION}")
-message("BUILD_APP       : ${BUILD_APP}")
+message("BUILD_APP        : ${BUILD_APP}")
 
 # build library
 file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS src/*.*)

@@ -21,17 +21,17 @@ namespace Project::delameta::tcp {
         Result<void> start();
         void stop();
 
-    protected:
-        explicit Server(Socket* socket);
-        Socket* socket;
-        
         using StreamSessionHandler = std::function<Stream(
             Socket& socket, 
             const std::string& client_ip, 
             const std::vector<uint8_t>& data
         )>;
-
         StreamSessionHandler handler;
+
+    protected:
+        explicit Server(Socket* socket);
+        Socket* socket;
+        
         std::function<void()> on_stop;
 
         virtual Stream execute_stream_session(
