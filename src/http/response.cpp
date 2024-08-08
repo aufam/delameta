@@ -44,7 +44,10 @@ void http::ResponseReader::parse(Descriptor& desc, const std::vector<uint8_t>& d
     auto status = methods[1].to_int();
     auto status_string = methods[2].split<1>("\n")[0];
     
-    sv = status_string.end() + 1;
+    auto sv_begin = status_string.end() + 1;
+    size_t sv_len = sv.end() > sv_begin && status_string.end() != nullptr ? sv.end() - sv_begin : 0;
+    sv = etl::StringView{sv_begin, sv_len};
+
     if (status_string and status_string.back() == '\r')
         status_string = status_string.substr(0, status_string.len() - 1);
     

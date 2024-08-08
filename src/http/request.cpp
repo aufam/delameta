@@ -26,7 +26,10 @@ void http::RequestReader::parse(Descriptor& desc, const std::vector<uint8_t>& da
     auto path = request_line[1];
     auto version = request_line[2].split<1>("\n")[0];
     
-    sv = version.end() + 1;
+    auto sv_begin = version.end() + 1;
+    size_t sv_len = sv.end() > sv_begin && version.end() != nullptr ? sv.end() - sv_begin : 0;
+    sv = etl::StringView{sv_begin, sv_len};
+
     if (version and version.back() == '\r')
         version = version.substr(0, version.len() - 1);
     
@@ -100,9 +103,6 @@ void delameta_detail_http_request_response_reader_parse_headers_body(
 
     auto hsv = sv.substr(0, head_end);
     auto body_length = sv.len() - body_start;
-    if (body_length > 0) {
-        body_stream << std::string(sv.data() + body_start, body_length);
-    }
 
     bool content_length_found = false;
     bool connection_found = false;
@@ -125,11 +125,18 @@ void delameta_detail_http_request_response_reader_parse_headers_body(
         if (not content_length_found and (key == "Content-Length" or key == "content-length")) {
             content_length_found = true;
             int cl = value.to_int();
-            if (cl >= int(body_length)) cl -= body_length;
-            body_stream << desc.read_as_stream(cl);
+            if (cl > int(body_length))  {
+                body_stream << desc.read_as_stream(cl - body_length); // read the rest as stream
+            } else if (cl >= 0 && cl < int(body_length)) {
+                body_length = cl; // body length somehow exceeds content-length
+            }
         }
 
         // store the header
         headers[std::string_view(key.data(), key.len())] = std::string_view(value.data(), value.len());
     }
+
+    body_stream.rules.push_front([body=std::string(sv.data() + body_start, body_length)]() -> std::string_view {
+        return body;
+    });
 }
