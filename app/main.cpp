@@ -12,26 +12,6 @@ using Project::delameta::panic;
 
 static Server app;
 
-class App {
-public:
-    template <typename... Args, typename F> 
-    App(std::string path, std::vector<const char*> methods, std::tuple<Args...> args, F&& handler) {
-        app.route(std::move(path), std::move(methods), std::move(args), std::forward<F>(handler));
-    }
-};
-
-#define APP_MAKE_METHODS(...) std::vector<const char*>{__VA_ARGS__}
-
-#define APP_ROUTE(path, methods, http_args, return_type, name, args) \
-return_type name args; \
-static const App _##name##_route_impl(path, APP_MAKE_METHODS methods, std::make_tuple http_args, name); \
-return_type name args
-
-APP_ROUTE("/test/http_route", ("GET", "POST"), (), 
-std::string, test_http_route, ()) {
-    return "Ok";
-}
-
 void example_init(Server& app);
 void exec_init(Server& app);
 void file_handler_init(Server& app);
