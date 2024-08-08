@@ -1,7 +1,10 @@
 #include "delameta/stream.h"
+#include "delameta.h"
 
 using namespace Project;
 using namespace delameta;
+
+using etl::Err;
 
 Stream& Stream::operator<<(std::string_view data) {
     return (rules.push_back([data]() { return data; }), *this);
@@ -62,4 +65,39 @@ Stream& Stream::operator>>(Descriptor& des) {
         rules.pop_front();
     }
     return *this;
+}
+
+StreamSessionServer::StreamSessionServer(StreamSessionHandler handler) : handler(std::move(handler)) {}
+
+Stream StreamSessionServer::execute_stream_session(Descriptor& desc, const std::string& name, const std::vector<uint8_t> data) {
+    return handler ? handler(desc, name, data) : Stream{};
+}
+
+StreamSessionClient::StreamSessionClient(Descriptor* desc) : desc(desc) {}
+
+StreamSessionClient::~StreamSessionClient() {
+    if (desc) {
+        delete desc;
+        desc = nullptr;
+    }
+}
+
+StreamSessionClient::StreamSessionClient(StreamSessionClient&& other) : desc(std::exchange(other.desc, nullptr)) {}
+
+StreamSessionClient& StreamSessionClient::operator=(StreamSessionClient&& other) {
+    if (this == &other) return *this;
+    delete desc;
+    desc = std::exchange(other.desc, nullptr);
+    return *this;
+}
+
+auto StreamSessionClient::request(Stream& in_stream) -> Result<std::vector<uint8_t>> {
+    if (desc == nullptr) {
+        std::string what = "Fatal error: No descriptor created in the session";
+        warning(__FILE__, __LINE__, what);
+        return Err(Error{-1, what});
+    }
+
+    in_stream >> *desc;
+    return desc->read();
 }

@@ -1,7 +1,6 @@
 #ifndef PROJECT_HTTP_SERVER_H
 #define PROJECT_HTTP_SERVER_H
 
-#include "delameta/tcp/server.h"
 #include "delameta/http/request.h"
 #include "delameta/http/response.h"
 #include "etl/json_serialize.h"
@@ -126,8 +125,8 @@ namespace Project::delameta::http {
         std::list<Router> routers;
         bool show_response_time = false;
 
-        void bind(tcp::Server& server);
-        std::pair<RequestReader, ResponseWriter> execute_stream_session(Descriptor& desc, const std::vector<uint8_t>& data);
+        void bind(StreamSessionServer& server) const;
+        std::pair<RequestReader, ResponseWriter> execute(Descriptor& desc, const std::vector<uint8_t>& data) const;
     
     protected:
         template <typename... RouterArgs, typename R, typename ...HandlerArgs>

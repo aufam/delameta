@@ -1,5 +1,6 @@
 #include "delameta/http/server.h"
-#include "delameta/modbus/rtu/client.h"
+#include "delameta/modbus/client.h"
+#include "delameta/serial/client.h"
 #include <iostream>
 #include <chrono>
 #include <thread>
@@ -7,7 +8,8 @@
 using namespace Project;
 using namespace delameta;
 using namespace std::literals;
-using delameta::modbus::rtu::Client;
+using delameta::modbus::Client;
+using Serial = delameta::serial::Client;
 
 static float power_of_ten(int exponent) {
     float result = 1.0;
@@ -156,10 +158,12 @@ void larkin_init(http::Server& app) {
         http::arg::arg("address"),
         http::arg::default_val("port", std::string("auto")), 
         http::arg::default_val("baud", 9600),
+        http::arg::default_val("tout", 5),
     }, 
-    [](int address, std::string port, int baud) -> http::Server::Result<Larkin> {
-        return Client::New(__FILE__, __LINE__, {address, port, baud})
-        .and_then([](Client cli) -> modbus::Result<std::vector<uint16_t>> {
+    [](int address, std::string port, int baud, int tout) -> http::Server::Result<Larkin> {
+        return Serial::New(__FILE__, __LINE__, {port, baud, tout})
+        .and_then([address](Serial session) -> modbus::Result<std::vector<uint16_t>> {
+            Client cli(address, session);
             auto chunk1 =  cli.ReadHoldingRegisters(Larkin::RegisterAddress, Larkin::RegisterSize / 2);
             if (chunk1.is_err()) {
                 return etl::Err(chunk1.unwrap_err());
@@ -175,9 +179,6 @@ void larkin_init(http::Server& app) {
             res.insert(res.end(), chunk2.unwrap().begin(), chunk2.unwrap().end());
 
             return etl::Ok(std::move(res));
-        })
-        .except([](modbus::Error err) {
-            return http::Server::Error{http::StatusInternalServerError, err.what + ": " + std::to_string(err.code)};
         })
         .and_then(Larkin::New);
     });

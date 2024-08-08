@@ -1,9 +1,11 @@
 #include "delameta/http/server.h"
-#include "delameta/modbus/rtu/client.h"
+#include "delameta/modbus/client.h"
+#include "delameta/serial/client.h"
 
 using namespace Project;
 using namespace delameta;
-using delameta::modbus::rtu::Client;
+using delameta::modbus::Client;
+using Session = delameta::serial::Client;
 
 static auto mbus_error_to_http_error(modbus::Error err) {
     return http::Server::Error{http::StatusInternalServerError, "modbus error: " + err.what};
@@ -11,7 +13,8 @@ static auto mbus_error_to_http_error(modbus::Error err) {
 
 template <modbus::FunctionCode code>
 static auto mbus_read(int address, std::string port, int baud, uint16_t reg, uint16_t n) {
-    return Client::New(__FILE__, __LINE__, {address, port, baud}).and_then([reg, n](Client cli) {
+    return Session::New(__FILE__, __LINE__, {port, baud}).and_then([address, reg, n](Session session) {
+        Client cli(address, session);
         if constexpr (code == modbus::FunctionCodeReadCoils) return cli.ReadCoils(reg, n);
         else if constexpr (code == modbus::FunctionCodeReadDiscreteInputs) return cli.ReadDiscreteInputs(reg, n);
         else if constexpr (code == modbus::FunctionCodeReadHoldingRegisters) return cli.ReadHoldingRegisters(reg, n);
@@ -22,7 +25,8 @@ static auto mbus_read(int address, std::string port, int baud, uint16_t reg, uin
 
 template <modbus::FunctionCode code, typename T>
 static auto mbus_write_single(int address, std::string port, int baud, uint16_t reg, T value) {
-    return Client::New(__FILE__, __LINE__, {address, port, baud}).and_then([reg, value](Client cli) {
+    return Session::New(__FILE__, __LINE__, {port, baud}).and_then([address, reg, value](Session session) {
+        Client cli(address, session);
         if constexpr (code == modbus::FunctionCodeWriteSingleCoil) return cli.WriteSingleCoil(reg, value);
         else if constexpr (code == modbus::FunctionCodeWriteSingleRegister) return cli.WriteSingleRegister(reg, value);
     })
@@ -31,7 +35,8 @@ static auto mbus_write_single(int address, std::string port, int baud, uint16_t 
 
 template <modbus::FunctionCode code, typename T>
 static auto mbus_write_multiple(int address, std::string port, int baud, uint16_t reg, std::vector<T> values) {
-    return Client::New(__FILE__, __LINE__, {address, port, baud}).and_then([reg, &values](Client cli) {
+    return Session::New(__FILE__, __LINE__, {port, baud}).and_then([address, reg, &values](Session session) {
+        Client cli(address, session);
         if constexpr (code == modbus::FunctionCodeWriteMultipleCoils) return cli.WriteMultipleCoils(reg, values);
         else if constexpr (code == modbus::FunctionCodeWriteMultipleRegisters) return cli.WriteMultipleRegisters(reg, values);
     })

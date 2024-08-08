@@ -120,11 +120,13 @@ auto serial::Server::New(const char* file, int line, Args args) -> Result<Server
     });
 }
 
-serial::Server::Server(FileDescriptor* fd) : fd(fd) {}
+serial::Server::Server(FileDescriptor* fd) 
+    : StreamSessionServer({})
+    , fd(fd) {}
 
 serial::Server::Server(Server&& other) 
-    : fd(std::exchange(other.fd, nullptr))
-    , handler(std::move(other.handler))
+    : StreamSessionServer(std::move(other.handler))
+    , fd(std::exchange(other.fd, nullptr))
     , on_stop(std::move(other.on_stop)) {}
 
 auto serial::Server::operator=(Server&& other) -> Server& {
@@ -175,7 +177,7 @@ auto serial::Server::start() -> Result<void> {
 
         std::lock_guard<std::mutex> lock(mtx);
         threads.emplace_back([this, data=std::move(read_result.unwrap()), &threads, &mtx, &is_running]() mutable {
-            auto stream = execute_stream_session(*fd, data);
+            auto stream = execute_stream_session(*fd, delameta_detail_get_filename(fd->fd), data);
             stream >> *fd;
 
             // remove this thread from threads
@@ -199,11 +201,4 @@ void serial::Server::stop() {
     if (on_stop) {
         on_stop();
     }
-}
-
-Stream serial::Server::execute_stream_session(FileDescriptor& fd, const std::vector<uint8_t>& data) {
-    if (handler) {
-        return handler(fd, data);
-    }
-    return {};
 }

@@ -62,6 +62,32 @@ namespace Project::delameta {
         Stream& operator<<(Descriptor& des);
         Stream& operator>>(Descriptor& des);
     };
+
+    class StreamSessionServer : public Movable {
+    public:
+        using StreamSessionHandler = std::function<Stream(Descriptor&, const std::string&, const std::vector<uint8_t>&)>;
+
+        StreamSessionServer(StreamSessionHandler handler);
+        virtual ~StreamSessionServer() = default;
+
+        StreamSessionServer(StreamSessionServer&&) noexcept = default;
+        StreamSessionServer& operator=(StreamSessionServer&&) noexcept = default;
+
+        Stream execute_stream_session(Descriptor& desc, const std::string& name, const std::vector<uint8_t> data);
+        StreamSessionHandler handler;
+    };
+
+    class StreamSessionClient : public Movable {
+    public:
+        StreamSessionClient(Descriptor* desc);
+        virtual ~StreamSessionClient();
+
+        StreamSessionClient(StreamSessionClient&& other);
+        StreamSessionClient& operator=(StreamSessionClient&& other);
+
+        Result<std::vector<uint8_t>> request(Stream& in_stream);
+        Descriptor* desc;
+    };
 }
 
 #endif

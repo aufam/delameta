@@ -1,5 +1,6 @@
 #include "delameta/http/server.h"
 #include "delameta/http/client.h"
+#include "delameta/tcp/client.h"
 #include "debug.ipp"
 
 using namespace Project;
@@ -186,10 +187,11 @@ void example_init(Server& app) {
     std::tuple{arg::request, arg::arg("url")}, 
     [](Ref<const RequestReader> req, std::string url_str) -> Server::Result<ResponseReader> {
         URL url = url_str;
-        return Client::New(__FILE__, __LINE__, {url.host}).and_then([&](Client cli) {
-            RequestWriter request = *req;
-            request.url = url;
-            return cli.request(std::move(request));
+        using TCPClient = delameta::tcp::Client;
+        return TCPClient::New(__FILE__, __LINE__, {url.host}).and_then([&](TCPClient cli) {
+            RequestWriter data = *req;
+            data.url = url;
+            return request(cli, std::move(data));
         });
     });
 

@@ -6,7 +6,7 @@ using namespace Project::delameta;
 using etl::Err;
 using etl::Ok;
 
-auto http::Client::request(http::RequestWriter req) -> Result<http::ResponseReader> {
+auto http::request(StreamSessionClient& session, RequestWriter req) -> Result<ResponseReader> {
     if (req.headers.find("User-Agent") == req.headers.end() && 
         req.headers.find("user-agent") == req.headers.end()
     ) {
@@ -22,15 +22,7 @@ auto http::Client::request(http::RequestWriter req) -> Result<http::ResponseRead
     if (req.body.empty() && req.body_stream.rules.empty()) req.headers["Content-Length"] = "0";
 
     Stream s = req.dump();
-    return tcp::Client::request(s).then([this](std::vector<uint8_t> data) {
-        return http::ResponseReader(*socket, std::move(data));
+    return session.request(s).then([&session](std::vector<uint8_t> data) {
+        return http::ResponseReader(*session.desc, std::move(data));
     });
 }
-
-auto http::Client::New(const char* file, int line, Args args) -> Result<http::Client> {
-    return tcp::Client::New(file, line, args).then([](tcp::Client cli) {
-        return http::Client(std::move(cli));
-    });
-}
-
-http::Client::Client(tcp::Client&& other) : tcp::Client(std::move(other)) {}

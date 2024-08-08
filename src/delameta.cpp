@@ -5,6 +5,8 @@
 #include <fcntl.h>
 #include <string>
 #include <iostream>
+#include <sstream>
+#include <limits.h>
 #include "delameta/stream.h"
 
 namespace Project::delameta {
@@ -44,19 +46,43 @@ bool delameta_detail_is_socket_alive(int socket) {
 }
 
 auto delameta_detail_get_ip(int socket) -> std::string {
-    sockaddr_in addr;
+    sockaddr_storage addr;
     socklen_t addr_len = sizeof(addr);
-    
-    // Get the address of the remote end
+
     if (getpeername(socket, (sockaddr*)&addr, &addr_len) != 0) {
-        panic(__FILE__, __LINE__, "Failed to get socket peername");
+        warning(__FILE__, __LINE__, ::strerror(errno));
+        return "<Invalid socket>";
     }
-    
-    // Convert to human-readable format
-    char ip_str[INET_ADDRSTRLEN];
-    if (inet_ntop(AF_INET, &addr.sin_addr, ip_str, sizeof(ip_str)) == NULL) {
-        panic(__FILE__, __LINE__, "Failed to get client ip");
+
+    char ip_str[INET6_ADDRSTRLEN];
+    void* addr_ptr = nullptr;
+
+    if (addr.ss_family == AF_INET) { // IPv4
+        addr_ptr = &((sockaddr_in*)&addr)->sin_addr;
+    } else if (addr.ss_family == AF_INET6) { // IPv6
+        addr_ptr = &((sockaddr_in6*)&addr)->sin6_addr;
+    } else {
+        warning(__FILE__, __LINE__, "Unknown address family");
+        return "<Invalid socket>";
     }
-    
+
+    if (inet_ntop(addr.ss_family, addr_ptr, ip_str, sizeof(ip_str)) == nullptr) {
+        warning(__FILE__, __LINE__, ::strerror(errno));
+        return "<Invalid socket>";
+    }
+
     return std::string(ip_str);
+}
+
+auto delameta_detail_get_filename(int fd) -> std::string {
+    char filename[PATH_MAX];
+    ssize_t len = readlink(("/proc/self/fd/" + std::to_string(fd)).c_str(), filename, sizeof(filename) - 1);
+
+    if (len != -1) {
+        filename[len] = '\0';
+        return std::string(filename);
+    } else {
+        warning(__FILE__, __LINE__, ::strerror(errno));
+        return "<Invalid fd>";
+    }
 }

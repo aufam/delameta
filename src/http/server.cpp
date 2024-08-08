@@ -1,4 +1,5 @@
 #include "delameta/http/server.h"
+#include "delameta/socket.h"
 #include <chrono>
 
 using namespace Project;
@@ -26,48 +27,50 @@ auto http::Server::reroute(std::string path, etl::Ref<const RequestReader> req, 
     return Ok();
 }
 
-void http::Server::bind(tcp::Server& server) {
-    server.handler = [this](Socket& socket, const std::string& client_ip, const std::vector<uint8_t>& data) -> Stream {
-        auto [req, res] = execute_stream_session(socket, data);
+void http::Server::bind(StreamSessionServer& server) const {
+    server.handler = [this](Descriptor& desc, const std::string& name, const std::vector<uint8_t>& data) -> Stream {
+        auto [req, res] = execute(desc, data);
 
-        // handle connection
-        auto it = req.headers.find("Connection");
-        if (it == req.headers.end()) {
-            it = req.headers.find("connection");
-        }
-        if (it != req.headers.end()) {
-            if (it->second == "keep-alive") {
-                socket.keep_alive = true;
-            } else if (it->second == "close") {
-                socket.keep_alive = false;
+        // handle socket configuration
+        if (auto socket = dynamic_cast<Socket*>(&desc); socket) {
+            auto it = req.headers.find("Connection");
+            if (it == req.headers.end()) {
+                it = req.headers.find("connection");
+            }
+            if (it != req.headers.end()) {
+                if (it->second == "keep-alive") {
+                    socket->keep_alive = true;
+                } else if (it->second == "close") {
+                    socket->keep_alive = false;
+                }
+            }
+
+            // handle keep alive
+            it = req.headers.find("Keep-Alive");
+            if (it == req.headers.end()) {
+                it = req.headers.find("keep-alive");
+            }
+            if (it != req.headers.end()) {
+                std::string_view value = it->second;
+                auto timeout_idx = value.find("timeout=");
+                if (timeout_idx < value.size()) {
+                    socket->timeout = ::atoi(value.data() + timeout_idx + 9);
+                }
+                auto max_idx = value.find("max=");
+                if (max_idx < value.size()) {
+                    socket->max = ::atoi(value.data() + max_idx + 5);
+                }
             }
         }
 
-        // handle keep alive
-        it = req.headers.find("Keep-Alive");
-        if (it == req.headers.end()) {
-            it = req.headers.find("keep-alive");
-        }
-        if (it != req.headers.end()) {
-            std::string_view value = it->second;
-            auto timeout_idx = value.find("timeout=");
-            if (timeout_idx < value.size()) {
-                socket.timeout = ::atoi(value.data() + timeout_idx + 9);
-            }
-            auto max_idx = value.find("max=");
-            if (max_idx < value.size()) {
-                socket.max = ::atoi(value.data() + max_idx + 5);
-            }
-        }
-
-        if (logger) logger(client_ip, req, res);
+        if (logger) logger(name, req, res);
         return res.dump();
     };
 }
 
-auto http::Server::execute_stream_session(Descriptor& socket, const std::vector<uint8_t>& data) -> std::pair<RequestReader, ResponseWriter> {
+auto http::Server::execute(Descriptor& desc, const std::vector<uint8_t>& data) const -> std::pair<RequestReader, ResponseWriter> {
     auto start = std::chrono::high_resolution_clock::now();
-    auto req = http::RequestReader(socket, data);
+    auto req = http::RequestReader(desc, data);
     auto res = http::ResponseWriter{};
     
     // TODO: version handling

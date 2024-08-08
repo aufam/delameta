@@ -1,4 +1,5 @@
 #include "delameta/http/server.h"
+#include "delameta/tcp/server.h"
 #include "debug.ipp"
 #include "on_sigint.ipp"
 #include "options.ipp"

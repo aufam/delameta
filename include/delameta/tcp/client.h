@@ -5,10 +5,10 @@
 
 namespace Project::delameta::tcp {
 
-    class Client : public delameta::Movable {
+    class Client : public StreamSessionClient {
     public:
-        Client(Client&&);
-        Client& operator=(Client&&);
+        Client(Client&&) = default;
+        Client& operator=(Client&&) = default;
 
         struct Args {
             std::string host; 
@@ -16,13 +16,10 @@ namespace Project::delameta::tcp {
         };
 
         static Result<Client> New(const char* file, int line, Args args);
-        virtual ~Client();
-
-        Result<std::vector<uint8_t>> request(Stream& in_stream);
+        virtual ~Client() = default;
 
     protected:
         explicit Client(Socket* socket);
-        Socket* socket;
     };
 }
 

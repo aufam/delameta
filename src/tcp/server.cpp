@@ -64,11 +64,13 @@ auto tcp::Server::New(const char* file, int line, Args args) -> Result<Server> {
     return Err(std::move(err));
 }
 
-tcp::Server::Server(Socket* socket) : socket(socket) {}
+tcp::Server::Server(Socket* socket) 
+    : StreamSessionServer({})
+    , socket(socket) {}
 
 tcp::Server::Server(Server&& other) 
-    : socket(std::exchange(other.socket, nullptr))
-    , handler(std::move(other.handler))
+    : StreamSessionServer(std::move(other.handler))
+    , socket(std::exchange(other.socket, nullptr))
     , on_stop(std::move(other.on_stop)) {}
 
 auto tcp::Server::operator=(Server&& other) -> Server& {
@@ -174,11 +176,4 @@ void tcp::Server::stop() {
     if (on_stop) {
         on_stop();
     }
-}
-
-Stream tcp::Server::execute_stream_session(Socket& stream, const std::string& client_ip, const std::vector<uint8_t>& data) {
-    if (handler) {
-        return handler(stream, client_ip, data);
-    }
-    return {};
 }
