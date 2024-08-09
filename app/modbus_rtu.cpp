@@ -7,10 +7,6 @@ using namespace delameta;
 using delameta::modbus::Client;
 using Session = delameta::serial::Client;
 
-static auto mbus_error_to_http_error(modbus::Error err) {
-    return http::Server::Error{http::StatusInternalServerError, "modbus error: " + err.what};
-}
-
 template <modbus::FunctionCode code>
 static auto mbus_read(int address, std::string port, int baud, uint16_t reg, uint16_t n) {
     return Session::New(__FILE__, __LINE__, {port, baud}).and_then([address, reg, n](Session session) {
@@ -19,8 +15,7 @@ static auto mbus_read(int address, std::string port, int baud, uint16_t reg, uin
         else if constexpr (code == modbus::FunctionCodeReadDiscreteInputs) return cli.ReadDiscreteInputs(reg, n);
         else if constexpr (code == modbus::FunctionCodeReadHoldingRegisters) return cli.ReadHoldingRegisters(reg, n);
         else if constexpr (code == modbus::FunctionCodeReadInputRegisters) return cli.ReadInputRegisters(reg, n);
-    })
-    .except(mbus_error_to_http_error);
+    });
 }
 
 template <modbus::FunctionCode code, typename T>
@@ -29,8 +24,7 @@ static auto mbus_write_single(int address, std::string port, int baud, uint16_t 
         Client cli(address, session);
         if constexpr (code == modbus::FunctionCodeWriteSingleCoil) return cli.WriteSingleCoil(reg, value);
         else if constexpr (code == modbus::FunctionCodeWriteSingleRegister) return cli.WriteSingleRegister(reg, value);
-    })
-    .except(mbus_error_to_http_error);
+    });
 }
 
 template <modbus::FunctionCode code, typename T>
@@ -39,8 +33,7 @@ static auto mbus_write_multiple(int address, std::string port, int baud, uint16_
         Client cli(address, session);
         if constexpr (code == modbus::FunctionCodeWriteMultipleCoils) return cli.WriteMultipleCoils(reg, values);
         else if constexpr (code == modbus::FunctionCodeWriteMultipleRegisters) return cli.WriteMultipleRegisters(reg, values);
-    })
-    .except(mbus_error_to_http_error);
+    });
 }
 
 void modbus_rtu_init(http::Server& app) {
