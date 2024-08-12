@@ -8,7 +8,7 @@ namespace Project::delameta::tcp {
     class Server : public StreamSessionServer {
     public:
         Server(Server&&);
-        Server& operator=(Server&&);
+        virtual ~Server();
 
         struct Args {
             std::string host;
@@ -16,14 +16,14 @@ namespace Project::delameta::tcp {
         };
 
         static Result<Server> New(const char* file, int line, Args args);
-        virtual ~Server();
 
         Result<void> start();
         void stop();
 
+        Socket socket;
+
     protected:
-        explicit Server(Socket* socket);
-        Socket* socket;
+        explicit Server(Socket&& socket);
         std::function<void()> on_stop;
     };
 }

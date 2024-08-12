@@ -8,17 +8,20 @@ void delameta_detail_http_request_response_reader_parse_headers_body(
     etl::StringView sv, 
     std::unordered_map<std::string_view, std::string_view>& headers, 
     Descriptor& desc,
-    delameta::Stream& body_stream
+    Stream& body_stream
 );
 
 auto http::ResponseWriter::dump() -> Stream {
     Stream s;
-    s << std::move(version) + " " + std::to_string(status) + " " + std::move(status_string) + "\r\n";
+    std::string payload = std::move(version) + " " + std::to_string(status) + " " + std::move(status_string) + "\r\n";
     for (auto &[key, value]: headers) {
-        s << std::move(key) + ": " + std::move(value) + "\r\n";
+        payload += std::move(key) + ": " + std::move(value) + "\r\n";
     }
 
-    s << "\r\n";
+    payload += "\r\n";
+
+    s << std::move(payload);
+
     if (!body.empty()) {
         s << std::move(body);
     }

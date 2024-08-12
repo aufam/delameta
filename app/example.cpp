@@ -1,7 +1,8 @@
+#include <boost/preprocessor.hpp>
 #include "delameta/http/server.h"
 #include "delameta/http/client.h"
 #include "delameta/tcp/client.h"
-#include "debug.ipp"
+#include "delameta/debug.h"
 
 using namespace Project;
 using namespace Project::delameta::http;
@@ -79,15 +80,24 @@ static auto get_token(const RequestReader& req, ResponseWriter&) -> Server::Resu
     } else {
         return Err(Server::Error{StatusUnauthorized, "Token doesn't match"});
     }
-};
+}
 
-void example_init(Server& app) {
+HTTP_EXTERN_OBJECT(app);
+
+static void example_init();
+class Example {
+public:
+    Example() { example_init(); }
+};
+static Example example HTTP_LATE_INIT;
+
+static void example_init() {
     // show response time in the response header
     app.show_response_time = true;
 
     app.logger = [](const std::string& ip, const RequestReader& req, const ResponseWriter& res) {
         std::string msg = ip + " " + std::string(req.method) + " " + req.url.path + " " + std::to_string(res.status) + " " + res.status_string;
-        info(__FILE__, __LINE__, msg);
+        DBG(info, msg);
     };
 
     // example custom handler: jsonify Server::Error

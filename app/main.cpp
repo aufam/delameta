@@ -1,66 +1,66 @@
+#include <boost/preprocessor.hpp>
 #include "delameta/http/server.h"
 #include "delameta/tcp/server.h"
-#include "debug.ipp"
-#include "on_sigint.ipp"
-#include "options.ipp"
+#include "delameta/debug.h"
+#include "delameta/opts.h"
+#include <iostream>
+#include <iomanip>
+#include <chrono>
+#include <csignal>
 
-using Project::delameta::http::Server;
-using TCPServer = Project::delameta::tcp::Server;
-using Project::delameta::URL;
-using Project::delameta::Error;
-using Project::delameta::info;
-using Project::delameta::panic;
+using namespace Project;
+using namespace Project::delameta;
+using http::Server;
+using TCPServer = tcp::Server;
+using etl::Err;
+using etl::Ok;
 
-static Server app;
+HTTP_DEFINE_OBJECT(app);
 
-void example_init(Server& app);
-void exec_init(Server& app);
-void file_handler_init(Server& app);
-void serial_handler_init(Server& app);
-void modbus_rtu_init(Server& app);
-void larkin_init(Server& app);
-void jwt_init(Server& app);
+static void on_sigint(std::function<void()> fn);
 
-int main(int argc, char* argv[]) {
-    static const auto hostname_default = "localhost:5000";
-    std::string hostname = hostname_default;
-
-    execute_options(argc, argv, {
-        {'H', "host", required_argument, [&](const char* arg) {
-            hostname = arg;
-        }},
-        {'h', "help", no_argument, [](const char*) {
-            std::cout << 
-                "Delameta API\n"
-                "Options:\n"
-                "-H, --host Specify the server host. Default = " << hostname_default << "\n"
-                "-h, --help Print help\n";
-            exit(0);
-        }}
+OPTS_MAIN(
+    (ExampleAPI, "Example API"),
+    (URL, host, 'H', "host", "Specify host server", "localhost:5000"),
+    (Result<void>)
+) {
+    auto tcp_server = TCPServer::New(FL, {host.host}).expect([](Error err) {
+        DBG(panic, err.what);
     });
 
-    URL host = hostname;
-    info(__FILE__, __LINE__, "debug: hostname: " + hostname);
-    auto server = TCPServer::New(__FILE__, __LINE__, {hostname}).expect([](Error err) {
-        panic(__FILE__, __LINE__, err.what);
-    });
+    app.bind(tcp_server);
+    on_sigint([&]() { tcp_server.stop(); });
 
-    app.bind(server);
+    DBG(info, "Server is starting on " + host.host);
+    return tcp_server.start();
+}
 
-    example_init(app);
-    exec_init(app);
-    file_handler_init(app);
-    serial_handler_init(app);
-    modbus_rtu_init(app);
-    larkin_init(app);
-    jwt_init(app);
+static void on_sigint(std::function<void()> fn) {
+    static std::function<void()> at_exit;
+    at_exit = std::move(fn);
+    auto sig = +[](int) { at_exit(); };
+    std::signal(SIGINT, sig);
+    std::signal(SIGTERM, sig);
+    std::signal(SIGQUIT, sig);
+}
 
-    on_sigint([&]() { server.stop(); });
+static auto debug_time() {
+    auto now = std::chrono::system_clock::now();
+    std::time_t now_c = std::chrono::system_clock::to_time_t(now);
+    std::tm* local_time = std::localtime(&now_c);
+    return std::put_time(local_time, "%Y-%m-%d %H:%M:%S");
+}
 
-    info(__FILE__, __LINE__, "Server is starting on " + host.host);
-    server.start().expect([](Error err) {
-        panic(__FILE__, __LINE__, err.what);
-    });
+namespace Project::delameta {
 
-    return 0;
+    void info(const char* file, int line, const std::string& msg) {
+        std::cout << debug_time() << " " << file << ":" << std::to_string(line) << ": INFO: " << msg << '\n';
+    }
+    void warning(const char* file, int line, const std::string& msg) {
+        std::cout << debug_time() << " " << file << ":" << std::to_string(line) << ": WARNING: " << msg << '\n';
+    }
+    void panic(const char* file, int line, const std::string& msg) {
+        std::cout << debug_time() << " " << file << ":" << std::to_string(line) << ": PANIC: " << msg << '\n';
+        exit(1);
+    }
 }

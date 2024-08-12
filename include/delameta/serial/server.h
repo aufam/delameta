@@ -8,7 +8,7 @@ namespace Project::delameta::serial {
     class Server : public StreamSessionServer {
     public:
         Server(Server&&);
-        Server& operator=(Server&&);
+        virtual ~Server();
 
         struct Args {
             std::string port; 
@@ -16,14 +16,14 @@ namespace Project::delameta::serial {
         };
 
         static Result<Server> New(const char* file, int line, Args args);
-        virtual ~Server();
 
         Result<void> start();
         void stop();
 
+        FileDescriptor fd;
+
     protected:
-        explicit Server(FileDescriptor* fd);
-        FileDescriptor* fd;
+        explicit Server(FileDescriptor&& fd);
         std::function<void()> on_stop;
     };
 }

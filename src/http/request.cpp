@@ -9,7 +9,7 @@ void delameta_detail_http_request_response_reader_parse_headers_body(
     etl::StringView sv, 
     std::unordered_map<std::string_view, std::string_view>& headers, 
     Descriptor& desc,
-    delameta::Stream& body_stream
+    Stream& body_stream
 );
 
 http::RequestReader::RequestReader(Descriptor& desc, const std::vector<uint8_t>& data) : data() { parse(desc, data); }
@@ -53,12 +53,15 @@ void http::RequestReader::parse(Descriptor& desc, const std::vector<uint8_t>& da
 
 auto http::RequestWriter::dump() -> Stream {
     Stream s;
-    s << std::move(method) + " " + std::move(url.full_path) + " " + std::move(version) + "\r\n";
+    std::string payload = std::move(method) + " " + std::move(url.full_path) + " " + std::move(version) + "\r\n";
     for (auto &[key, value]: headers) {
-        s << std::move(key) + ": " + std::move(value) + "\r\n";
+        payload += std::move(key) + ": " + std::move(value) + "\r\n";
     }
 
-    s << "\r\n";
+    payload += "\r\n";
+
+    s << std::move(payload);
+
     if (!body.empty()) {
         s << std::move(body);
     }
@@ -89,7 +92,7 @@ void delameta_detail_http_request_response_reader_parse_headers_body(
     etl::StringView sv, 
     std::unordered_map<std::string_view, std::string_view>& headers, 
     Descriptor& desc,
-    delameta::Stream& body_stream
+    Stream& body_stream
 ) {
     auto head_end = sv.find("\r\n\r\n");
     auto body_start = head_end + 4;

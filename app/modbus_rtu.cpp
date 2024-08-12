@@ -1,3 +1,4 @@
+#include <boost/preprocessor.hpp>
 #include "delameta/http/server.h"
 #include "delameta/modbus/client.h"
 #include "delameta/serial/client.h"
@@ -36,7 +37,15 @@ static auto mbus_write_multiple(int address, std::string port, int baud, uint16_
     });
 }
 
-void modbus_rtu_init(http::Server& app) {
+HTTP_EXTERN_OBJECT(app);
+
+static void modbus_rtu_init();
+static class ModbusRTU {
+public:
+    ModbusRTU() { modbus_rtu_init(); }
+} modbus_rtu HTTP_LATE_INIT;
+
+static void modbus_rtu_init() {
     static const auto http_args = std::tuple{
         http::arg::arg("address"),
         http::arg::default_val("port", std::string("auto")), 

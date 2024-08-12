@@ -58,7 +58,7 @@ auto Socket::Accept(const char* file, int line, int __fd, void* __addr, void* __
 }
 
 Socket::Socket(const char* file, int line, int socket) 
-    : delameta::Descriptor()
+    : Descriptor()
     , socket(socket)
     , keep_alive(true)
     , timeout(-1)
@@ -67,7 +67,7 @@ Socket::Socket(const char* file, int line, int socket)
     , line(line) { delameta_detail_set_non_blocking(socket); }
 
 Socket::Socket(Socket&& other) 
-    : delameta::Descriptor()
+    : Descriptor()
     , socket(std::exchange(other.socket, -1))
     , keep_alive(other.keep_alive)
     , timeout(other.timeout)
@@ -129,7 +129,7 @@ auto Socket::read() -> Result<std::vector<uint8_t>> {
     return log_err(__FILE__, __LINE__, this, Error::ConnectionClosed);
 }
 
-auto Socket::receive_until(size_t n) -> Result<std::vector<uint8_t>> {
+auto Socket::read_until(size_t n) -> Result<std::vector<uint8_t>> {
     std::vector<uint8_t> res;
     res.reserve(n);
     bool retried = false;
@@ -172,7 +172,7 @@ auto Socket::read_as_stream(size_t n) -> Stream {
     for (int total = n; total > 0;) {
         int size = std::min(total, MAX_HANDLE_SZ);
         s << [this, size, buffer=std::vector<uint8_t>{}]() mutable -> std::string_view {
-            auto data = this->receive_until(size);
+            auto data = this->read_until(size);
             if (data.is_ok()) {
                 buffer = std::move(data.unwrap());
             }

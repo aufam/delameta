@@ -58,48 +58,26 @@ auto tcp::Server::New(const char* file, int line, Args args) -> Result<Server> {
         }
     
         info(file, line, "Created socket server: " + std::to_string(server->socket));
-        return Ok(Server(new Socket(std::move(*server))));
+        return Ok(Server(std::move(*server)));
     }
     
     return Err(std::move(err));
 }
 
-tcp::Server::Server(Socket* socket) 
+tcp::Server::Server(Socket&& socket) 
     : StreamSessionServer({})
-    , socket(socket) {}
+    , socket(std::move(socket)) {}
 
 tcp::Server::Server(Server&& other) 
     : StreamSessionServer(std::move(other.handler))
-    , socket(std::exchange(other.socket, nullptr))
+    , socket(std::move(other.socket))
     , on_stop(std::move(other.on_stop)) {}
-
-auto tcp::Server::operator=(Server&& other) -> Server& {
-    if (this == &other) {
-        return *this;
-    }
-
-    this->~Server();
-    socket = std::exchange(other.socket, nullptr);
-    handler = std::move(other.handler);
-    on_stop = std::move(other.on_stop);
-    return *this;
-}
 
 tcp::Server::~Server() {
     stop();
-    if (socket) {
-        delete socket;
-        socket = nullptr;
-    }
 }
 
 auto tcp::Server::start() -> Result<void> {
-    if (socket == nullptr) {
-        std::string what = "No server socket created";
-        warning(__FILE__, __LINE__, what);
-        return Err(Error{-1, what});
-    }
-
     std::list<std::thread> threads;
     std::mutex mtx;
     std::atomic_bool is_running {true};
@@ -114,7 +92,7 @@ auto tcp::Server::start() -> Result<void> {
     };
 
     while (is_running) {
-        auto client = Socket::Accept(__FILE__, __LINE__, socket->socket, nullptr, nullptr);
+        auto client = Socket::Accept(__FILE__, __LINE__, socket.socket, nullptr, nullptr);
         if (client.is_err()) {
             Error& err = client.unwrap_err();
             if (err.code == EWOULDBLOCK || err.code == EAGAIN) {
@@ -128,6 +106,10 @@ auto tcp::Server::start() -> Result<void> {
 
         std::lock_guard<std::mutex> lock(mtx);
         threads.emplace_back([this, client=std::move(client.unwrap()), &threads, &mtx, &is_running]() mutable {
+            client.keep_alive = socket.keep_alive;
+            client.timeout = socket.timeout;
+            client.max = socket.max;
+
             auto client_ip = delameta_detail_get_ip(client.socket);
 
             for (int cnt = 1; is_running and delameta_detail_is_socket_alive(client.socket); ++cnt) {

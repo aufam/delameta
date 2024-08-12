@@ -1,10 +1,9 @@
-#ifndef PROJECT_HTTP_SERVER_H
-#define PROJECT_HTTP_SERVER_H
+#ifndef PROJECT_DELAMETA_HTTP_SERVER_H
+#define PROJECT_DELAMETA_HTTP_SERVER_H
 
 #include "delameta/http/request.h"
 #include "delameta/http/response.h"
-#include "etl/json_serialize.h"
-#include "etl/json_deserialize.h"
+#include "delameta/json.h"
 
 namespace Project::delameta::http {
 
@@ -381,7 +380,7 @@ namespace Project::delameta::http {
                 res = std::move(result);
             } else if constexpr (std::is_same_v<T, ResponseReader>) {
                 res = result;
-            } else if constexpr (std::is_same_v<T, delameta::Stream>) {
+            } else if constexpr (std::is_same_v<T, Stream>) {
                 res.body_stream = std::move(result);
             } else {
                 res.body = etl::json::serialize(result);
@@ -417,7 +416,7 @@ namespace Project::delameta::http {
 
         template <typename T> static Result<T> 
         convert_stream_into(const RequestReader& req) {
-            if constexpr (std::is_same_v<T, delameta::Stream>) {
+            if constexpr (std::is_same_v<T, Stream>) {
                 return etl::Ok(std::move(req.body_stream));
             } else {
                 if (req.body.empty()) req.body_stream >> [&req](std::string_view chunk) { req.body += chunk; };
@@ -478,4 +477,51 @@ namespace Project::delameta::http::arg {
     inline static constexpr Server::ArgText text {};
 }
 
+#ifdef BOOST_PREPROCESSOR_HPP
+
+#define HTTP_DEFINE_OBJECT(o) \
+    ::Project::delameta::http::Server o __attribute__((init_priority(101)))
+
+#define HTTP_EXTERN_OBJECT(o) \
+    extern ::Project::delameta::http::Server o; static auto& _http_server = o
+
+#define HTTP_LATE_INIT __attribute__((init_priority(102)))
+
+#define HTTP_HELPER_VARIADIC(...) __VA_ARGS__
+#define HTTP_HELPER_MAKE_METHODS(...) std::vector<const char*>{__VA_ARGS__}
+
+#define HTTP_HELPER_WRAP_SEQUENCE_X(...) ((__VA_ARGS__)) HTTP_HELPER_WRAP_SEQUENCE_Y
+#define HTTP_HELPER_WRAP_SEQUENCE_Y(...) ((__VA_ARGS__)) HTTP_HELPER_WRAP_SEQUENCE_X
+#define HTTP_HELPER_WRAP_SEQUENCE_X0
+#define HTTP_HELPER_WRAP_SEQUENCE_Y0
+
+#define HTTP_HELPER_DEFINE_FN_ARG(r, data, elem) \
+    BOOST_PP_TUPLE_ELEM(3, 0, elem) BOOST_PP_TUPLE_ELEM(3, 1, elem),
+
+#define HTTP_HELPER_DEFINE_FN(name, args, ret) \
+    HTTP_HELPER_VARIADIC ret name BOOST_PP_TUPLE_POP_BACK((BOOST_PP_SEQ_FOR_EACH(HTTP_HELPER_DEFINE_FN_ARG, ~, args) void))
+
+#define HTTP_HELPER_DEFINE_HTTP_ARG(r, data, elem) \
+    BOOST_PP_TUPLE_ELEM(3, 2, elem),
+
+#define HTTP_HELPER_CLASS_NAME(name) BOOST_PP_CAT(BOOST_PP_CAT(_http_route_, name), _t)
+#define HTTP_HELPER_OBJ_NAME(name) BOOST_PP_CAT(_http_route_, name)
+
+#define HTTP_ROUTE_I(path, methods, name, args, ret) \
+    HTTP_HELPER_DEFINE_FN(name, args, ret); \
+    class HTTP_HELPER_CLASS_NAME(name) { \
+    public: \
+        HTTP_HELPER_CLASS_NAME(name)() { \
+            _http_server.route(path, HTTP_HELPER_MAKE_METHODS methods, \
+            std::tuple{ BOOST_PP_SEQ_FOR_EACH(HTTP_HELPER_DEFINE_HTTP_ARG, ~, args) }, name); \
+        } \
+    }; \
+    static HTTP_HELPER_CLASS_NAME(name) HTTP_HELPER_OBJ_NAME(name) HTTP_LATE_INIT; \
+    HTTP_HELPER_DEFINE_FN(name, args, ret) 
+
+#define HTTP_ROUTE(pm, name, args, ret) \
+    HTTP_ROUTE_I(BOOST_PP_TUPLE_ELEM(3, 0, pm), BOOST_PP_TUPLE_ELEM(3, 1, pm), BOOST_PP_TUPLE_ELEM(1, 0, name), \
+    BOOST_PP_CAT(HTTP_HELPER_WRAP_SEQUENCE_X args, 0), ret)
+
+#endif
 #endif

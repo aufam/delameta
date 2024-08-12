@@ -1,28 +1,33 @@
+#include <boost/preprocessor.hpp>
 #include "delameta/http/server.h"
 #include "delameta/serial/client.h"
+#include "delameta/debug.h"
 
 using namespace Project;
 using namespace delameta::http;
 using delameta::serial::Client;
+using delameta::Stream;
 using delameta::Error;
 using etl::Ref;
 
-void serial_handler_init(Server& app) {
-    app.Get("/serial", std::tuple{
-        arg::default_val("port", std::string("auto")), 
-        arg::default_val("baud", 9600), 
-        arg::default_val("timeout", 5),
-        arg::arg("data"),
-        arg::response
-    },
-    [](std::string port, int baud, int timeout, std::string_view data, Ref<ResponseWriter> res) -> Server::Result<void> {
-        return Client::New(__FILE__, __LINE__, {port, baud, timeout}).and_then([&](Client cli) {
-            delameta::Stream s;
-            s << data;
-            return cli.request(s);
-        }).then([&](std::vector<uint8_t> data) {
-            res->headers["Content-Type"] = "application/octet-stream";
-            res->body = std::string(data.begin(), data.end());
-        });
+HTTP_EXTERN_OBJECT(app);
+
+HTTP_ROUTE(
+    ("/serial", ("GET")), 
+    (serial_handler),
+        (std::string        , port   , arg::default_val("port", std::string("auto")))
+        (int                , baud   , arg::default_val("baud", 9600)               )
+        (int                , timeout, arg::default_val("timeout", 5)               )
+        (std::string_view   , data   , arg::arg("data")                             )
+        (Ref<ResponseWriter>, res    , arg::response                                ),
+    (Server::Result<void>)
+) {
+    return Client::New(FL, {port, baud, timeout}).and_then([&](Client cli) {
+        Stream s;
+        s << data;
+        return cli.request(s);
+    }).then([&](std::vector<uint8_t> data) {
+        res->headers["Content-Type"] = "application/octet-stream";
+        res->body = std::string(data.begin(), data.end());
     });
 }

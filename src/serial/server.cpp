@@ -116,46 +116,24 @@ auto delameta_detail_create_serial(const char* file, int line, std::string port,
 auto serial::Server::New(const char* file, int line, Args args) -> Result<Server> {
     return delameta_detail_create_serial(file, line, args.port, args.baud).then([&](FileDescriptor serial) {
         info(file, line, "Created serial server: " + std::to_string(serial.fd));
-        return Server(new FileDescriptor(std::move(serial)));
+        return Server(std::move(serial));
     });
 }
 
-serial::Server::Server(FileDescriptor* fd) 
+serial::Server::Server(FileDescriptor&& fd) 
     : StreamSessionServer({})
-    , fd(fd) {}
+    , fd(std::move(fd)) {}
 
 serial::Server::Server(Server&& other) 
     : StreamSessionServer(std::move(other.handler))
-    , fd(std::exchange(other.fd, nullptr))
+    , fd(std::move(other.fd))
     , on_stop(std::move(other.on_stop)) {}
-
-auto serial::Server::operator=(Server&& other) -> Server& {
-    if (this == &other) {
-        return *this;
-    }
-
-    this->~Server();
-    fd = std::exchange(other.fd, nullptr);
-    handler = std::move(other.handler);
-    on_stop = std::move(other.on_stop);
-    return *this;
-}
 
 serial::Server::~Server() {
     stop();
-    if (fd) {
-        delete fd;
-        fd = nullptr;
-    }
 }
 
 auto serial::Server::start() -> Result<void> {
-    if (fd == nullptr) {
-        std::string what = "No server fd created";
-        warning(__FILE__, __LINE__, what);
-        return Err(Error{-1, what});
-    }
-
     std::list<std::thread> threads;
     std::mutex mtx;
     std::atomic_bool is_running {true};
@@ -169,16 +147,16 @@ auto serial::Server::start() -> Result<void> {
         on_stop = {};
     };
  
-    while (is_running and delameta_detail_is_fd_alive(fd->fd)) {
-        auto read_result = fd->read();
+    while (is_running and delameta_detail_is_fd_alive(fd.fd)) {
+        auto read_result = fd.read();
         if (read_result.is_err()) {
             break;
         }
 
         std::lock_guard<std::mutex> lock(mtx);
         threads.emplace_back([this, data=std::move(read_result.unwrap()), &threads, &mtx, &is_running]() mutable {
-            auto stream = execute_stream_session(*fd, delameta_detail_get_filename(fd->fd), data);
-            stream >> *fd;
+            auto stream = execute_stream_session(fd, delameta_detail_get_filename(fd.fd), data);
+            stream >> fd;
 
             // remove this thread from threads
             if (is_running) {
