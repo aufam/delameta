@@ -471,7 +471,7 @@ extern "C" void HAL_CAN_RxFifo1MsgPendingCallback(CAN_HandleTypeDef *hcan_) {
 }
 #endif
 #ifdef DELAMETA_STM32_USE_HAL_USB
-volatile int delameta_stm32_hal_usb_is_busy;
+static osThreadId_t usb_write_thd;
 extern "C" void CDC_ReceiveCplt_Callback(const uint8_t *pbuf, uint32_t len) {
     auto& desc = file_descriptors[I_USB];
     if (desc.owner) {
@@ -483,7 +483,7 @@ extern "C" void CDC_ReceiveCplt_Callback(const uint8_t *pbuf, uint32_t len) {
 extern "C" void CDC_TransmitCplt_Callback(const uint8_t *pbuf, uint32_t len) {
     UNUSED(pbuf);
     UNUSED(len);
-    delameta_stm32_hal_usb_is_busy = 0;
+    osThreadFlagsSet(usb_write_thd, 0b10);
 }
 #endif
 
@@ -683,13 +683,14 @@ auto FileDescriptor::write(std::string_view data) -> Result<void> {
     #endif
     #ifdef DELAMETA_STM32_USE_HAL_USB
     if (fd == I_USB) {
-        while (delameta_stm32_hal_usb_is_busy);
-        for (int i = 0; i < 100'000'000; ++i);
-        if (auto res = CDC_Transmit_FS((uint8_t*)data.data(), data.size()); res == USBD_OK) {
-            delameta_stm32_hal_usb_is_busy = 1;
-            return Ok();
+        usb_write_thd = osThreadGetId();
+        tout = data.size();
+        if (auto res = CDC_Transmit_FS((uint8_t*)data.data(), data.size()); res != USBD_OK) {
+            return Err(Error{res, "USBD busy"});
         } 
-        return Err(Error{-1, "USBD busy"});
+        osThreadFlagsWait(0b10, osFlagsWaitAny, tout);
+        usb_write_thd = nullptr;
+        return Ok();
     }
     #endif
     return Err(Error{-1, "fd closed"});

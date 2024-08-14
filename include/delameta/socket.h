@@ -27,6 +27,7 @@ namespace Project::delameta {
         Stream read_as_stream(size_t n) override;
 
         Result<void> write(std::string_view data) override;
+        using Descriptor::write;
 
         int socket;
         bool keep_alive;

@@ -24,9 +24,9 @@ auto tcp::Client::New(const char* file, int line, Args args) -> Result<Client> {
     if (ip.is_err()) {
         return Err(std::move(ip.unwrap_err()));
     }
-    return Socket::New(file, line, Sn_MR_TCP, client_port++, 0).and_then([&](Socket socket) -> Result<Client> {
+    return Socket::New(file, line, Sn_MR_TCP, client_port++, 0).then([&](Socket socket) {
         ::connect(socket.socket, ip.unwrap().ip, ip.unwrap().port);
-        return Ok(tcp::Client(new Socket(std::move(socket))));
+        return tcp::Client(new Socket(std::move(socket)));
     });
 }
 
