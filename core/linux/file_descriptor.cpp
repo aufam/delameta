@@ -1,12 +1,13 @@
 #include "delameta/file_descriptor.h"
 #include <fcntl.h>
+#include <sys/ioctl.h>
 #include <unistd.h>
 #include <cerrno>
 #include <cstring>
 #include <thread>
 #include <mutex>
 #include <atomic>
-#include "delameta.h"
+#include "helper.h"
 
 using namespace Project;
 using namespace Project::delameta;
@@ -104,84 +105,66 @@ FileDescriptor::~FileDescriptor() {
 }
 
 auto FileDescriptor::read() -> Result<std::vector<uint8_t>> {
-    std::vector<uint8_t> res;
-    bool retried = false;
     auto start = std::chrono::high_resolution_clock::now();
+    int bytes_available = 0;
 
     while (delameta_detail_is_fd_alive(fd)) {
-        std::vector<uint8_t> buffer(MAX_HANDLE_SZ);
-        auto size = ::read(fd, buffer.data(), MAX_HANDLE_SZ);
+        if (::ioctl(fd, FIONREAD, &bytes_available) == -1) {
+            return log_err(__FILE__, __LINE__, this, Error(errno, ::strerror(errno)));
+        }
 
-        if (size < 0) {
-            if (errno == EWOULDBLOCK || errno == EAGAIN) {
-                if (not retried) {
-                    // the incoming data might exceed MAX_HANDLE_SZ 
-                    retried = true;
-                } else {
-                    // the incoming data might be exactly MAX_HANDLE_SZ or its multiply
-                    if (not res.empty()) {
-                        return log_received_ok(__FILE__, __LINE__, this, res);
-                    }
-
-                    // try again until get some data or timeout
-                    if (timeout > 0 && std::chrono::high_resolution_clock::now() - start > std::chrono::seconds(timeout)) {
-                        return log_err(__FILE__, __LINE__, this, Error::TransferTimeout);
-                    }
-                }
-                std::this_thread::sleep_for(10ms);
-                continue;
-            } else {
-                return log_err(__FILE__, __LINE__, this, Error(errno, ::strerror(errno)));
+        if (bytes_available == 0) {
+            if (timeout > 0 && std::chrono::high_resolution_clock::now() - start > std::chrono::seconds(timeout)) {
+                return log_err(__FILE__, __LINE__, this, Error::TransferTimeout);
             }
-        } else if (size == 0) {
-            return log_err(__FILE__, __LINE__, this, Error::ConnectionClosed);
+            std::this_thread::sleep_for(10ms);
+            continue;
         }
 
-        res.insert(res.end(), buffer.begin(), buffer.begin() + size);
-        if (size == MAX_HANDLE_SZ) {
-            retried = false;
-            continue;
-        } else {
-            return log_received_ok(__FILE__, __LINE__, this, res);
+        std::vector<uint8_t> buffer(bytes_available);
+        auto size = ::read(fd, buffer.data(), bytes_available);
+        if (size < 0) {
+            return log_err(__FILE__, __LINE__, this, Error(errno, ::strerror(errno)));
         }
+
+        return log_received_ok(__FILE__, __LINE__, this, buffer);
     }
 
     return log_err(__FILE__, __LINE__, this, Error::ConnectionClosed);
 }
 
 auto FileDescriptor::read_until(size_t n) -> Result<std::vector<uint8_t>> {
-    std::vector<uint8_t> res;
-    res.reserve(n);
-    bool retried = false;
     auto start = std::chrono::high_resolution_clock::now();
+    std::vector<uint8_t> buffer(n);
+
+    int remaining_size = n;
+    int bytes_available = 0;
+    auto ptr = buffer.data();
 
     while (delameta_detail_is_fd_alive(fd)) {
-        size_t current_size = res.size();
-        size_t remaining_size = n - current_size;
-
-        if (remaining_size == 0) {
-            return log_received_ok(__FILE__, __LINE__, this, res);
+        if (::ioctl(fd, FIONREAD, &bytes_available) == -1) {
+            return log_err(__FILE__, __LINE__, this, Error(errno, ::strerror(errno)));
         }
 
-        std::vector<uint8_t> buffer(remaining_size);
-        auto size = ::read(fd, buffer.data(), remaining_size);
-
-        if (size < 0) {
-            if (errno == EWOULDBLOCK || errno == EAGAIN) {
-                if (timeout > 0 && std::chrono::high_resolution_clock::now() - start > std::chrono::seconds(timeout)) {
-                    return log_err(__FILE__, __LINE__, this, Error::TransferTimeout);
-                }
-                std::this_thread::sleep_for(10ms);
-                continue;
-            } else {
-                return log_err(__FILE__, __LINE__, this, Error(errno, ::strerror(errno)));
+        if (bytes_available == 0) {
+            if (timeout > 0 && std::chrono::high_resolution_clock::now() - start > std::chrono::seconds(timeout)) {
+                return log_err(__FILE__, __LINE__, this, Error::TransferTimeout);
             }
-        } else if (size == 0) {
-            return log_err(__FILE__, __LINE__, this, Error::ConnectionClosed);
+            std::this_thread::sleep_for(10ms);
+            continue;
         }
 
-        // Append received data to the result buffer
-        res.insert(res.end(), buffer.begin(), buffer.begin() + size);
+        auto size = ::read(fd, ptr, std::min(bytes_available, remaining_size));
+        if (size < 0) {
+            return log_err(__FILE__, __LINE__, this, Error(errno, ::strerror(errno)));
+        }
+
+        ptr += size;
+        remaining_size -= size;
+
+        if (remaining_size <= 0) {
+            return log_received_ok(__FILE__, __LINE__, this, buffer);
+        }
     }
 
     return log_err(__FILE__, __LINE__, this, Error::ConnectionClosed);
@@ -195,6 +178,8 @@ auto FileDescriptor::read_as_stream(size_t n) -> Stream {
             auto data = this->read_until(size);
             if (data.is_ok()) {
                 buffer = std::move(data.unwrap());
+            } else {
+                warning(file, line, data.unwrap_err().what);
             }
             return {reinterpret_cast<const char*>(buffer.data()), buffer.size()};
         };

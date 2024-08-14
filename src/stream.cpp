@@ -1,5 +1,5 @@
 #include "delameta/stream.h"
-#include "delameta.h"
+#include "delameta/debug.h"
 
 using namespace Project;
 using namespace delameta;

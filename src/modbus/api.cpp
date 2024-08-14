@@ -1,5 +1,4 @@
 #include "delameta/modbus/api.h"
-#include "../delameta.h"
 
 using namespace Project;
 using namespace Project::delameta;

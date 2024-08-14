@@ -17,7 +17,22 @@ namespace Project::delameta {
 
 #define FL __FILE__, __LINE__
 #define DBG(fn, ...) fn(__FILE__, __LINE__, __VA_ARGS__)
+
+#ifdef FMT_FORMAT_H_
 #define DBG_VAL(fn, value) \
-    (fn(__FILE__, __LINE__, #value + std::string(" = ") + std::to_string(value)), value)
+    []() -> decltype(auto) {\
+        auto&& _value = value; \
+        fn(__FILE__, __LINE__, fmt::format("{} = {}", #value, _value)); \
+        return std::forward<decltype(_value)>(_value); \
+    }()
+#else
+
+#define DBG_VAL(fn, value) \
+    []() -> decltype(auto) {\
+        auto&& _value = value; \
+        fn(__FILE__, __LINE__, #value + std::string(" = ") + std::to_string(_value)); \
+        return std::forward<decltype(_value)>(_value); \
+    }()
+#endif
 
 #endif

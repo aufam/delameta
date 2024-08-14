@@ -1,5 +1,5 @@
 #include "delameta/modbus/server.h"
-#include "../delameta.h"
+#include "delameta/debug.h"
 
 using namespace Project;
 using namespace Project::delameta;

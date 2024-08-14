@@ -20,7 +20,9 @@ namespace Project::delameta {
         Descriptor& operator=(Descriptor&&) noexcept = default;
 
         virtual Result<std::vector<uint8_t>> read() = 0;
+        virtual Result<std::vector<uint8_t>> read_until(size_t n) = 0;
         virtual Stream read_as_stream(size_t n) = 0;
+
         virtual Result<void> write(std::string_view data) = 0;
 
         Result<void> write(const std::vector<uint8_t>& data) {

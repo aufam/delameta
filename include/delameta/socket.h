@@ -22,9 +22,10 @@ namespace Project::delameta {
         static Result<Socket> New(const char* file, int line, int __domain, int __type, int __protocol);
         static Result<Socket> Accept(const char* file, int line, int __fd, void* __addr, void* __addr_len);
 
-        Result<std::vector<uint8_t>> read_until(size_t n);
         Result<std::vector<uint8_t>> read() override;
+        Result<std::vector<uint8_t>> read_until(size_t n) override;
         Stream read_as_stream(size_t n) override;
+
         Result<void> write(std::string_view data) override;
 
         int socket;

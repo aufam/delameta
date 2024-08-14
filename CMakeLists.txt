@@ -6,99 +6,139 @@ file(READ version.txt DELAMETA_VERSION)
 project(delameta VERSION ${DELAMETA_VERSION})
 
 # some options
-option(BUILD_APP "Build the main app" ON)
+option(DELAMETA_BUILD_APP 	 "Build the main app" ON)
+option(DELAMETA_TARGET_LINUX "Build for Linux" ON)
+option(DELAMETA_TARGET_STM32 "Build for STM32" OFF)
+
+# Ensure that only one target is selected
+if (DELAMETA_TARGET_LINUX AND DELAMETA_TARGET_STM32)
+    message(FATAL_ERROR "Please choose either DELAMETA_TARGET_LINUX or DELAMETA_TARGET_STM32, not both.")
+elseif (NOT DELAMETA_TARGET_LINUX AND NOT DELAMETA_TARGET_STM32)
+    message(FATAL_ERROR "Please select a target: DELAMETA_TARGET_LINUX or DELAMETA_TARGET_STM32.")
+endif()
 
 # some messages
-message("API version      : ${PROJECT_VERSION}")
-message("BUILD_APP        : ${BUILD_APP}")
+message("Delameta version      : ${PROJECT_VERSION}")
+message("DELAMETA_BUILD_APP    : ${DELAMETA_BUILD_APP}")
+message("DELAMETA_TARGET_LINUX : ${DELAMETA_TARGET_LINUX}")
+message("DELAMETA_TARGET_STM32 : ${DELAMETA_TARGET_STM32}")
 
-# build library
-file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS src/*.*)
-add_library(${PROJECT_NAME} SHARED ${SOURCES})
+if (DELAMETA_TARGET_LINUX)
+	# build library
+	file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS src/*.* core/linux/*.*)
+	add_library(delameta ${SOURCES})
 
-target_compile_options(${PROJECT_NAME} PRIVATE
-	-Wall
-	-Wextra
-	$<$<COMPILE_LANGUAGE:CXX>:-Wno-literal-suffix>
-)
-
-target_include_directories(${PROJECT_NAME} PUBLIC
-	$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
-	$<INSTALL_INTERFACE:include> 
-)
-
-target_compile_definitions(${PROJECT_NAME} PUBLIC
-	-DDELAMETA_VERSION="${PROJECT_VERSION}"
-	-DDELAMETA_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}
-	-DDELAMETA_VERSION_MINOR=${PROJECT_VERSION_MINOR}
-	-DDELAMETA_VERSION_PATCH=${PROJECT_VERSION_PATCH}
-)
-
-# thread dependency
-find_package(Threads REQUIRED)
-set_target_properties(${PROJECT_NAME} PROPERTIES COMPILE_OPTIONS "-pthread")
-target_link_libraries(${PROJECT_NAME} PUBLIC ${CMAKE_THREAD_LIBS_INIT} stdc++fs)
-
-# etl dependency
-find_package(etl CONFIG QUIET)
-if (NOT etl_FOUND)
-    include(FetchContent)
-    FetchContent_Declare(
-        etl
-        GIT_REPOSITORY https://github.com/aufam/etl.git
-        GIT_TAG        main
-    )
-    FetchContent_MakeAvailable(etl)
-endif ()
-
-# install target
-install(TARGETS ${PROJECT_NAME}
-	EXPORT ${PROJECT_NAME}Targets
-	LIBRARY DESTINATION lib COMPONENT Runtime
-	ARCHIVE DESTINATION lib COMPONENT Development
-	RUNTIME DESTINATION bin COMPONENT Runtime
-	PUBLIC_HEADER DESTINATION include COMPONENT Development
-	BUNDLE DESTINATION bin COMPONENT Runtime
-)
-
-# config version
-include(CMakePackageConfigHelpers)
-write_basic_package_version_file(
-	"${PROJECT_BINARY_DIR}/${PROJECT_NAME}ConfigVersion.cmake"
-	VERSION ${PROJECT_VERSION}
-	COMPATIBILITY ExactVersion
-)
-
-# config file
-configure_package_config_file(
-	"${PROJECT_SOURCE_DIR}/cmake/${PROJECT_NAME}Config.cmake.in"
-	"${PROJECT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
-	INSTALL_DESTINATION lib/cmake/${PROJECT_NAME}
-)
-
-# install config
-install(EXPORT ${PROJECT_NAME}Targets DESTINATION lib/cmake/${PROJECT_NAME})
-install(FILES "${PROJECT_BINARY_DIR}/${PROJECT_NAME}ConfigVersion.cmake"
-	"${PROJECT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
-	DESTINATION lib/cmake/${PROJECT_NAME}
-)
-install(DIRECTORY ${PROJECT_SOURCE_DIR}/include/ DESTINATION include)
-
-# uninstall all
-if(NOT TARGET uninstall)
-    configure_file(
-		"${CMAKE_CURRENT_SOURCE_DIR}/cmake/uninstall.cmake.in"
-		"${CMAKE_CURRENT_BINARY_DIR}/uninstall.cmake"
-		IMMEDIATE @ONLY
+	target_compile_options(delameta PRIVATE
+		-Wall
+		-Wextra
+		$<$<COMPILE_LANGUAGE:CXX>:-Wno-literal-suffix>
 	)
 
-    add_custom_target(uninstall
-		COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_BINARY_DIR}/uninstall.cmake
+	target_include_directories(delameta PUBLIC
+		$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+		$<INSTALL_INTERFACE:include> 
 	)
-endif()
 
-# main app
-if (BUILD_APP)
-    add_subdirectory(app)
-endif()
+	target_compile_definitions(delameta PUBLIC
+		-DDELAMETA_VERSION="${DELAMETA_VERSION}"
+	)
+
+	# thread dependency
+	find_package(Threads REQUIRED)
+	set_target_properties(delameta PROPERTIES COMPILE_OPTIONS "-pthread")
+	target_link_libraries(delameta PUBLIC ${CMAKE_THREAD_LIBS_INIT} stdc++fs)
+
+	# etl dependency
+	find_package(etl CONFIG QUIET)
+	if (NOT etl_FOUND)
+		include(FetchContent)
+		FetchContent_Declare(
+			etl
+			GIT_REPOSITORY https://github.com/aufam/etl.git
+			GIT_TAG        main
+		)
+		FetchContent_MakeAvailable(etl)
+	endif ()
+
+	# install target
+	install(TARGETS delameta
+		EXPORT delametaTargets
+		LIBRARY DESTINATION lib COMPONENT Runtime
+		ARCHIVE DESTINATION lib COMPONENT Development
+		RUNTIME DESTINATION bin COMPONENT Runtime
+		PUBLIC_HEADER DESTINATION include COMPONENT Development
+		BUNDLE DESTINATION bin COMPONENT Runtime
+	)
+
+	# config version
+	include(CMakePackageConfigHelpers)
+	write_basic_package_version_file(
+		"${PROJECT_BINARY_DIR}/delametaConfigVersion.cmake"
+		VERSION ${PROJECT_VERSION}
+		COMPATIBILITY ExactVersion
+	)
+
+	# config file
+	configure_package_config_file(
+		"${PROJECT_SOURCE_DIR}/cmake/delametaConfig.cmake.in"
+		"${PROJECT_BINARY_DIR}/delametaConfig.cmake"
+		INSTALL_DESTINATION lib/cmake/delameta
+	)
+
+	# install config
+	install(EXPORT delametaTargets DESTINATION lib/cmake/delameta)
+	install(FILES "${PROJECT_BINARY_DIR}/delametaConfigVersion.cmake"
+		"${PROJECT_BINARY_DIR}/delametaConfig.cmake"
+		DESTINATION lib/cmake/delameta
+	)
+	install(DIRECTORY ${PROJECT_SOURCE_DIR}/include/ DESTINATION include)
+
+	# uninstall all
+	if(NOT TARGET uninstall)
+		configure_file(
+			"${CMAKE_CURRENT_SOURCE_DIR}/cmake/uninstall.cmake.in"
+			"${CMAKE_CURRENT_BINARY_DIR}/uninstall.cmake"
+			IMMEDIATE @ONLY
+		)
+
+		add_custom_target(uninstall
+			COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_BINARY_DIR}/uninstall.cmake
+		)
+	endif()
+
+	# main app
+	if (DELAMETA_BUILD_APP)
+		add_subdirectory(app)
+	endif()
+endif (DELAMETA_TARGET_LINUX)
+
+if (DELAMETA_TARGET_STM32)
+	# build library
+	file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS src/*.* core/stm32_hal/*.*)
+	add_library(delameta ${SOURCES})
+
+	target_include_directories(delameta PUBLIC
+		include
+	)
+
+	target_include_directories(delameta PRIVATE
+		core/stm32/Ethernet
+	)
+
+	target_compile_definitions(delameta PUBLIC
+		-DDELAMETA_VERSION="${DELAMETA_VERSION}"
+	)
+
+	# etl dependency
+	find_package(etl CONFIG QUIET)
+	if (NOT etl_FOUND)
+		include(FetchContent)
+		FetchContent_Declare(
+			etl
+			GIT_REPOSITORY https://github.com/aufam/etl.git
+			GIT_TAG        FreeRTOS
+		)
+		FetchContent_MakeAvailable(etl)
+	endif ()
+endif (DELAMETA_TARGET_STM32)
 

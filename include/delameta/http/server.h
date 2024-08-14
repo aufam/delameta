@@ -131,7 +131,11 @@ namespace Project::delameta::http {
         std::list<Router> routers;
         bool show_response_time = false;
 
-        void bind(StreamSessionServer& server) const;
+        struct BindArg {
+            bool is_tcp_server;
+        };
+
+        void bind(StreamSessionServer& server, BindArg is_tcp_server = {false}) const;
         std::pair<RequestReader, ResponseWriter> execute(Descriptor& desc, const std::vector<uint8_t>& data) const;
     
     protected:
