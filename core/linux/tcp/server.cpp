@@ -57,20 +57,31 @@ auto tcp::Server::New(const char* file, int line, Args args) -> Result<Server> {
             continue;
         }
     
+        int port = 0;
+        if (p->ai_family == AF_INET) { // IPv4
+            struct sockaddr_in *addr = (struct sockaddr_in *)p->ai_addr;
+            port = ntohs(addr->sin_port);
+        } else if (p->ai_family == AF_INET6) { // IPv6
+            struct sockaddr_in6 *addr = (struct sockaddr_in6 *)p->ai_addr;
+            port = ntohs(addr->sin6_port);
+        }
+    
         info(file, line, "Created socket server: " + std::to_string(server->socket));
-        return Ok(Server(std::move(*server)));
+        return Ok(Server(std::move(*server), port));
     }
     
     return Err(std::move(err));
 }
 
-tcp::Server::Server(Socket&& socket) 
+tcp::Server::Server(Socket&& socket, int port) 
     : StreamSessionServer({})
-    , socket(std::move(socket)) {}
+    , socket(std::move(socket))
+    , port(port) {}
 
 tcp::Server::Server(Server&& other) 
     : StreamSessionServer(std::move(other.handler))
     , socket(std::move(other.socket))
+    , port(other.port)
     , on_stop(std::move(other.on_stop)) {}
 
 tcp::Server::~Server() {

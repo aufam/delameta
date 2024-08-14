@@ -21,9 +21,10 @@ namespace Project::delameta::tcp {
         void stop();
 
         Socket socket;
+        int port;
 
     protected:
-        explicit Server(Socket&& socket);
+        Server(Socket&& socket, int port);
         std::function<void()> on_stop;
     };
 }

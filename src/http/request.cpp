@@ -1,5 +1,4 @@
 #include "delameta/http/request.h"
-#include <fcntl.h>
 #include <etl/string_view.h>
 
 using namespace Project;
@@ -108,8 +107,6 @@ void delameta_detail_http_request_response_reader_parse_headers_body(
     auto body_length = sv.len() - body_start;
 
     bool content_length_found = false;
-    bool connection_found = false;
-    bool keep_alive_found = false;
 
     for (auto line : hsv.split<32>("\n")) {
         auto key = line.split<1>(":")[0];

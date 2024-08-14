@@ -19,6 +19,7 @@ namespace Project::delameta {
     
         int code;
         std::string what;
+        operator const char*() const { return what.c_str(); }
     };
 
     template <typename T>

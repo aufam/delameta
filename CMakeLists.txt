@@ -59,6 +59,7 @@ if (DELAMETA_TARGET_LINUX)
 		)
 		FetchContent_MakeAvailable(etl)
 	endif ()
+	target_link_libraries(delameta PUBLIC etl)
 
 	# install target
 	install(TARGETS delameta
@@ -118,11 +119,11 @@ if (DELAMETA_TARGET_STM32)
 	add_library(delameta ${SOURCES})
 
 	target_include_directories(delameta PUBLIC
-		include
+		${CMAKE_CURRENT_SOURCE_DIR}/include
 	)
 
 	target_include_directories(delameta PRIVATE
-		core/stm32/Ethernet
+		${CMAKE_CURRENT_SOURCE_DIR}/core/stm32_hal/Ethernet
 	)
 
 	target_compile_definitions(delameta PUBLIC
@@ -130,15 +131,6 @@ if (DELAMETA_TARGET_STM32)
 	)
 
 	# etl dependency
-	find_package(etl CONFIG QUIET)
-	if (NOT etl_FOUND)
-		include(FetchContent)
-		FetchContent_Declare(
-			etl
-			GIT_REPOSITORY https://github.com/aufam/etl.git
-			GIT_TAG        FreeRTOS
-		)
-		FetchContent_MakeAvailable(etl)
-	endif ()
+	target_link_libraries(delameta PUBLIC etl)
 endif (DELAMETA_TARGET_STM32)
 

@@ -10,9 +10,20 @@ using namespace etl::literals;
 using etl::Err;
 using etl::Ok;
 
+struct addrinfo {
+    uint8_t ip[4];
+    int port;
+};
+
+auto delameta_detail_resolve_domain(const std::string& domain) -> Result<addrinfo>;
+
 auto tcp::Server::New(const char* file, int line, Args args) -> Result<Server> {
-    return Socket::New(file, line, Sn_MR_TCP, args.port, Sn_MR_ND).then([&](Socket socket) {
-        return Server(std::move(socket), args.port);
+    auto ip = delameta_detail_resolve_domain(args.host);
+    if (ip.is_err()) {
+        return Err(std::move(ip.unwrap_err()));
+    }
+    return Socket::New(file, line, Sn_MR_TCP, ip.unwrap().port, Sn_MR_ND).then([&](Socket socket) {
+        return Server(std::move(socket), ip.unwrap().port);
     });
 }
 

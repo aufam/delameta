@@ -67,9 +67,9 @@ static auto read_request_helper(modbus::Client* self, uint8_t code, uint16_t reg
         if (res.size() < 6) return Err(modbus::Error::InvalidDataFrame);
 
         const uint8_t length = res[2];
-        if (res.size() != 3 + length + 2) return Err(modbus::Error::InvalidDataFrame);
+        if ((int)res.size() != 3 + length + 2) return Err(modbus::Error::InvalidDataFrame);
 
-        if constexpr (is_bool) if ((n + 7) / 8 != length) return Err(modbus::Error::InvalidDataFrame);
+        if constexpr (is_bool) {if ((n + 7) / 8 != length) return Err(modbus::Error::InvalidDataFrame);}
         else if (n * 2 != length) return Err(modbus::Error::InvalidDataFrame);
         
         auto ptr = &res[3];
