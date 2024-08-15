@@ -47,4 +47,17 @@ namespace Project::delameta::modbus {
     using Result = etl::Result<T, Error>;
 }
 
+#ifdef FMT_FORMAT_H_
+
+template <> 
+struct fmt::formatter<Project::delameta::modbus::Error> {
+    constexpr auto parse(fmt::format_parse_context& ctx) { return ctx.end(); }
+
+    template <typename Ctx>
+    inline auto format(const Project::delameta::modbus::Error& m, Ctx& ctx) const {
+        return fmt::format_to(ctx.out(), "modbus::Error {{code: {}, what: {}}}", m.code, m.what);
+    }
+};
+
+#endif
 #endif

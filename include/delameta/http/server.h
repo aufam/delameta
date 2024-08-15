@@ -528,4 +528,17 @@ namespace Project::delameta::http::arg {
     BOOST_PP_CAT(HTTP_HELPER_WRAP_SEQUENCE_X args, 0), ret)
 
 #endif
+#ifdef FMT_FORMAT_H_
+
+template <> 
+struct fmt::formatter<Project::delameta::http::Server::Error> {
+    constexpr auto parse(fmt::format_parse_context& ctx) { return ctx.end(); }
+
+    template <typename Ctx>
+    inline auto format(const Project::delameta::http::Server::Error& m, Ctx& ctx) const {
+        return fmt::format_to(ctx.out(), "http::Error {{code: {}, what: {}}}", m.status, m.what);
+    }
+};
+
+#endif
 #endif
