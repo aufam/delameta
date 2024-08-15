@@ -19,4 +19,18 @@ namespace Project::delameta {
     };
 }
 
+#ifdef FMT_FORMAT_H_
+
+template <> 
+struct fmt::formatter<Project::delameta::URL> {
+    constexpr auto parse(fmt::format_parse_context& ctx) { return ctx.end(); }
+
+    template <typename Ctx>
+    inline auto format(const Project::delameta::URL& m, Ctx& ctx) const {
+        return fmt::format_to(ctx.out(), "{}: {{protocol: {}, host: {}, path: {}, full path: {}, queries: {}, fragment: {}}}", 
+            m.url, m.host, m.path, m.full_path, m.queries, m.fragment);
+    }
+};
+
+#endif
 #endif

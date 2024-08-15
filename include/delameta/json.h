@@ -26,10 +26,7 @@
 #define JSON_HELPER_DEFINE_MEMBER(r, data, elem) \
     BOOST_PP_TUPLE_ELEM(2, 0, elem) BOOST_PP_TUPLE_ELEM(2, 1, elem);
 
-#define JSON_DECLARE_I(name, seq) \
-    struct name { \
-        BOOST_PP_SEQ_FOR_EACH(JSON_HELPER_DEFINE_MEMBER, ~, seq) \
-    }; \
+#define JSON_TRAITS_I(name, seq) \
     namespace Project::etl::json { \
         template <> inline \
         size_t size_max(const name& m) { \
@@ -54,6 +51,13 @@
             return etl::Ok(); \
         } \
     }
+
+#define JSON_TRAITS(name, items) \
+    JSON_TRAITS_I(BOOST_PP_TUPLE_ELEM(1, 0, name), BOOST_PP_CAT(JSON_HELPER_WRAP_SEQUENCE_X items, 0))
+
+#define JSON_DECLARE_I(name, seq) \
+    struct name { BOOST_PP_SEQ_FOR_EACH(JSON_HELPER_DEFINE_MEMBER, ~, seq) }; \
+    JSON_TRAITS_I(name, seq)
 
 #define JSON_DECLARE(name, items) \
     JSON_DECLARE_I(BOOST_PP_TUPLE_ELEM(1, 0, name), BOOST_PP_CAT(JSON_HELPER_WRAP_SEQUENCE_X items, 0))

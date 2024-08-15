@@ -1,17 +1,13 @@
 #include <boost/preprocessor.hpp>
+#include <fmt/chrono.h>
+#include "delameta/debug.h"
 #include "delameta/http/server.h"
 #include "delameta/tcp/server.h"
-#include "delameta/debug.h"
 #include "delameta/opts.h"
-#include <iostream>
-#include <iomanip>
-#include <chrono>
 #include <csignal>
 
 using namespace Project;
 using namespace Project::delameta;
-using http::Server;
-using TCPServer = tcp::Server;
 using etl::Err;
 using etl::Ok;
 
@@ -24,7 +20,7 @@ OPTS_MAIN(
     (URL, host, 'H', "host", "Specify host server", "localhost:5000"),
     (Result<void>)
 ) {
-    auto tcp_server = TCPServer::New(FL, {host.host}).expect([](Error err) {
+    auto tcp_server = tcp::Server::New(FL, {host.host}).expect([](Error err) {
         DBG(panic, err.what);
     });
 
@@ -44,23 +40,22 @@ static void on_sigint(std::function<void()> fn) {
     std::signal(SIGQUIT, sig);
 }
 
-static auto debug_time() {
+static auto format_time_now() {
     auto now = std::chrono::system_clock::now();
-    std::time_t now_c = std::chrono::system_clock::to_time_t(now);
-    std::tm* local_time = std::localtime(&now_c);
-    return std::put_time(local_time, "%Y-%m-%d %H:%M:%S");
+    std::time_t time_now = std::chrono::system_clock::to_time_t(now);
+    return fmt::localtime(time_now);
 }
 
 namespace Project::delameta {
 
     void info(const char* file, int line, const std::string& msg) {
-        std::cout << debug_time() << " " << file << ":" << std::to_string(line) << ": INFO: " << msg << '\n';
+        fmt::println("{:%Y-%m-%d %H:%M:%S} {}:{} INFO: {}", format_time_now(), file, line, msg);
     }
     void warning(const char* file, int line, const std::string& msg) {
-        std::cout << debug_time() << " " << file << ":" << std::to_string(line) << ": WARNING: " << msg << '\n';
+        fmt::println("{:%Y-%m-%d %H:%M:%S} {}:{} WARNING: {}", format_time_now(), file, line, msg);
     }
     void panic(const char* file, int line, const std::string& msg) {
-        std::cout << debug_time() << " " << file << ":" << std::to_string(line) << ": PANIC: " << msg << '\n';
+        fmt::println("{:%Y-%m-%d %H:%M:%S} {}:{} PANIC: {}", format_time_now(), file, line, msg);
         exit(1);
     }
 }

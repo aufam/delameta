@@ -28,6 +28,7 @@ HTTP_ROUTE(
         return cli.request(s);
     }).then([&](std::vector<uint8_t> data) {
         res->headers["Content-Type"] = "application/octet-stream";
-        res->body = std::string(data.begin(), data.end());
+        res->headers["Content-Length"] = std::to_string(data.size());
+        res->body_stream << std::move(data);
     });
 }

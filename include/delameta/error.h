@@ -26,4 +26,18 @@ namespace Project::delameta {
     using Result = etl::Result<T, Error>;
 }
 
+#ifdef FMT_FORMAT_H_
+
+template <> 
+struct fmt::formatter<Project::delameta::Error> {
+    constexpr auto parse(fmt::format_parse_context& ctx) { return ctx.end(); }
+
+    template <typename Ctx>
+    inline auto format(const Project::delameta::Error& m, Ctx& ctx) const {
+        return fmt::format_to(ctx.out(), "Error {{code: {}, what: {}}}", m.code, m.what);
+    }
+};
+
+#endif
+
 #endif

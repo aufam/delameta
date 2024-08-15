@@ -14,14 +14,21 @@ FetchContent_Declare(
     GIT_TAG        master
 )
 
+# fmt
+FetchContent_Declare(
+    fmt
+    GIT_REPOSITORY https://github.com/fmtlib/fmt.git
+    GIT_TAG        master
+)
+
 set(JWT_BUILD_EXAMPLES OFF CACHE BOOL "Disable build example" FORCE)
-FetchContent_MakeAvailable(jwt-cpp boost_preprocessor)
+FetchContent_MakeAvailable(jwt-cpp boost_preprocessor fmt)
 
 # main app
 file(GLOB_RECURSE APP_MAIN_SOURCES *.*)
 add_executable(main ${APP_MAIN_SOURCES})
 
 target_link_libraries(main PRIVATE ${PROJECT_NAME})
-target_link_libraries(main PRIVATE jwt-cpp boost_preprocessor)
+target_link_libraries(main PRIVATE jwt-cpp boost_preprocessor fmt)
 target_compile_options(main PRIVATE -Wall -Wextra -Wno-literal-suffix -Wno-attributes)
 

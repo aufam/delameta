@@ -105,4 +105,29 @@ namespace Project::delameta::http {
     };
 }
 
+#ifdef FMT_FORMAT_H_
+
+template <> 
+struct fmt::formatter<Project::delameta::http::ResponseReader> {
+    constexpr auto parse(fmt::format_parse_context& ctx) { return ctx.end(); }
+
+    template <typename Ctx>
+    inline auto format(const Project::delameta::http::ResponseReader& m, Ctx& ctx) const {
+        return fmt::format_to(ctx.out(), "ResponseReader {{start line: {} {} {}, headers: {}, body: {}...({}) }}", 
+            m.version, m.status, m.status_string, m.headers, m.body, m.body_stream);
+    }
+};
+
+template <> 
+struct fmt::formatter<Project::delameta::http::ResponseWriter> {
+    constexpr auto parse(fmt::format_parse_context& ctx) { return ctx.end(); }
+
+    template <typename Ctx>
+    inline auto format(const Project::delameta::http::ResponseWriter& m, Ctx& ctx) const {
+        return fmt::format_to(ctx.out(), "ResponseWriter {{start line: {} {} {}, headers: {}, body: {}...({}) }}", 
+            m.version, m.status, m.status_string, m.headers, m.body, m.body_stream);
+    }
+};
+
+#endif
 #endif

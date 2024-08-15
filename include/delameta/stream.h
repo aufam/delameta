@@ -92,4 +92,18 @@ namespace Project::delameta {
     };
 }
 
+#ifdef FMT_FORMAT_H_
+
+template <> 
+struct fmt::formatter<Project::delameta::Stream> {
+    constexpr auto parse(fmt::format_parse_context& ctx) { return ctx.end(); }
+
+    template <typename Ctx>
+    inline auto format(const Project::delameta::Stream& m, Ctx& ctx) const {
+        return fmt::format_to(ctx.out(), "Stream with {} rule(s)", m.rules.size());
+    }
+};
+
+#endif
+
 #endif

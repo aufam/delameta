@@ -37,4 +37,29 @@ namespace Project::delameta::http {
     };
 }
 
+
+#ifdef FMT_FORMAT_H_
+
+template <> 
+struct fmt::formatter<Project::delameta::http::RequestReader> {
+    constexpr auto parse(fmt::format_parse_context& ctx) { return ctx.end(); }
+
+    template <typename Ctx>
+    inline auto format(const Project::delameta::http::RequestReader& m, Ctx& ctx) const {
+        return fmt::format_to(ctx.out(), "RequestReader {{start line: {} {} {}, headers: {}, body: {}...({}) }}", 
+            m.method, m.url.full_path, m.version, m.headers, m.body, m.body_stream);
+    }
+};
+
+template <> 
+struct fmt::formatter<Project::delameta::http::RequestWriter> {
+    constexpr auto parse(fmt::format_parse_context& ctx) { return ctx.end(); }
+
+    template <typename Ctx>
+    inline auto format(const Project::delameta::http::RequestWriter& m, Ctx& ctx) const {
+        return fmt::format_to(ctx.out(), "RequestWriter {{start line: {} {} {}, headers: {}, body: {}...({}) }}", 
+            m.method, m.url.full_path, m.version, m.headers, m.body, m.body_stream);
+    }
+};
+#endif
 #endif
