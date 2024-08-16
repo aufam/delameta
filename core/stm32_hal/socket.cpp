@@ -45,7 +45,13 @@ static void check_phy_link() {
     }
 };
 
-void delameta_stm32_hal_wizchip_set_net_info(const uint8_t* mac, const uint8_t* ip, const uint8_t* sn, const uint8_t* gw, const uint8_t* dns) {
+extern "C" void delameta_stm32_hal_wizchip_set_net_info(
+    const uint8_t mac[6], 
+    const uint8_t ip[4], 
+    const uint8_t sn[4], 
+    const uint8_t gw[4], 
+    const uint8_t dns[4]
+) {
     if (mac) ::memcpy(wizchip_net_info.mac, mac, 6);
     if (ip) ::memcpy(wizchip_net_info.ip, ip, 4);
     if (gw) ::memcpy(wizchip_net_info.sn, sn, 4);
@@ -85,7 +91,7 @@ void delameta_stm32_hal_wizchip_set_net_info(const uint8_t* mac, const uint8_t* 
     DBG(info, buffer);
 }
 
-void delameta_stm32_hal_wizchip_init() {
+extern "C" void delameta_stm32_hal_wizchip_init() {
     HAL_GPIO_WritePin(WIZCHIP_ETHERNET_CS_PORT, WIZCHIP_ETHERNET_CS_PIN, GPIO_PIN_SET);
     HAL_GPIO_WritePin(WIZCHIP_ETHERNET_RST_PORT, WIZCHIP_ETHERNET_RST_PIN, GPIO_PIN_SET);
 

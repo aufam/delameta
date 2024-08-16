@@ -329,28 +329,28 @@ extern "C" void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t S
     file_descriptor_t* desc = nullptr;
     uint8_t* buf = nullptr;
     #ifdef DELAMETA_STM32_USE_HAL_UART1
-    if (huart->Instance != huart1.Instance) {handler = huart; desc = &file_descriptors[I_UART1]; buf = uart1_rx_buffer;}
+    if (huart->Instance == huart1.Instance) {handler = huart; desc = &file_descriptors[I_UART1]; buf = uart1_rx_buffer;}
     #endif
     #ifdef DELAMETA_STM32_USE_HAL_UART2
-    if (huart->Instance != huart2.Instance) {handler = huart; desc = &file_descriptors[I_UART2]; buf = uart2_rx_buffer;}
+    if (huart->Instance == huart2.Instance) {handler = huart; desc = &file_descriptors[I_UART2]; buf = uart2_rx_buffer;}
     #endif
     #ifdef DELAMETA_STM32_USE_HAL_UART3
-    if (huart->Instance != huart3.Instance) {handler = huart; desc = &file_descriptors[I_UART3]; buf = uart3_rx_buffer;}
+    if (huart->Instance == huart3.Instance) {handler = huart; desc = &file_descriptors[I_UART3]; buf = uart3_rx_buffer;}
     #endif
     #ifdef DELAMETA_STM32_USE_HAL_UART4
-    if (huart->Instance != huart4.Instance) {handler = huart; desc = &file_descriptors[I_UART4]; buf = uart4_rx_buffer;}
+    if (huart->Instance == huart4.Instance) {handler = huart; desc = &file_descriptors[I_UART4]; buf = uart4_rx_buffer;}
     #endif
     #ifdef DELAMETA_STM32_USE_HAL_UART5
-    if (huart->Instance != huart5.Instance) {handler = huart; desc = &file_descriptors[I_UART5]; buf = uart5_rx_buffer;}
+    if (huart->Instance == huart5.Instance) {handler = huart; desc = &file_descriptors[I_UART5]; buf = uart5_rx_buffer;}
     #endif
     #ifdef DELAMETA_STM32_USE_HAL_UART6
-    if (huart->Instance != huart6.Instance) {handler = huart; desc = &file_descriptors[I_UART6]; buf = uart6_rx_buffer;}
+    if (huart->Instance == huart6.Instance) {handler = huart; desc = &file_descriptors[I_UART6]; buf = uart6_rx_buffer;}
     #endif
     #ifdef DELAMETA_STM32_USE_HAL_UART7
-    if (huart->Instance != huart7.Instance) {handler = huart; desc = &file_descriptors[I_UART7]; buf = uart7_rx_buffer;}
+    if (huart->Instance == huart7.Instance) {handler = huart; desc = &file_descriptors[I_UART7]; buf = uart7_rx_buffer;}
     #endif
     #ifdef DELAMETA_STM32_USE_HAL_UART8
-    if (huart->Instance != huart8.Instance) {handler = huart; desc = &file_descriptors[I_UART8]; buf = uart8_rx_buffer;}
+    if (huart->Instance == huart8.Instance) {handler = huart; desc = &file_descriptors[I_UART8]; buf = uart8_rx_buffer;}
     #endif
     if (handler) {
         if (desc->owner) {
@@ -358,7 +358,7 @@ extern "C" void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t S
             desc->received_data_len = Size;
             osThreadFlagsSet(desc->owner, 0b1);
         }
-        HAL_UARTEx_ReceiveToIdle_IT(handler, buf, MAX_HANDLE_SZ);
+        HAL_UARTEx_ReceiveToIdle_DMA(handler, buf, MAX_HANDLE_SZ);
     }
 }
 #endif
@@ -443,7 +443,7 @@ extern "C" void HAL_CAN_RxFifo1MsgPendingCallback(CAN_HandleTypeDef *hcan_) {
 #endif
     CAN_HandleTypeDef* handler = nullptr;
     file_descriptor_t* desc = nullptr;
-    if (hcan_->Instance != can_handler->Instance)
+    if (hcan_->Instance == can_handler->Instance)
     #ifdef DELAMETA_STM32_USE_HAL_CAN
     {handler = hcan_; desc = &file_descriptors[I_CAN];}
     #endif
@@ -510,7 +510,7 @@ auto FileDescriptor::Open(const char* file, int line, const char* __file, int __
     for (size_t i = 0; i < std::size(file_descriptors); ++i) {
         auto &fd = file_descriptors[i];
         if (std::string_view(fd.__file) == __file) {
-            do { etl::time::sleep(10ms); } while (fd.owner); // wait until available
+            while (fd.owner) { etl::time::sleep(10ms); }; // wait until available
             fd.owner = osThreadGetId();
             fd.__oflag = __oflag;
             return Ok(FileDescriptor(file, line, i));
@@ -734,7 +734,7 @@ auto FileDescriptor::operator>>(Stream& s) -> FileDescriptor& {
 }
 
 // peripheral init init
-void delameta_stm32_hal_init() {
+extern "C" void delameta_stm32_hal_init() {
     #ifdef DELAMETA_STM32_HAS_CAN
     delameta_stm32_hal_can_tx_header.RTR = CAN_RTR_DATA;
     delameta_stm32_hal_can_tx_header.TransmitGlobalTime = DISABLE;
@@ -743,27 +743,35 @@ void delameta_stm32_hal_init() {
     #endif
 
     #ifdef DELAMETA_STM32_USE_HAL_UART1
-    HAL_UARTEx_ReceiveToIdle_IT(&huart1, uart1_rx_buffer, sizeof(uart1_rx_buffer));
+    HAL_UARTEx_ReceiveToIdle_DMA(&huart1, uart1_rx_buffer, sizeof(uart1_rx_buffer));
+    __HAL_DMA_DISABLE_IT(huart1.hdmarx, DMA_IT_HT);
     #endif
     #ifdef DELAMETA_STM32_USE_HAL_UART2
-    HAL_UARTEx_ReceiveToIdle_IT(&huart2, uart2_rx_buffer, sizeof(uart2_rx_buffer));
+    HAL_UARTEx_ReceiveToIdle_DMA(&huart2, uart2_rx_buffer, sizeof(uart2_rx_buffer));
+    __HAL_DMA_DISABLE_IT(huart2.hdmarx, DMA_IT_HT);
     #endif
     #ifdef DELAMETA_STM32_USE_HAL_UART3
-    HAL_UARTEx_ReceiveToIdle_IT(&huart3, uart3_rx_buffer, sizeof(uart3_rx_buffer));
+    HAL_UARTEx_ReceiveToIdle_DMA(&huart3, uart3_rx_buffer, sizeof(uart3_rx_buffer));
+    __HAL_DMA_DISABLE_IT(huart3.hdmarx, DMA_IT_HT);
     #endif
     #ifdef DELAMETA_STM32_USE_HAL_UART4
-    HAL_UARTEx_ReceiveToIdle_IT(&huart4, uart4_rx_buffer, sizeof(uart4_rx_buffer));
+    HAL_UARTEx_ReceiveToIdle_DMA(&huart4, uart4_rx_buffer, sizeof(uart4_rx_buffer));
+    __HAL_DMA_DISABLE_IT(huart4.hdmarx, DMA_IT_HT);
     #endif
     #ifdef DELAMETA_STM32_USE_HAL_UART5
-    HAL_UARTEx_ReceiveToIdle_IT(&huart5, uart5_rx_buffer, sizeof(uart5_rx_buffer));
+    HAL_UARTEx_ReceiveToIdle_DMA(&huart5, uart5_rx_buffer, sizeof(uart5_rx_buffer));
+    __HAL_DMA_DISABLE_IT(huart5.hdmarx, DMA_IT_HT);
     #endif
     #ifdef DELAMETA_STM32_USE_HAL_UART6
-    HAL_UARTEx_ReceiveToIdle_IT(&huart6, uart6_rx_buffer, sizeof(uart6_rx_buffer));
+    HAL_UARTEx_ReceiveToIdle_DMA(&huart6, uart6_rx_buffer, sizeof(uart6_rx_buffer));
+    __HAL_DMA_DISABLE_IT(huart6.hdmarx, DMA_IT_HT);
     #endif
     #ifdef DELAMETA_STM32_USE_HAL_UART7
-    HAL_UARTEx_ReceiveToIdle_IT(&huart7, uart7_rx_buffer, sizeof(uart7_rx_buffer));
+    HAL_UARTEx_ReceiveToIdle_DMA(&huart7, uart7_rx_buffer, sizeof(uart7_rx_buffer));
+    __HAL_DMA_DISABLE_IT(huart7.hdmarx, DMA_IT_HT);
     #endif
     #ifdef DELAMETA_STM32_USE_HAL_UART8
-    HAL_UARTEx_ReceiveToIdle_IT(&huart8, uart8_rx_buffer, sizeof(uart8_rx_buffer));
+    HAL_UARTEx_ReceiveToIdle_DMA(&huart8, uart8_rx_buffer, sizeof(uart8_rx_buffer));
+    __HAL_DMA_DISABLE_IT(huart8.hdmarx, DMA_IT_HT);
     #endif
 }

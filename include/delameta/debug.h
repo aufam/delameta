@@ -6,10 +6,10 @@
 namespace Project::delameta {
 
     __attribute__((weak)) 
-    void info(const char*, int, const std::string&);
+    void info(const char* file, int line, const std::string& msg);
 
     __attribute__((weak)) 
-    void warning(const char*, int, const std::string&);
+    void warning(const char* file, int line, const std::string& msg);
 
     __attribute__((weak)) 
     void panic(const char* file, int line, const std::string& msg);
