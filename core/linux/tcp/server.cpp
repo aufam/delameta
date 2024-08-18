@@ -67,101 +67,100 @@ auto tcp::Server::New(const char* file, int line, Args args) -> Result<Server> {
         }
     
         info(file, line, "Created socket server: " + std::to_string(server->socket));
-        return Ok(Server(std::move(*server), port));
+        return Ok(Server(std::move(*server), port, args.max_socket));
     }
     
     return Err(std::move(err));
 }
 
-tcp::Server::Server(Socket&& socket, int port) 
+tcp::Server::Server(Socket&& socket, int port, int max_socket) 
     : StreamSessionServer({})
     , socket(std::move(socket))
-    , port(port) {}
+    , port(port) 
+    , max_socket(max_socket) {}
 
 tcp::Server::Server(Server&& other) 
     : StreamSessionServer(std::move(other.handler))
     , socket(std::move(other.socket))
     , port(other.port)
+    , max_socket(other.max_socket)
     , on_stop(std::move(other.on_stop)) {}
 
-tcp::Server::~Server() {
-    stop();
-}
+tcp::Server::~Server() {}
 
-auto tcp::Server::start() -> Result<void> {
-    std::list<std::thread> threads;
-    std::mutex mtx;
-    std::atomic_bool is_running {true};
-
-    on_stop = [this, &threads, &mtx, &is_running]() { 
-        std::lock_guard<std::mutex> lock(mtx);
-        is_running = false;
-        for (auto& thd : threads) if (thd.joinable()) {
-            thd.join();
-        }
-        on_stop = {};
-    };
-
-    while (is_running) {
-        auto client = Socket::Accept(__FILE__, __LINE__, socket.socket, nullptr, nullptr);
-        if (client.is_err()) {
-            Error& err = client.unwrap_err();
-            if (err.code == EWOULDBLOCK || err.code == EAGAIN) {
+static void work(tcp::Server* self, std::atomic_bool* is_running, int idx) {
+    info(self->socket.file, self->socket.line, "Spawned worker thread: " + std::to_string(idx));
+    while (*is_running) {
+        auto [client, client_err] = Socket::Accept(__FILE__, __LINE__, self->socket.socket, nullptr, nullptr);
+        if (client_err) {
+            if (client_err->code == EWOULDBLOCK || client_err->code == EAGAIN) {
                 // no incoming connection, sleep briefly
                 std::this_thread::sleep_for(10ms);
             } else {
-                warning(__FILE__, __LINE__, err.what);
+                warning(__FILE__, __LINE__, client_err->what);
             }
             continue;
         }
 
-        std::lock_guard<std::mutex> lock(mtx);
-        threads.emplace_back([this, client=std::move(client.unwrap()), &threads, &mtx, &is_running]() mutable {
-            client.keep_alive = socket.keep_alive;
-            client.timeout = socket.timeout;
-            client.max = socket.max;
+        client->keep_alive = self->socket.keep_alive;
+        client->timeout = self->socket.timeout;
+        client->max = self->socket.max;
+    
+        auto client_ip = delameta_detail_get_ip(client->socket);
 
-            auto client_ip = delameta_detail_get_ip(client.socket);
+        for (int cnt = 1; is_running and delameta_detail_is_socket_alive(client->socket); ++cnt) {
+            auto received_result = client->read();
+            if (received_result.is_err()) {
+                break;
+            }
 
-            for (int cnt = 1; is_running and delameta_detail_is_socket_alive(client.socket); ++cnt) {
-                auto received_result = client.read();
-                if (received_result.is_err()) {
-                    break;
+            auto stream = self->execute_stream_session(*client, client_ip, received_result.unwrap());
+            stream >> *client;
+
+            if (not client->keep_alive) {
+                if (client->max > 0 and cnt >= client->max) {
+                    warning(client->file, client->line, "Reached maximum receive: " + std::to_string(client->socket));
                 }
-
-                auto stream = execute_stream_session(client, client_ip, received_result.unwrap());
-                stream >> client;
-
-                if (not client.keep_alive) {
-                    if (client.max > 0 and cnt >= client.max) {
-                        warning(client.file, client.line, "Reached maximum receive: " + std::to_string(client.socket));
-                    }
-                    break;
-                }
+                break;
             }
+        }
 
-            // shutdown if still connected
-            if (delameta_detail_is_socket_alive(client.socket)) {
-                ::shutdown(client.socket, SHUT_RDWR);
-                info(client.file, client.line, "Closed by server: " + std::to_string(client.socket));
-            } else {
-                info(client.file, client.line, "Closed by peer: " + std::to_string(client.socket));
-            }
+        // shutdown if still connected
+        if (delameta_detail_is_socket_alive(client->socket)) {
+            ::shutdown(client->socket, SHUT_RDWR);
+            info(client->file, client->line, "Closed by server: " + std::to_string(client->socket));
+        } else {
+            info(client->file, client->line, "Closed by peer: " + std::to_string(client->socket));
+        }
+    }
+}
 
-            // remove this thread from threads
-            if (is_running) {
-                std::lock_guard<std::mutex> lock(mtx);
-                auto thd_id = std::this_thread::get_id();
-                threads.remove_if([thd_id](std::thread& thd) { 
-                    bool will_be_removed = thd.get_id() == thd_id;
-                    if (will_be_removed) thd.detach();
-                    return will_be_removed; 
-                });
-            }
-        });
+auto tcp::Server::start() -> Result<void> {
+    if (max_socket <= 0) {
+        panic(socket.file, socket.line, "max socket must be a positive integer");
+    }
+    if (max_socket > 8) {
+        panic(socket.file, socket.line, "too many socket");
     }
 
-    stop();
+    std::atomic_bool is_running {true};
+    std::vector<std::thread> threads;
+    threads.reserve(max_socket - 1);
+
+    on_stop = [this, &is_running]() { 
+        is_running = false;
+        on_stop = {};
+    };
+
+    int i = 0;
+    for (; i < max_socket - 1; ++i) {
+        threads.emplace_back(work, this, &is_running, i);
+    }
+
+    work(this, &is_running, i);
+    for (auto& thd : threads) if (thd.joinable()) {
+        thd.join();
+    }
     return etl::Ok();
 }
 

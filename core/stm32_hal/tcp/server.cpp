@@ -23,19 +23,21 @@ auto tcp::Server::New(const char* file, int line, Args args) -> Result<Server> {
         return Err(std::move(ip.unwrap_err()));
     }
     return Socket::New(file, line, Sn_MR_TCP, ip.unwrap().port, Sn_MR_ND).then([&](Socket socket) {
-        return Server(std::move(socket), ip.unwrap().port);
+        return Server(std::move(socket), ip.unwrap().port, args.max_socket);
     });
 }
 
-tcp::Server::Server(Socket&& socket, int port) 
+tcp::Server::Server(Socket&& socket, int port, int max_socket) 
     : StreamSessionServer({})
     , socket(std::move(socket)) 
-    , port(port) {}
+    , port(port) 
+    , max_socket(max_socket) {}
 
 tcp::Server::Server(Server&& other) 
     : StreamSessionServer(std::move(other.handler))
     , socket(std::move(other.socket))
     , port(other.port)
+    , max_socket(other.max_socket)
     , on_stop(std::move(other.on_stop)) {}
 
 tcp::Server::~Server() {
@@ -43,6 +45,13 @@ tcp::Server::~Server() {
 }
 
 auto tcp::Server::start() -> Result<void> {
+    if (max_socket <= 0) {
+        panic(socket.file, socket.line, "max socket must be a positive integer");
+    }
+    if (max_socket > 4) {
+        panic(socket.file, socket.line, "too many socket");
+    }
+
     bool is_running = true;
 
     while (is_running) {

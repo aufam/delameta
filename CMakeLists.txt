@@ -1,5 +1,4 @@
 cmake_minimum_required(VERSION 3.14)
-set(CMAKE_CXX_STANDARD 17)
 
 # project setting
 file(READ version.txt DELAMETA_VERSION)
@@ -23,22 +22,49 @@ message("DELAMETA_BUILD_APP    : ${DELAMETA_BUILD_APP}")
 message("DELAMETA_TARGET_LINUX : ${DELAMETA_TARGET_LINUX}")
 message("DELAMETA_TARGET_STM32 : ${DELAMETA_TARGET_STM32}")
 
+# find or fetch
+include(FetchContent)
+function(delameta_find_or_fetch_library LIB_NAME GIT_REPOSITORY GIT_TAG)
+    # Check if the library is provided by the parent project
+    if(NOT TARGET ${LIB_NAME})
+        # Try to find the library installed system-wide
+        find_package(${LIB_NAME} QUIET)
+
+        # If not found, fetch it using FetchContent
+        if(NOT ${LIB_NAME}_FOUND)
+            message(STATUS "Fetching ${LIB_NAME} from ${GIT_REPOSITORY}...")
+            FetchContent_Declare(
+                ${LIB_NAME}
+                GIT_REPOSITORY ${GIT_REPOSITORY}
+                GIT_TAG ${GIT_TAG}
+            )
+            FetchContent_MakeAvailable(${LIB_NAME})
+        else()
+            message(STATUS "${LIB_NAME} ${${LIB_NAME}_VERSION} found system-wide.")
+        endif()
+    else()
+        message(STATUS "${LIB_NAME} ${${LIB_NAME}_VERSION} found in the parent project.")
+    endif()
+
+    # Ensure the target is available
+    if(NOT TARGET ${LIB_NAME})
+        message(FATAL_ERROR "${LIB_NAME} target could not be found or created.")
+    endif()
+endfunction()
+
 if (DELAMETA_TARGET_LINUX)
 	# build library
 	file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS src/*.* core/linux/*.*)
 	add_library(delameta ${SOURCES})
-
 	target_compile_options(delameta PRIVATE
 		-Wall
 		-Wextra
 		$<$<COMPILE_LANGUAGE:CXX>:-Wno-literal-suffix>
 	)
-
 	target_include_directories(delameta PUBLIC
 		$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
 		$<INSTALL_INTERFACE:include> 
 	)
-
 	target_compile_definitions(delameta PUBLIC
 		-DDELAMETA_VERSION="${DELAMETA_VERSION}"
 	)
@@ -49,16 +75,7 @@ if (DELAMETA_TARGET_LINUX)
 	target_link_libraries(delameta PUBLIC ${CMAKE_THREAD_LIBS_INIT} stdc++fs)
 
 	# etl dependency
-	find_package(etl CONFIG QUIET)
-	if (NOT etl_FOUND)
-		include(FetchContent)
-		FetchContent_Declare(
-			etl
-			GIT_REPOSITORY https://github.com/aufam/etl.git
-			GIT_TAG        main
-		)
-		FetchContent_MakeAvailable(etl)
-	endif ()
+	delameta_find_or_fetch_library(etl https://github.com/aufam/etl.git main)
 	target_link_libraries(delameta PUBLIC etl)
 
 	# install target
@@ -117,20 +134,18 @@ if (DELAMETA_TARGET_STM32)
 	# build library
 	file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS src/*.* core/stm32_hal/*.*)
 	add_library(delameta ${SOURCES})
-
 	target_include_directories(delameta PUBLIC
 		${CMAKE_CURRENT_SOURCE_DIR}/include
 	)
-
 	target_include_directories(delameta PRIVATE
 		${CMAKE_CURRENT_SOURCE_DIR}/core/stm32_hal/Ethernet
 	)
-
 	target_compile_definitions(delameta PUBLIC
 		-DDELAMETA_VERSION="${DELAMETA_VERSION}"
 	)
 
 	# etl dependency
+	delameta_find_or_fetch_library(etl https://github.com/aufam/etl.git FreeRTOS)
 	target_link_libraries(delameta PUBLIC etl)
 endif (DELAMETA_TARGET_STM32)
 

@@ -26,6 +26,14 @@ namespace Project::delameta {
     using Result = etl::Result<T, Error>;
 }
 
+// try to unwrap the result of an expression, or return the error to the scope.
+// you may need to disable the `-pedantic` flag
+#define TRY(expr) ({ \
+    auto res = (expr); \
+    if (res.is_err()) return Err(std::move(res.unwrap_err())); \
+    std::move(res.unwrap()); \
+})
+
 #ifdef FMT_FORMAT_H_
 
 template <> 

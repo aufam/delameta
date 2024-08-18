@@ -20,9 +20,12 @@ OPTS_MAIN(
     (URL, host, 'H', "host", "Specify host server", "localhost:5000"),
     (Result<void>)
 ) {
-    auto tcp_server = tcp::Server::New(FL, {host.host}).expect([](Error err) {
-        DBG(panic, err.what);
-    });
+    auto tcp_server = TRY(
+        tcp::Server::New(FL, {
+            .host=host.host,
+            .max_socket=4,
+        })
+    );
 
     app.bind(tcp_server);
     on_sigint([&]() { tcp_server.stop(); });

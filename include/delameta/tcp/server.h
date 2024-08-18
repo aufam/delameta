@@ -22,9 +22,10 @@ namespace Project::delameta::tcp {
 
         Socket socket;
         int port;
+        int max_socket;
 
     protected:
-        Server(Socket&& socket, int port);
+        Server(Socket&& socket, int port, int max_socket);
         std::function<void()> on_stop;
     };
 }
