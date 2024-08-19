@@ -1,18 +1,32 @@
+#ifndef DELAMETA_STM32_DISABLE_SOCKET
+
+#include "main.h"
+#include "socket.h"
 #include "delameta/socket.h"
 #include "delameta/debug.h"
-#include "spi.h"
-#include "socket.h"
 #include "etl/async.h"
 #include "etl/heap.h"
 #include <cstring>
 
-#define WIZCHIP_ETHERNET_CS_PORT CS_LAN_GPIO_Port
-#define WIZCHIP_ETHERNET_CS_PIN CS_LAN_Pin
 
-#define WIZCHIP_ETHERNET_RST_PORT RST_LAN_GPIO_Port
-#define WIZCHIP_ETHERNET_RST_PIN RST_LAN_Pin
+#ifndef DELAMETA_STM32_WIZCHIP_CS_PORT
+#error "DELAMETA_STM32_WIZCHIP_CS_PORT is not defined"
+#endif
+#ifndef DELAMETA_STM32_WIZCHIP_CS_PIN
+#error "DELAMETA_STM32_WIZCHIP_CS_PIN is not defined"
+#endif
+#ifndef DELAMETA_STM32_WIZCHIP_RST_PORT
+#error "DELAMETA_STM32_WIZCHIP_RST_PORT is not defined"
+#endif
+#ifndef DELAMETA_STM32_WIZCHIP_RST_PIN
+#error "DELAMETA_STM32_WIZCHIP_RST_PIN is not defined"
+#endif
+#ifndef DELAMETA_STM32_WIZCHIP_SPI
+#error "DELAMETA_STM32_WIZCHIP_SPI is not defined"
+#endif
 
-#define WIZCHIP_ETHERNET_SPI hspi1
+extern SPI_HandleTypeDef DELAMETA_STM32_WIZCHIP_SPI;
+extern SPI_HandleTypeDef DELAMETA_STM32_WIZCHIP_SPI;
 
 static wiz_NetInfo wizchip_net_info = { 
     .mac={0x00, 0x08, 0xdc, 0xff, 0xee, 0xdd},
@@ -41,7 +55,7 @@ static socket_descriptor_t socket_descriptors[_WIZCHIP_SOCK_NUM_];
 static void check_phy_link() {
     while (wizphy_getphylink() == PHY_LINK_OFF) {
         DBG(warning, "PHY_LINK_OFF");
-        etl::this_thread::sleep(50ms);
+        etl::task::sleep(50ms).await();
     }
 };
 
@@ -92,38 +106,38 @@ extern "C" void delameta_stm32_hal_wizchip_set_net_info(
 }
 
 extern "C" void delameta_stm32_hal_wizchip_init() {
-    HAL_GPIO_WritePin(WIZCHIP_ETHERNET_CS_PORT, WIZCHIP_ETHERNET_CS_PIN, GPIO_PIN_SET);
-    HAL_GPIO_WritePin(WIZCHIP_ETHERNET_RST_PORT, WIZCHIP_ETHERNET_RST_PIN, GPIO_PIN_SET);
+    HAL_GPIO_WritePin(DELAMETA_STM32_WIZCHIP_CS_PORT, DELAMETA_STM32_WIZCHIP_CS_PIN, GPIO_PIN_SET);
+    HAL_GPIO_WritePin(DELAMETA_STM32_WIZCHIP_RST_PORT, DELAMETA_STM32_WIZCHIP_RST_PIN, GPIO_PIN_SET);
 
     reg_wizchip_cs_cbfunc(
-        [] { HAL_GPIO_WritePin(WIZCHIP_ETHERNET_CS_PORT, WIZCHIP_ETHERNET_CS_PIN, GPIO_PIN_RESET); }, 
-        [] { HAL_GPIO_WritePin(WIZCHIP_ETHERNET_CS_PORT, WIZCHIP_ETHERNET_CS_PIN, GPIO_PIN_SET); }
+        [] { HAL_GPIO_WritePin(DELAMETA_STM32_WIZCHIP_CS_PORT, DELAMETA_STM32_WIZCHIP_CS_PIN, GPIO_PIN_RESET); }, 
+        [] { HAL_GPIO_WritePin(DELAMETA_STM32_WIZCHIP_CS_PORT, DELAMETA_STM32_WIZCHIP_CS_PIN, GPIO_PIN_SET); }
     );
     reg_wizchip_spi_cbfunc(
         [] {
             uint8_t byte; 
-            HAL_SPI_Receive(&WIZCHIP_ETHERNET_SPI, &byte, 1, HAL_MAX_DELAY); 
+            HAL_SPI_Receive(&DELAMETA_STM32_WIZCHIP_SPI, &byte, 1, HAL_MAX_DELAY); 
             return byte;
         }, 
         [] (uint8_t byte) { 
-            HAL_SPI_Transmit(&WIZCHIP_ETHERNET_SPI, &byte, 1, HAL_MAX_DELAY); 
+            HAL_SPI_Transmit(&DELAMETA_STM32_WIZCHIP_SPI, &byte, 1, HAL_MAX_DELAY); 
         }
     );
     reg_wizchip_spiburst_cbfunc(
         [] (uint8_t* buf, uint16_t len) { 
-            HAL_SPI_Receive(&WIZCHIP_ETHERNET_SPI, buf, len, HAL_MAX_DELAY); 
+            HAL_SPI_Receive(&DELAMETA_STM32_WIZCHIP_SPI, buf, len, HAL_MAX_DELAY); 
         }, 
         [] (uint8_t* buf, uint16_t len) { 
-            HAL_SPI_Transmit(&WIZCHIP_ETHERNET_SPI, buf, len, HAL_MAX_DELAY); 
+            HAL_SPI_Transmit(&DELAMETA_STM32_WIZCHIP_SPI, buf, len, HAL_MAX_DELAY); 
         }
     );
 
     etl::async([]() {
-        etl::time::sleep(1s);
-        HAL_GPIO_WritePin(WIZCHIP_ETHERNET_CS_PORT, WIZCHIP_ETHERNET_CS_PIN, GPIO_PIN_RESET);
-        etl::this_thread::sleep(100ms);
-        HAL_GPIO_WritePin(WIZCHIP_ETHERNET_CS_PORT, WIZCHIP_ETHERNET_CS_PIN, GPIO_PIN_SET);
-        etl::this_thread::sleep(100ms);
+        etl::task::sleep(100ms).await();
+        HAL_GPIO_WritePin(DELAMETA_STM32_WIZCHIP_CS_PORT, DELAMETA_STM32_WIZCHIP_CS_PIN, GPIO_PIN_RESET);
+        etl::task::sleep(100ms).await();
+        HAL_GPIO_WritePin(DELAMETA_STM32_WIZCHIP_CS_PORT, DELAMETA_STM32_WIZCHIP_CS_PIN, GPIO_PIN_SET);
+        etl::task::sleep(100ms).await();
     
         DBG(info, "ethernet start");
 
@@ -283,3 +297,5 @@ auto Socket::write(std::string_view data) -> Result<void> {
 
     return Ok();
 }
+
+#endif

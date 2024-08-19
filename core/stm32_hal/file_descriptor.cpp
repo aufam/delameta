@@ -471,7 +471,9 @@ extern "C" void HAL_CAN_RxFifo1MsgPendingCallback(CAN_HandleTypeDef *hcan_) {
 }
 #endif
 #ifdef DELAMETA_STM32_USE_HAL_USB
-static osThreadId_t usb_write_thd;
+// static osThreadId_t usb_write_thd;
+static StaticSemaphore_t usb_write_sem_cb; 
+static osSemaphoreId_t usb_write_sem;
 extern "C" void CDC_ReceiveCplt_Callback(const uint8_t *pbuf, uint32_t len) {
     auto& desc = file_descriptors[I_USB];
     if (desc.owner) {
@@ -483,7 +485,8 @@ extern "C" void CDC_ReceiveCplt_Callback(const uint8_t *pbuf, uint32_t len) {
 extern "C" void CDC_TransmitCplt_Callback(const uint8_t *pbuf, uint32_t len) {
     UNUSED(pbuf);
     UNUSED(len);
-    osThreadFlagsSet(usb_write_thd, 0b10);
+    osSemaphoreRelease(usb_write_sem);
+    // osThreadFlagsSet(usb_write_thd, 0b10);
 }
 #endif
 
@@ -683,13 +686,12 @@ auto FileDescriptor::write(std::string_view data) -> Result<void> {
     #endif
     #ifdef DELAMETA_STM32_USE_HAL_USB
     if (fd == I_USB) {
-        usb_write_thd = osThreadGetId();
-        tout = data.size();
+        static size_t last_data_size;
+        osSemaphoreAcquire(usb_write_sem, last_data_size); // assuming the speed is 1 byte / ms
         if (auto res = CDC_Transmit_FS((uint8_t*)data.data(), data.size()); res != USBD_OK) {
             return Err(Error{res, "USBD busy"});
         } 
-        osThreadFlagsWait(0b10, osFlagsWaitAny, tout);
-        usb_write_thd = nullptr;
+        last_data_size = data.size();
         return Ok();
     }
     #endif
@@ -741,6 +743,11 @@ extern "C" void delameta_stm32_hal_init() {
     HAL_CAN_Start(can_handler);
     HAL_CAN_ActivateNotification(can_handler, _CAN_IT_RX_FIFO);
     #endif
+
+    osSemaphoreAttr_t attr = {};
+    attr.cb_mem = &usb_write_sem_cb;
+    attr.cb_size = sizeof(usb_write_sem_cb);
+    usb_write_sem = osSemaphoreNew(1, 1, &attr);
 
     #ifdef DELAMETA_STM32_USE_HAL_UART1
     HAL_UARTEx_ReceiveToIdle_DMA(&huart1, uart1_rx_buffer, sizeof(uart1_rx_buffer));
