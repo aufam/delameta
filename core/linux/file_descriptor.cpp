@@ -7,6 +7,7 @@
 #include <thread>
 #include <mutex>
 #include <atomic>
+#include <algorithm>
 #include "helper.h"
 
 using namespace Project;
