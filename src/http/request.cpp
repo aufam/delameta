@@ -17,13 +17,14 @@ http::RequestReader::RequestReader(Descriptor& desc, std::vector<uint8_t>&& data
 void http::RequestReader::parse(Descriptor& desc, const std::vector<uint8_t>& data) {
     auto sv = etl::string_view(data.data(), data.size());
 
-    auto request_line = sv.split<3>(" ");
-    if (request_line.len() < 3)
+    auto [method, path] = sv.split<2>(" ");
+    if (not path) {
         return;
+    }
     
-    auto method = request_line[0];
-    auto path = request_line[1];
-    auto version = request_line[2].split<1>("\n")[0];
+    auto consumed = (path.end() - sv.begin()) + 1; 
+    sv = sv.substr(consumed, sv.len() - consumed);
+    auto version = sv.split<1>("\n")[0];
     
     auto sv_begin = version.end() + 1;
     size_t sv_len = sv.end() > sv_begin && version.end() != nullptr ? sv.end() - sv_begin : 0;

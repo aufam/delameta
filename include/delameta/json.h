@@ -15,7 +15,8 @@
     n += size_max(BOOST_PP_STRINGIZE(BOOST_PP_TUPLE_ELEM(2, 1, elem))) + size_max(m.BOOST_PP_TUPLE_ELEM(2, 1, elem)) + 2;
 
 #define JSON_HELPER_APPEND_MEMBER(r, data, elem) \
-    detail::json_append(res, BOOST_PP_STRINGIZE(BOOST_PP_TUPLE_ELEM(2, 1, elem)), m.BOOST_PP_TUPLE_ELEM(2, 1, elem));
+    key = BOOST_PP_STRINGIZE(BOOST_PP_TUPLE_ELEM(2, 1, elem)); \
+    detail::json_append(res, key, m.BOOST_PP_TUPLE_ELEM(2, 1, elem));
 
 #define JSON_HELPER_DESERIALIZE_MEMBER(r, data, elem) \
     { auto res = \
@@ -27,30 +28,29 @@
     BOOST_PP_TUPLE_ELEM(2, 0, elem) BOOST_PP_TUPLE_ELEM(2, 1, elem);
 
 #define JSON_TRAITS_I(name, seq) \
-    namespace Project::etl::json { \
-        template <> inline \
-        size_t size_max(const name& m) { \
-            size_t n = 2; \
-            BOOST_PP_SEQ_FOR_EACH(JSON_HELPER_CALC_MAX_SIZE_MEMBER, ~, seq) \
-            return n; \
-        } \
-        template <> inline \
-        std::string serialize(const name& m) { \
-            std::string res; \
-            res.reserve(size_max(m)); \
-            res += '{'; \
-            BOOST_PP_SEQ_FOR_EACH(JSON_HELPER_APPEND_MEMBER, ~, seq) \
-            res.back() = '}'; \
-            return res; \
-        } \
-        template <> inline \
-        constexpr etl::Result<void, const char*> deserialize(const etl::Json& j, name& m) { \
-            if (j.error_message()) return etl::Err(j.error_message().data()); \
-            if (!j.is_dictionary()) return etl::Err("JSON is not a map"); \
-            BOOST_PP_SEQ_FOR_EACH(JSON_HELPER_DESERIALIZE_MEMBER, ~, seq) \
-            return etl::Ok(); \
-        } \
-    }
+    template <> inline \
+    size_t Project::etl::json::size_max(const name& m) { \
+        size_t n = 2; \
+        BOOST_PP_SEQ_FOR_EACH(JSON_HELPER_CALC_MAX_SIZE_MEMBER, ~, seq) \
+        return n; \
+    } \
+    template <> inline \
+    std::string Project::etl::json::serialize(const name& m) { \
+        std::string res; \
+        const char* key; \
+        res.reserve(size_max(m)); \
+        res += '{'; \
+        BOOST_PP_SEQ_FOR_EACH(JSON_HELPER_APPEND_MEMBER, ~, seq) \
+        res.back() = '}'; \
+        return res; \
+    } \
+    template <> inline \
+    constexpr Project::etl::Result<void, const char*> Project::etl::json::deserialize(const etl::Json& j, name& m) { \
+        if (j.error_message()) return etl::Err(j.error_message().data()); \
+        if (!j.is_dictionary()) return etl::Err("JSON is not a map"); \
+        BOOST_PP_SEQ_FOR_EACH(JSON_HELPER_DESERIALIZE_MEMBER, ~, seq) \
+        return etl::Ok(); \
+    } \
 
 #define JSON_TRAITS(name, items) \
     JSON_TRAITS_I(BOOST_PP_TUPLE_ELEM(1, 0, name), BOOST_PP_CAT(JSON_HELPER_WRAP_SEQUENCE_X items, 0))

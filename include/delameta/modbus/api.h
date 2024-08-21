@@ -39,6 +39,7 @@ namespace Project::delameta::modbus {
         using delameta::Error::Error;
 
         Error(Code code);
+        Error(const delameta::Error& err);
         Error(delameta::Error&& err);
         virtual ~Error() = default;
     };

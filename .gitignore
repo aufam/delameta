@@ -6,4 +6,5 @@ __pycache__
 .*
 !.gitignore
 !.gitmodules
+!.gitlab-ci.yml
 compile_commands.json

@@ -1,0 +1,24 @@
+image: gcc
+
+stages:
+  - build
+  - test
+
+build:
+  stage: build
+  before_script:
+    - apt update && apt -y install cmake
+  script:
+    - mkdir -p build
+    - cmake -B build -DDELAMETA_BUILD_APP=ON -DDELAMETA_BUILD_TEST=ON -DCMAKE_BUILD_TYPE=Debug
+    - cmake --build build -j10
+  artifacts:
+    paths:
+      - build/app/main
+      - build/test/test_all
+      - build/libdelameta.a
+
+test:
+  stage: test
+  script:
+    - ./build/test/test_all

@@ -37,6 +37,7 @@ modbus::Error::Error(Code code) : delameta::Error(int(code), "") {
     }
 }
 
+modbus::Error::Error(const delameta::Error& err) : delameta::Error(err) {}
 modbus::Error::Error(delameta::Error&& err) : delameta::Error(std::move(err)) {}
 
 static const uint16_t crcTable[] = {

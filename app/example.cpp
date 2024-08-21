@@ -1,8 +1,8 @@
 #include <boost/preprocessor.hpp>
-#include "delameta/http/server.h"
-#include "delameta/http/client.h"
-#include "delameta/tcp/client.h"
-#include "delameta/debug.h"
+#include <delameta/debug.h>
+#include <delameta/http/server.h>
+#include <delameta/http/client.h>
+#include <delameta/tcp/client.h>
 
 using namespace Project;
 using namespace Project::delameta::http;
@@ -82,16 +82,7 @@ static auto get_token(const RequestReader& req, ResponseWriter&) -> Server::Resu
     }
 }
 
-HTTP_EXTERN_OBJECT(app);
-
-static void example_init();
-class Example {
-public:
-    Example() { example_init(); }
-};
-static Example example HTTP_LATE_INIT;
-
-static void example_init() {
+HTTP_SETUP(app) {
     // show response time in the response header
     app.show_response_time = true;
 
@@ -194,7 +185,7 @@ static void example_init() {
 
     // example: redirect to the given path
     app.route("/redirect", {"GET", "POST", "PUT", "PATCH", "HEAD", "TRACE", "DELETE", "OPTIONS"}, 
-    std::tuple{arg::request, arg::arg("url")}, 
+        std::tuple{arg::request, arg::arg("url")}, 
     [](Ref<const RequestReader> req, std::string url_str) -> Server::Result<ResponseReader> {
         URL url = url_str;
         using TCPClient = delameta::tcp::Client;

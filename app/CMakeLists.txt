@@ -23,5 +23,5 @@ add_executable(main ${APP_MAIN_SOURCES})
 
 target_compile_features(main PRIVATE cxx_std_23)
 target_link_libraries(main PRIVATE delameta jwt-cpp boost_preprocessor fmt)
-target_compile_options(main PRIVATE -Wall -Wextra -pedantic -Wno-literal-suffix -Wno-attributes)
+target_compile_options(main PRIVATE -Wall -Wextra -Wno-literal-suffix -Wno-attributes)
 

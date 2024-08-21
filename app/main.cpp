@@ -1,9 +1,9 @@
 #include <boost/preprocessor.hpp>
 #include <fmt/chrono.h>
-#include "delameta/debug.h"
-#include "delameta/http/server.h"
-#include "delameta/tcp/server.h"
-#include "delameta/opts.h"
+#include <delameta/debug.h>
+#include <delameta/http/server.h>
+#include <delameta/tcp/server.h>
+#include <delameta/opts.h>
 #include <csignal>
 
 using namespace Project;
@@ -26,6 +26,8 @@ OPTS_MAIN(
             .max_socket=4,
         })
     );
+
+    tcp_server.socket.keep_alive = false;
 
     app.bind(tcp_server);
     on_sigint([&]() { tcp_server.stop(); });

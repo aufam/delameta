@@ -25,6 +25,9 @@ namespace Project::delameta::http {
             Error(int status);
             Error(int status, std::string what);
             Error(delameta::Error);
+
+            operator delameta::Error() const& { return {status, what}; }
+            operator delameta::Error() && { return {status, std::move(what)}; }
         };
 
         template <typename T>
@@ -490,6 +493,13 @@ namespace Project::delameta::http::arg {
     extern ::Project::delameta::http::Server o; static auto& _http_server = o
 
 #define HTTP_LATE_INIT __attribute__((init_priority(102)))
+
+#define HTTP_SETUP(o) \
+    HTTP_EXTERN_OBJECT(o); \
+    static void _http_setup(); \
+    struct _http_setup_t { _http_setup_t() { _http_setup(); } }; \
+    static _http_setup_t _http_setup_instance HTTP_LATE_INIT; \
+    static void _http_setup()
 
 #define HTTP_HELPER_VARIADIC(...) __VA_ARGS__
 #define HTTP_HELPER_MAKE_METHODS(...) std::vector<const char*>{__VA_ARGS__}

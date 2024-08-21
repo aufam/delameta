@@ -1,8 +1,8 @@
 #include <boost/preprocessor.hpp>
-#include "delameta/http/server.h"
-#include "delameta/modbus/client.h"
-#include "delameta/serial/client.h"
-#include "delameta/debug.h"
+#include <delameta/debug.h>
+#include <delameta/http/server.h>
+#include <delameta/modbus/client.h>
+#include <delameta/serial/client.h>
 #include <chrono>
 #include <thread>
 
@@ -123,24 +123,15 @@ static HTTP_ROUTE(
         (int        , tout   , http::arg::default_val("tout", 5)                    ),
     (http::Server::Result<Larkin>)
 ) {
-    return Serial::New(FL, {port, baud, tout})
-    .and_then([address](Serial session) -> modbus::Result<std::vector<uint16_t>> {
-        Client cli(address, session);
-        auto chunk1 =  cli.ReadHoldingRegisters(RegisterAddress, RegisterSize / 2);
-        if (chunk1.is_err()) {
-            return etl::Err(chunk1.unwrap_err());
-        }
+    auto session = TRY(Serial::New(FL, {port, baud, tout}));
+    Client cli(address, session);
 
-        std::this_thread::sleep_for(32ms);
-        auto chunk2 =  cli.ReadHoldingRegisters(RegisterAddress + RegisterSize / 2, RegisterSize / 2);
-        if (chunk2.is_err()) {
-            return etl::Err(chunk2.unwrap_err());
-        }
+    auto chunk1 = TRY(cli.ReadHoldingRegisters(RegisterAddress, RegisterSize / 2));
+    std::this_thread::sleep_for(32ms);
+    auto chunk2 = TRY(cli.ReadHoldingRegisters(RegisterAddress + RegisterSize / 2, RegisterSize / 2));
 
-        std::vector<uint16_t> res (chunk1.unwrap().begin(), chunk1.unwrap().end());
-        res.insert(res.end(), chunk2.unwrap().begin(), chunk2.unwrap().end());
+    std::vector<uint16_t> res (chunk1.begin(), chunk1.end());
+    res.insert(res.end(), chunk2.begin(), chunk2.end());
 
-        return etl::Ok(std::move(res));
-    })
-    .and_then(LarkinNew);
+    return LarkinNew(res);
 }

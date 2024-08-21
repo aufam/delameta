@@ -6,6 +6,7 @@ project(delameta VERSION ${DELAMETA_VERSION})
 
 # some options
 option(DELAMETA_BUILD_APP 	 "Build the main app" ON)
+option(DELAMETA_BUILD_TEST 	 "Build the test" ON)
 option(DELAMETA_TARGET_LINUX "Build for Linux" ON)
 option(DELAMETA_TARGET_STM32 "Build for STM32" OFF)
 
@@ -45,11 +46,6 @@ function(delameta_find_or_fetch_library LIB_NAME GIT_REPOSITORY GIT_TAG)
     else()
         message(STATUS "${LIB_NAME} ${${LIB_NAME}_VERSION} found in the parent project.")
     endif()
-
-    # Ensure the target is available
-    if(NOT TARGET ${LIB_NAME})
-        message(FATAL_ERROR "${LIB_NAME} target could not be found or created.")
-    endif()
 endfunction()
 
 if (DELAMETA_TARGET_LINUX)
@@ -67,6 +63,7 @@ if (DELAMETA_TARGET_LINUX)
 	)
 	target_compile_definitions(delameta PUBLIC
 		-DDELAMETA_VERSION="${DELAMETA_VERSION}"
+		-DDELAMETA_HOME_DIRECTORY="${CMAKE_SOURCE_DIR}"
 	)
 
 	# thread dependency
@@ -124,10 +121,6 @@ if (DELAMETA_TARGET_LINUX)
 		)
 	endif()
 
-	# main app
-	if (DELAMETA_BUILD_APP)
-		add_subdirectory(app)
-	endif()
 endif (DELAMETA_TARGET_LINUX)
 
 if (DELAMETA_TARGET_STM32)
@@ -142,6 +135,7 @@ if (DELAMETA_TARGET_STM32)
 	)
 	target_compile_definitions(delameta PUBLIC
 		-DDELAMETA_VERSION="${DELAMETA_VERSION}"
+		-DDELAMETA_HOME_DIRECTORY="${CMAKE_SOURCE_DIR}"
 	)
 
 	# etl dependency
@@ -149,3 +143,14 @@ if (DELAMETA_TARGET_STM32)
 	target_link_libraries(delameta PUBLIC etl)
 endif (DELAMETA_TARGET_STM32)
 
+# main app
+if (DELAMETA_TARGET_LINUX AND DELAMETA_BUILD_APP)
+	add_subdirectory(app)
+endif()
+
+# main app
+if (DELAMETA_TARGET_LINUX AND DELAMETA_BUILD_TEST)
+	add_subdirectory(test)
+	enable_testing()
+	add_test(NAME test_all COMMAND test_all)
+endif()
