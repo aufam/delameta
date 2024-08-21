@@ -2,6 +2,7 @@
 #include <delameta/debug.h>
 #include <delameta/http/server.h>
 #include <delameta/file_descriptor.h>
+#include <algorithm>
 #include <fcntl.h>
 #include <dirent.h>
 

@@ -1,5 +1,6 @@
 #include "delameta/http/server.h"
 #include "delameta/socket.h"
+#include <algorithm>
 #include "../time_helper.ipp"
 
 using namespace Project;

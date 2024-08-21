@@ -3,6 +3,7 @@
 #include <delameta/http/server.h>
 #include <delameta/http/client.h>
 #include <delameta/tcp/client.h>
+#include <algorithm>
 
 using namespace Project;
 using namespace Project::delameta::http;

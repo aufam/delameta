@@ -4,6 +4,7 @@
 #include <delameta/http/server.h>
 #include <delameta/modbus/client.h>
 #include <delameta/serial/client.h>
+#include <algorithm>
 #include <chrono>
 #include <thread>
 
