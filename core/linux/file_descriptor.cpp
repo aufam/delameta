@@ -213,6 +213,10 @@ auto FileDescriptor::write(std::string_view data) -> Result<void> {
     return log_sent_ok(__FILE__, __LINE__, this, total);
 }
 
+auto FileDescriptor::wait_until_ready() -> Result<void> {
+    return log_err(__FILE__, __LINE__, this, Error(-1, "Not implemented yet"));
+}
+
 auto FileDescriptor::file_size() -> Result<size_t> {
     off_t cp = lseek(fd, 0, SEEK_CUR);
     if (cp == -1)

@@ -148,6 +148,7 @@ auto serial::Server::start() -> Result<void> {
     };
  
     while (is_running and delameta_detail_is_fd_alive(fd.fd)) {
+        fd.wait_until_ready();
         auto read_result = fd.read();
         if (read_result.is_err()) {
             break;

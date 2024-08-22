@@ -37,6 +37,7 @@ auto serial::Server::start() -> Result<void> {
     };
  
     while (is_running) {
+        fd.wait_until_ready();
         auto read_result = fd.read();
         if (read_result.is_err()) {
             warning(fd.file, fd.line, read_result.unwrap_err().what);

@@ -22,7 +22,8 @@ namespace Project::delameta {
         Result<void> write(std::string_view data) override;
         using Descriptor::write;
 
-        Result<size_t> file_size();
+        Result<void> wait_until_ready(); ///< for serial server
+        Result<size_t> file_size(); ///< for file
 
         FileDescriptor& operator<<(Stream& s);
         FileDescriptor& operator>>(Stream& s);
