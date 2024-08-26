@@ -137,9 +137,6 @@ if (DELAMETA_TARGET_STM32)
 		-Wall
 		-Wextra
 		-pedantic
-		-Wconversion
-		-Wsign-conversion
-		-Wnull-dereference
 		$<$<COMPILE_LANGUAGE:CXX>:-Wno-literal-suffix>
 		$<$<COMPILE_LANGUAGE:CXX>:-Woverloaded-virtual>
 		$<$<COMPILE_LANGUAGE:CXX>:-Wnon-virtual-dtor>
