@@ -14,6 +14,7 @@ namespace Project::delameta {
         virtual ~FileDescriptor();
 
         static Result<FileDescriptor> Open(const char* file, int line, const char* __file, int __oflag);
+        static Result<FileDescriptor> Open(const char* __file, int __oflag) { return Open("", 0, __file, __oflag); }
 
         Result<std::vector<uint8_t>> read() override;
         Stream read_as_stream(size_t n) override;

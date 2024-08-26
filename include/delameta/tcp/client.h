@@ -16,6 +16,8 @@ namespace Project::delameta::tcp {
         };
 
         static Result<Client> New(const char* file, int line, Args args);
+        static Result<Client> New(Args args) { return New("", 0, args); }
+
         virtual ~Client() = default;
 
     protected:

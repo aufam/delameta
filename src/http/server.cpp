@@ -121,6 +121,37 @@ auto http::Server::execute(Descriptor& desc, const std::vector<uint8_t>& data) c
     return {std::move(req), std::move(res)};
 }
 
+http::Server::Context::Context(const RequestReader& req) {
+    auto it = req.headers.find("Content-Type");
+    if (it == req.headers.end()) {
+        it = req.headers.find("content-type");
+    }
+    if (it != req.headers.end()) {
+        content_type = it->second;
+    }
+
+    if (content_type_starts_with("application/json")) {
+        if (req.body.empty()) req.body_stream >> [&req](std::string_view chunk) { req.body += chunk; };
+        json = etl::Json::parse(etl::string_view(req.body.data(), req.body.size()));
+        type = JSON;
+    } else if (content_type_starts_with("application/x-www-form-urlencoded")) {
+        if (req.body.empty()) req.body_stream >> [&req](std::string_view chunk) { req.body += chunk; };
+        percent_encoding = URL::decode(req.body);
+        type = PercentEncoding;
+    }
+}
+
+bool http::Server::Context::content_type_starts_with(std::string_view prefix) const {
+    return content_type.substr(0, prefix.length()) == prefix;
+}
+
+auto http::Server::Context::percent_encoding_at(const char* key) const -> http::Server::Result<std::string_view> {
+    const std::string k = key;
+    auto it = percent_encoding.find(k);
+    if (it == percent_encoding.end()) return etl::Err(Error{StatusBadRequest, "key '" + k + "' not found"});
+    return etl::Ok(std::string_view(it->second));
+}
+
 static auto status_to_string(int status) -> std::string {
     switch (status) {
         // 100

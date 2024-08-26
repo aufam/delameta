@@ -58,6 +58,8 @@ namespace Project::delameta::http {
         template <typename F>
         struct ArgDepends { F depends; };
 
+        struct ArgPercentEncodingItem { const char* key; };
+
         struct ArgRequest {};
         struct ArgResponse {};
         struct ArgMethod {};
@@ -142,6 +144,19 @@ namespace Project::delameta::http {
         std::pair<RequestReader, ResponseWriter> execute(Descriptor& desc, const std::vector<uint8_t>& data) const;
     
     protected:
+        struct Context {
+            std::string_view content_type;
+            etl::Json json;
+            std::unordered_map<std::string, std::string> percent_encoding;
+
+            enum Type { Any, JSON, PercentEncoding };
+            Type type = Any;
+
+            Context(const RequestReader& req);
+            bool content_type_starts_with(std::string_view prefix) const;
+            Result<std::string_view> percent_encoding_at(const char* key) const;
+        };
+
         template <typename... RouterArgs, typename R, typename ...HandlerArgs>
         auto route_(
             std::string path, 
@@ -157,9 +172,11 @@ namespace Project::delameta::http {
                     if (err) return error_handler(std::move(*err), req, res);
                 }
 
+                Context ctx(req);
+
                 // process each args
                 std::tuple<Result<HandlerArgs>...> arg_values = std::apply([&](const auto&... items) {
-                    return std::tuple { process_arg<HandlerArgs>(items, req, res)... };
+                    return std::tuple { process_arg<HandlerArgs>(items, req, res, ctx)... };
                 }, args);
 
                 // check for err
@@ -213,20 +230,20 @@ namespace Project::delameta::http {
                 return convert_string_into<T>(it->second); \
 
         template <typename T> static Result<T>
-        process_arg(const Arg& arg, const RequestReader& req, ResponseWriter&) {
+        process_arg(const Arg& arg, const RequestReader& req, ResponseWriter&, Context&) {
             DELAMETA_HTTP_SERVER_PROCESS_ARG(arg.name);
             return etl::Err(Error{StatusBadRequest, std::string() + "arg '" + arg.name + "' not found"});
         }
 
         template <typename T, typename U> static Result<T>
-        process_arg(const ArgDefaultVal<U>& arg, const RequestReader& req, ResponseWriter&) {
+        process_arg(const ArgDefaultVal<U>& arg, const RequestReader& req, ResponseWriter&, Context&) {
             static_assert(std::is_convertible_v<U, T>);
             DELAMETA_HTTP_SERVER_PROCESS_ARG(arg.name);
             return etl::Ok(arg.default_value);
         }
 
         template <typename T, typename F> static Result<T>
-        process_arg(const ArgDefaultFn<F>& arg, const RequestReader& req, ResponseWriter& res) {
+        process_arg(const ArgDefaultFn<F>& arg, const RequestReader& req, ResponseWriter& res, Context&) {
             DELAMETA_HTTP_SERVER_PROCESS_ARG(arg.name);
             using U = decltype(arg.default_fn(req, res));
             if constexpr (is_server_result_v<U>) {
@@ -240,25 +257,23 @@ namespace Project::delameta::http {
 
         #undef DELAMETA_HTTP_SERVER_PROCESS_ARG
 
-        #define DELAMETA_HTTP_SERVER_PROCESS_ARG_JSON(key) \
-            if (req.body.empty()) req.body_stream >> [&req](std::string_view chunk) { req.body += chunk; }; \
-            if (get_content_type(req) != "application/json") \
+        #define DELAMETA_HTTP_SERVER_PROCESS_ARG_JSON(key, ctx) \
+            if (ctx.type != Context::JSON) \
                 return etl::Err(Error{StatusBadRequest, "Content-Type is not json"}); \
-            auto j = etl::Json::parse(etl::string_view(req.body.data(), req.body.size())); \
-            auto err_msg = j.error_message(); \
+            auto err_msg = ctx.json.error_message(); \
             if (err_msg) \
                 return etl::Err(Error{StatusBadRequest, std::string(err_msg.data())}); \
-            if (!j.is_dictionary()) \
+            if (!ctx.json.is_dictionary()) \
                 return etl::Err(Error{StatusBadRequest, "JSON is not a map"}); \
-            auto item = j[key]; \
+            auto item = ctx.json[key]; \
             err_msg = item.error_message(); \
             if (!err_msg) \
                 return etl::json::deserialize<T>(item.dump()).except(internal_error); \
 
 
         template <typename T> static Result<T>
-        process_arg(const ArgJsonItem& arg, const RequestReader& req, ResponseWriter&) {
-            DELAMETA_HTTP_SERVER_PROCESS_ARG_JSON(arg.key)
+        process_arg(const ArgJsonItem& arg, const RequestReader&, ResponseWriter&, Context& ctx) {
+            DELAMETA_HTTP_SERVER_PROCESS_ARG_JSON(arg.key, ctx)
             if constexpr(etl::detail::is_std_optional_v<T>)
                 return etl::Ok(std::nullopt);
             if constexpr(etl::is_optional_v<T>)
@@ -267,14 +282,14 @@ namespace Project::delameta::http {
         }
 
         template <typename T, typename U> static Result<T>
-        process_arg(const ArgJsonItemDefaultVal<U>& arg, const RequestReader& req, ResponseWriter&) {
-            DELAMETA_HTTP_SERVER_PROCESS_ARG_JSON(arg.key)
+        process_arg(const ArgJsonItemDefaultVal<U>& arg, const RequestReader&, ResponseWriter&, Context& ctx) {
+            DELAMETA_HTTP_SERVER_PROCESS_ARG_JSON(arg.key, ctx)
             return etl::Ok(arg.default_value);
         }
 
         template <typename T, typename F> static Result<T>
-        process_arg(const ArgJsonItemDefaultFn<F>& arg, const RequestReader& req, ResponseWriter& res) {
-            DELAMETA_HTTP_SERVER_PROCESS_ARG_JSON(arg.key)
+        process_arg(const ArgJsonItemDefaultFn<F>& arg, const RequestReader& req, ResponseWriter& res, Context& ctx) {
+            DELAMETA_HTTP_SERVER_PROCESS_ARG_JSON(arg.key, ctx)
             using U = decltype(arg.default_fn(req, res));
             if constexpr (is_server_result_v<U>) {
                 return arg.default_fn(req, res);
@@ -288,7 +303,7 @@ namespace Project::delameta::http {
         #undef DELAMETA_HTTP_SERVER_PROCESS_ARG_JSON
 
         template <typename T, typename F> static Result<T>
-        process_arg(const ArgDepends<F>& arg, const RequestReader& req, ResponseWriter& res) {
+        process_arg(const ArgDepends<F>& arg, const RequestReader& req, ResponseWriter& res, Context&) {
             using U = decltype(arg.depends(req, res));
             if constexpr (is_server_result_v<U>) {
                 return arg.depends(req, res);
@@ -300,79 +315,87 @@ namespace Project::delameta::http {
         }
         
         template <typename T> static Result<T>
-        process_arg(const ArgRequest&, const RequestReader& req, ResponseWriter&) {
+        process_arg(const ArgRequest&, const RequestReader& req, ResponseWriter&, Context&) {
             static_assert(std::is_same_v<T, etl::Ref<const RequestReader>>);
             return etl::Ok(etl::ref_const(req));
         }
         
         template <typename T> static Result<T>
-        process_arg(const ArgResponse&, const RequestReader&, ResponseWriter& res) {
+        process_arg(const ArgResponse&, const RequestReader&, ResponseWriter& res, Context&) {
             static_assert(std::is_same_v<T, etl::Ref<ResponseWriter>>);
             return etl::Ok(etl::ref(res));
         }
 
         template <typename T> static Result<T>
-        process_arg(const ArgMethod&, const RequestReader& req, ResponseWriter&) {
+        process_arg(const ArgMethod&, const RequestReader& req, ResponseWriter&, Context&) {
             return convert_string_into<T>(req.method);
         }
 
         template <typename T> static Result<T>
-        process_arg(const ArgURL&, const RequestReader& req, ResponseWriter&) {
+        process_arg(const ArgURL&, const RequestReader& req, ResponseWriter&, Context&) {
             static_assert(std::is_same_v<T, etl::Ref<const decltype(RequestReader::url)>>);
             return etl::Ok(etl::ref_const(req.url));
         }
 
         template <typename T> static Result<T>
-        process_arg(const ArgHeaders&, const RequestReader& req, ResponseWriter&) {
+        process_arg(const ArgHeaders&, const RequestReader& req, ResponseWriter&, Context&) {
             static_assert(std::is_same_v<T, etl::Ref<const decltype(RequestReader::headers)>>);
             return etl::Ok(etl::ref_const(req.headers));
         }
 
         template <typename T> static Result<T>
-        process_arg(const ArgQueries&, const RequestReader& req, ResponseWriter&) {
+        process_arg(const ArgQueries&, const RequestReader& req, ResponseWriter&, Context&) {
             static_assert(std::is_same_v<T, etl::Ref<const decltype(URL::queries)>>);
             return etl::Ok(etl::ref_const(req.url.queries));
         }
 
         template <typename T> static Result<T>
-        process_arg(const ArgPath&, const RequestReader& req, ResponseWriter&) {
+        process_arg(const ArgPath&, const RequestReader& req, ResponseWriter&, Context&) {
             return convert_string_into<T>(req.url.path);
         }
 
         template <typename T> static Result<T>
-        process_arg(const ArgFullPath&, const RequestReader& req, ResponseWriter&) {
+        process_arg(const ArgFullPath&, const RequestReader& req, ResponseWriter&, Context&) {
             return convert_string_into<T>(req.url.full_path);
         }
 
         template <typename T> static Result<T>
-        process_arg(const ArgFragment&, const RequestReader& req, ResponseWriter&) {
+        process_arg(const ArgFragment&, const RequestReader& req, ResponseWriter&, Context&) {
             return convert_string_into<T>(req.url.fragment);
         }
 
         template <typename T> static Result<T>
-        process_arg(const ArgVersion&, const RequestReader& req, ResponseWriter&) {
+        process_arg(const ArgVersion&, const RequestReader& req, ResponseWriter&, Context&) {
             return convert_string_into<T>(req.version);
         }
 
         template <typename T> static Result<T>
-        process_arg(const ArgBody&, const RequestReader& req, ResponseWriter&) {
+        process_arg(const ArgBody&, const RequestReader& req, ResponseWriter&, Context&) {
             return convert_stream_into<T>(req);
         }
 
         template <typename T> static Result<T>
-        process_arg(const ArgJson&, const RequestReader& req, ResponseWriter&) {
-            if (get_content_type(req) == "application/json")
-                return convert_stream_into<T>(req);
+        process_arg(const ArgJson&, const RequestReader&, ResponseWriter&, Context& ctx) {
+            if (ctx.type == Context::JSON)
+                return etl::json::deserialize<T>(ctx.json).except(internal_error);
             else
-                return etl::Err(Error{StatusBadRequest, std::string() + "Content-Type is not json"});
+                return etl::Err(Error{StatusBadRequest, "Content-Type is not json"});
         }
 
         template <typename T> static Result<T>
-        process_arg(const ArgText&, const RequestReader& req, ResponseWriter&) {
-            if (get_content_type(req) == "text/plain")
+        process_arg(const ArgPercentEncodingItem& arg, const RequestReader&, ResponseWriter&, Context& ctx) {
+            if (ctx.type == Context::PercentEncoding)
+                return ctx.percent_encoding_at(arg.key).and_then(convert_string_into<T>);
+            else
+                return etl::Err(Error{StatusBadRequest, "Content-Type is not url-encoded"});
+        }
+
+        template <typename T> static Result<T>
+        process_arg(const ArgText&, const RequestReader& req, ResponseWriter&, Context& ctx) {
+            if (ctx.content_type_starts_with("text/plain"))
                 return convert_stream_into<T>(req);
             else
-                return etl::Err(Error{StatusBadRequest, std::string() + "Content-Type is not text/plain"});
+                return etl::Err(Error{StatusBadRequest, "Content-Type is not text/plain"});
         }
 
         template <typename T> static void
@@ -392,19 +415,6 @@ namespace Project::delameta::http {
             } else {
                 res.body = etl::json::serialize(result);
                 res.headers["Content-Type"] = "application/json";
-            }
-        }
-
-        static std::string_view
-        get_content_type(const RequestReader& req) {
-            auto it = req.headers.find("Content-Type");
-            if (it == req.headers.end()) {
-                it = req.headers.find("content-type");
-            }
-            if (it != req.headers.end()) {
-                return it->second;
-            } else {
-                return "";
             }
         }
 
@@ -437,6 +447,7 @@ namespace Project::delameta::http {
 namespace Project::delameta::http::arg {
     inline Server::Arg arg(const char* name) { return {name}; }
     inline Server::ArgJsonItem json_item(const char* key) { return {key}; }
+    inline Server::ArgPercentEncodingItem percent_encoding(const char* key) { return {key}; }
 
     template <typename F>
     auto depends(F&& depends_function) {

@@ -16,6 +16,7 @@ namespace Project::delameta::tcp {
         };
 
         static Result<Server> New(const char* file, int line, Args args);
+        static Result<Server> New(Args args) { return New("", 0, args); }
 
         Result<void> start();
         void stop();

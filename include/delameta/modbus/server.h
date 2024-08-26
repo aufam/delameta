@@ -42,8 +42,8 @@ namespace Project::delameta::modbus {
 
         std::function<void(const std::string&, const std::vector<uint8_t>&, const std::vector<uint8_t>&)> logger;
 
-        void bind(StreamSessionServer&);
-        Result<std::vector<uint8_t>> execute(const std::vector<uint8_t>& data) const;
+        void bind(StreamSessionServer&, bool accept_all_address = false) const;
+        Result<std::vector<uint8_t>> execute(const std::vector<uint8_t>& data, bool accept_all_address = false) const;
 
     protected:
         Result<std::vector<uint8_t>> execute_read_coils(const std::vector<uint8_t>& data) const;

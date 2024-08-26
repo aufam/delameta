@@ -55,7 +55,13 @@ if (DELAMETA_TARGET_LINUX)
 	target_compile_options(delameta PRIVATE
 		-Wall
 		-Wextra
+		-pedantic
+		-Wconversion
+		-Wsign-conversion
+		-Wnull-dereference
 		$<$<COMPILE_LANGUAGE:CXX>:-Wno-literal-suffix>
+		$<$<COMPILE_LANGUAGE:CXX>:-Woverloaded-virtual>
+		$<$<COMPILE_LANGUAGE:CXX>:-Wnon-virtual-dtor>
 	)
 	target_include_directories(delameta PUBLIC
 		$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
@@ -127,6 +133,17 @@ if (DELAMETA_TARGET_STM32)
 	# build library
 	file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS src/*.* core/stm32_hal/*.*)
 	add_library(delameta ${SOURCES})
+	target_compile_options(delameta PRIVATE
+		-Wall
+		-Wextra
+		-pedantic
+		-Wconversion
+		-Wsign-conversion
+		-Wnull-dereference
+		$<$<COMPILE_LANGUAGE:CXX>:-Wno-literal-suffix>
+		$<$<COMPILE_LANGUAGE:CXX>:-Woverloaded-virtual>
+		$<$<COMPILE_LANGUAGE:CXX>:-Wnon-virtual-dtor>
+	)
 	target_include_directories(delameta PUBLIC
 		${CMAKE_CURRENT_SOURCE_DIR}/include
 	)

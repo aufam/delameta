@@ -51,26 +51,30 @@ TEST(Macro, error) {
     EXPECT_EQ(fmt::format("{}", he), "http::Error {code: 200, what: OK}");
 }
 
-// it seems that you dont understand the result API, here is the tested test case
 TEST(Macro, try) {
-    static auto foo = []() -> delameta::Result<int> {
+    auto foo = []() -> delameta::Result<int> {
         return etl::Ok(42);
     };
-    static auto bar = []() -> delameta::Result<int> {
+    auto bar = []() -> delameta::Result<int> {
         return etl::Err(delameta::Error(-1, "Fatal error"));
     };
 
-    int first_num = 0;
+    int num_test = 0;
 
-    static auto baz = [&first_num]() -> delameta::Result<int> {
+    auto baz = [&]() -> delameta::Result<int> {
         int num = TRY(foo()); // ok, proceed to next line
-        first_num = num; // first_num will be 42
-        num += TRY(bar()); // fail, return the error
+        num_test = num; // num_test will be 42
+        num_test += TRY(bar()); // fail, return the error
         return etl::Ok(num); // will never get here
     };
 
     auto res = baz();
 
+    EXPECT_EQ(num_test, 42);
     EXPECT_FALSE(res.is_ok());
-    EXPECT_EQ(first_num, 42);
+    EXPECT_TRUE(res.is_err());
+
+    EXPECT_THROW(res.unwrap(), std::bad_variant_access);
+    EXPECT_EQ(res.unwrap_err().code, -1);
+    EXPECT_EQ(res.unwrap_err().what, "Fatal error");
 }

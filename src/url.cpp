@@ -86,6 +86,10 @@ static auto sv_percent_encoded_to_string(etl::StringView sv) -> std::string {
     res.reserve(sv.len() + 1);
 
     for (size_t i = 0; i < sv.len(); ++i) {
+        if (sv[i] == '+') {
+            res += ' ';
+            continue;
+        }
         if (sv[i] != '%') {
             res += sv[i];
             continue;
@@ -108,6 +112,66 @@ static auto parse_query(etl::StringView sv) -> std::unordered_map<std::string, s
     for (auto kv : sv.split<16>("&")) {
         auto [key, value] = kv.split<2>("=");
         res[sv_percent_encoded_to_string(key)] = sv_percent_encoded_to_string(value);
+    }
+
+    return res;
+}
+
+auto URL::decode(std::string_view sv) -> std::unordered_map<std::string, std::string> {
+    return parse_query({sv.data(), sv.size()});
+}
+
+static constexpr bool is_unreserved_character(char c) {
+    return (c >= 'a' && c <= 'z') ||
+           (c >= 'A' && c <= 'Z') ||
+           (c >= '0' && c <= '9') ||
+           (c == '-') ||
+           (c == '_') ||
+           (c == '.') ||
+           (c == '~');
+}
+
+static void char_to_hex(char c, std::string& out) {
+    static const char digits[] = "0123456789ABCDEF";
+    out += digits[(c >> 4) & 0xF];
+    out += digits[c & 0xF];
+}
+
+auto URL::encode(const std::unordered_map<std::string, std::string>& queries) -> std::string {
+    size_t total = 16;
+    for (const auto& [k, v]: queries) {
+        total += k.size() + 1 + v.size();
+    }
+
+    std::string res;
+    res.reserve(total);
+    bool first_item = true;
+
+    for (const auto& [k, v]: queries) {
+        if (first_item) {
+            first_item = false;
+        } else {
+            res += '&';
+        }
+
+        for (char c: k) {
+            if (is_unreserved_character(c)) {
+                res += c;
+            } else {
+                res += '%';
+                char_to_hex(c, res);
+            }
+        }
+
+        res += '=';
+        for (char c: v) {
+            if (is_unreserved_character(c)) {
+                res += c;
+            } else {
+                res += '%';
+                char_to_hex(c, res);
+            }
+        }
     }
 
     return res;

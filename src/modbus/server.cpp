@@ -24,9 +24,9 @@ static void write_value_into_buffer(T value, uint8_t*& ptr, int& bit_count) {
     }
 } 
 
-void modbus::Server::bind(StreamSessionServer& server) {
-    server.handler = [this](Descriptor&, const std::string& name, const std::vector<uint8_t>& data) -> Stream {
-        auto res = execute(data);
+void modbus::Server::bind(StreamSessionServer& server, bool accept_all_address) const {
+    server.handler = [this, accept_all_address](Descriptor&, const std::string& name, const std::vector<uint8_t>& data) -> Stream {
+        auto res = execute(data, accept_all_address);
         Stream s;
         if (res.is_ok()) {
             if (logger) logger(name, data, res.unwrap());
@@ -70,14 +70,14 @@ auto modbus::Server::DiagnosticGetter(uint8_t sub_function, std::function<Result
     return diagnostic_getters[sub_function] = std::move(getter);
 }
 
-auto modbus::Server::execute(const std::vector<uint8_t>& data) const -> Result<std::vector<uint8_t>> {
+auto modbus::Server::execute(const std::vector<uint8_t>& data, bool accept_all_address) const -> Result<std::vector<uint8_t>> {
     if (not modbus::is_valid(data)) 
         return Err(Error::InvalidCRC);
 
     auto address = data[0];
     auto function_code = data[1];
 
-    if (address != server_address)
+    if (!accept_all_address && address != server_address)
         return Err(Error::InvalidAddress);
 
     std::vector<uint8_t> res;

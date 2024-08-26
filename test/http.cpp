@@ -155,3 +155,64 @@ TEST(Http, handler) {
         EXPECT_EQ(res.body, "this is body with id = 123");
     }
 }
+
+TEST(Http, json) {
+    Server handler;
+    handler.route("/json", {"POST"}, std::tuple{
+        arg::json_item("num"), 
+        arg::json_item("text"),
+        arg::json_item("list"),
+        arg::json_item("map"),
+    }, [](int num, std::string text, etl::json::List list, etl::json::Map map) {
+        EXPECT_EQ(num, 42);
+        EXPECT_EQ(text, "text");
+        EXPECT_EQ(std::get<double>(list[0]), 42);
+        EXPECT_EQ(std::get<std::string>(list[1]), "text");
+        EXPECT_EQ(std::get<double>(map["num"]), 42);
+        EXPECT_EQ(std::get<std::string>(map["text"]), "text");
+    });
+
+    std::string body = R"({
+        "num": 42,
+        "text": "text",
+        "list": [42, "text"],
+        "map": {
+            "num": 42,
+            "text": "text",
+        }
+    })";
+
+    std::string payload = 
+        "POST /json HTTP/1.1\r\n"
+        "Content-Type: application/json\r\n"
+        "Content-Length: " + std::to_string(body.size()) + "\r\n\r\n" +
+        body;
+    
+    DummyDescriptor desc;
+    const auto payload_vec = std::vector<uint8_t>(payload.begin(), payload.end());
+    auto [req, res] = handler.execute(desc, payload_vec);
+    EXPECT_EQ(res.status, delameta::http::StatusOK);
+}
+
+TEST(Http, form) {
+    Server handler;
+    handler.route("/form", {"POST"}, std::tuple{
+        arg::percent_encoding("num"), 
+        arg::percent_encoding("text")
+    }, [](int num, std::string text) {
+        EXPECT_EQ(num, 42);
+        EXPECT_EQ(text, "test 123/456-789");
+    });
+
+    std::string body = R"(num=42&text=test+123%2F456-789)";
+    std::string payload = 
+        "POST /form HTTP/1.1\r\n"
+        "Content-Type: application/x-www-form-urlencoded; charset=utf-8\r\n"
+        "Content-Length: " + std::to_string(body.size()) + "\r\n\r\n" +
+        body;
+    
+    DummyDescriptor desc;
+    const auto payload_vec = std::vector<uint8_t>(payload.begin(), payload.end());
+    auto [req, res] = handler.execute(desc, payload_vec);
+    EXPECT_EQ(res.status, delameta::http::StatusOK);
+}

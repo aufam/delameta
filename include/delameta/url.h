@@ -6,7 +6,7 @@
 
 namespace Project::delameta {
     struct URL {
-        URL() {}
+        URL() = default;
         URL(std::string url);
 
         std::string url;
@@ -16,6 +16,9 @@ namespace Project::delameta {
         std::string full_path;
         std::unordered_map<std::string, std::string> queries;
         std::string fragment;
+
+        static std::string encode(const std::unordered_map<std::string, std::string>&);
+        static std::unordered_map<std::string, std::string> decode(std::string_view);
     };
 }
 

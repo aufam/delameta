@@ -27,8 +27,6 @@ OPTS_MAIN(
         })
     );
 
-    tcp_server.socket.keep_alive = false;
-
     app.bind(tcp_server);
     on_sigint([&]() { tcp_server.stop(); });
 
