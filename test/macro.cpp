@@ -3,7 +3,7 @@
 #include <delameta/debug.h>
 #include <delameta/error.h>
 #include <delameta/json.h>
-#include <delameta/http/server.h>
+#include <delameta/http/http.h>
 #include <gtest/gtest.h>
 
 using namespace Project;
@@ -47,7 +47,7 @@ TEST(Macro, error) {
     delameta::Error e(-1, "Fatal error");
     EXPECT_EQ(fmt::format("{}", e), "Error {code: -1, what: Fatal error}");
 
-    delameta::http::Server::Error he(delameta::http::StatusOK, "OK");
+    delameta::http::Error he(delameta::http::StatusOK, "OK");
     EXPECT_EQ(fmt::format("{}", he), "http::Error {code: 200, what: OK}");
 }
 

@@ -1,9 +1,9 @@
 #include <boost/preprocessor.hpp>
 #include <fmt/ranges.h>
 #include <delameta/debug.h>
-#include <delameta/http/server.h>
+#include <delameta/http/http.h>
 #include <delameta/modbus/client.h>
-#include <delameta/serial/client.h>
+#include <delameta/serial.h>
 #include <algorithm>
 #include <chrono>
 #include <thread>
@@ -13,7 +13,7 @@ using namespace Project;
 using namespace std::literals;
 namespace http = delameta::http;
 using delameta::modbus::Client;
-using Session = delameta::serial::Client;
+using delameta::Serial;
 using etl::Ok;
 using etl::Err;
 
@@ -37,16 +37,25 @@ JSON_DECLARE(
 )
 
 static HTTP_ROUTE(
+    ("/shzk/test", ("GET")),
+    (shzk_test),,
+    (SHZK)
+) {
+    SHZK shzk {};
+    return shzk;
+}
+
+static HTTP_ROUTE(
     ("/shzk", ("GET")),
     (read_shzk),
         (int        , address, http::arg::default_val("address", 0x01)              )
         (std::string, port   , http::arg::default_val("port", std::string("auto"))  )
         (int        , baud   , http::arg::default_val("baud", 9600)                 )
         (int        , tout   , http::arg::default_val("tout", 5)                    ),
-    (http::Server::Result<SHZK>)
+    (http::Result<SHZK>)
 ) {
     auto session = TRY(
-        Session::New(FL, {.port=port, .baud=baud, .timeout=tout})
+        Serial::Open(FL, {.port=port, .baud=baud, .timeout=tout})
     );
 
     Client cli(address, session);
@@ -79,10 +88,10 @@ static HTTP_ROUTE(
         (int             , baud   , http::arg::default_val("baud", 9600)                 )
         (int             , tout   , http::arg::default_val("tout", 5)                    )
         (std::string_view, cmd    , http::arg::arg("cmd")                                ),
-    (http::Server::Result<void>)
+    (http::Result<void>)
 ) {
     auto session = TRY(
-        Session::New(FL, {.port=port, .baud=baud, .timeout=tout})
+        Serial::Open(FL, {.port=port, .baud=baud, .timeout=tout})
     );
 
     Client cli(address, session);
@@ -106,7 +115,7 @@ static HTTP_ROUTE(
     if (it != std::end(cmds)) {
         return cli.WriteSingleRegister(0x2000, value);
     }
-    return Err(http::Server::Error{
+    return Err(http::Error{
         http::StatusBadRequest, fmt::format("Commands not found. Available commands are: {}", cmds)
     });
 }

@@ -1,9 +1,10 @@
 #include <boost/preprocessor.hpp>
 #include <fmt/chrono.h>
 #include <delameta/debug.h>
-#include <delameta/http/server.h>
-#include <delameta/tcp/server.h>
+#include <delameta/http/http.h>
+#include <delameta/tcp.h>
 #include <delameta/opts.h>
+#include <delameta/endpoint.h>
 #include <csignal>
 
 using namespace Project;
@@ -17,21 +18,16 @@ static void on_sigint(std::function<void()> fn);
 
 OPTS_MAIN(
     (ExampleAPI, "Example API"),
-    (URL, host, 'H', "host", "Specify host server", "localhost:5000"),
+    (URL, uri, 'H', "host", "Specify host server", "localhost:5000"),
     (Result<void>)
 ) {
-    auto tcp_server = TRY(
-        tcp::Server::New(FL, {
-            .host=host.host,
-            .max_socket=4,
-        })
-    );
+    Server<TCP> tcp_server;
 
     app.bind(tcp_server);
     on_sigint([&]() { tcp_server.stop(); });
 
-    DBG(info, "Server is starting on " + host.host);
-    return tcp_server.start();
+    DBG(info, "Server is starting on " + uri.host);
+    return tcp_server.start(FL, {uri.host});
 }
 
 static void on_sigint(std::function<void()> fn) {

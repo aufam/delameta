@@ -1,22 +1,21 @@
 #include <boost/preprocessor.hpp>
-#include <delameta/http/server.h>
+#include <delameta/http/http.h>
 #include <chrono>
 #include <jwt-cpp/jwt.h>
 
 using namespace Project;
 using namespace delameta;
-using namespace http;
 using etl::Err;
 using etl::Ok;
 
 static const char SECRET[] = "secret";
 static const char PASSWORD[] = "1407";
 
-auto get_jwt_username(const RequestReader& req, ResponseWriter&) -> Server::Result<std::string> { 
+auto get_jwt_username(const http::RequestReader& req, http::ResponseWriter&) -> http::Result<std::string> { 
     std::string_view token = "";
     std::string_view prefix = "Bearer ";
     auto err_unauthorized = [](std::string what) {
-        return Err(Server::Error{StatusUnauthorized, std::move(what)});
+        return Err(http::Error{http::StatusUnauthorized, std::move(what)});
     };
 
     auto it = req.headers.find("Authentication");
@@ -54,12 +53,12 @@ HTTP_EXTERN_OBJECT(app);
 static HTTP_ROUTE(
     ("/login", ("POST")),
     (login),
-        (std::string, username, arg::json_item("username"))
-        (std::string, password, arg::json_item("password")),
-    (Server::Result<std::map<std::string, std::string>>)
+        (std::string, username, http::arg::json_item("username"))
+        (std::string, password, http::arg::json_item("password")),
+    (http::Result<std::map<std::string, std::string>>)
 ) {
     if (password != PASSWORD) {
-        return Err(Server::Error{StatusBadRequest, "Invalid password"});
+        return Err(http::Error{http::StatusBadRequest, "Invalid password"});
     } 
 
     auto token = jwt::create()
@@ -80,7 +79,7 @@ static HTTP_ROUTE(
 
 static HTTP_ROUTE(
     ("/username", ("GET")),
-    (verify_username), (std::string, username, arg::depends(get_jwt_username)),
+    (verify_username), (std::string, username, http::arg::depends(get_jwt_username)),
     (std::string)
 ) {
     return username;

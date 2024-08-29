@@ -1,40 +1,60 @@
-#include "delameta/http/server.h"
-#include "delameta/socket.h"
+#include "delameta/http/http.h"
+#include "delameta/tcp.h"
 #include <algorithm>
 #include "../time_helper.ipp"
 
 using namespace Project;
 using namespace Project::delameta;
-
 using etl::Err;
 using etl::Ok;
 
-http::Server::Error::Error(int status) : status(status), what("") {}
-http::Server::Error::Error(int status, std::string what) : status(status), what(std::move(what)) {}
-http::Server::Error::Error(delameta::Error err) : status(StatusInternalServerError), what(err.what + ": " + std::to_string(err.code)) {}
+http::Error::Error(int status) : status(status), what("") {}
+http::Error::Error(int status, std::string what) : status(status), what(std::move(what)) {}
+http::Error::Error(delameta::Error err) : status(StatusInternalServerError), what(err.what + ": " + std::to_string(err.code)) {}
 
 static auto status_to_string(int status) -> std::string;
 
-auto http::Server::reroute(std::string path, etl::Ref<const RequestReader> req, etl::Ref<ResponseWriter> res) -> Result<void> {
-    auto it = std::find_if(routers.begin(), routers.end(), [&](Server::Router& router) {
+auto http::request(StreamSessionClient& session, RequestWriter req) -> delameta::Result<ResponseReader> {
+    if (req.headers.find("User-Agent") == req.headers.end() && 
+        req.headers.find("user-agent") == req.headers.end()
+    ) {
+        req.headers["User-Agent"] = "delameta/" DELAMETA_VERSION;
+    }
+    if (not req.body.empty() && 
+        req.body_stream.rules.empty() &&
+        req.headers.find("Content-Length") == req.headers.end() && 
+        req.headers.find("content-length") == req.headers.end()
+    ) {
+        req.headers["Content-Length"] = std::to_string(req.body.size());
+    }
+    if (req.body.empty() && req.body_stream.rules.empty()) req.headers["Content-Length"] = "0";
+
+    Stream s = req.dump();
+    return session.request(s).then([&session](std::vector<uint8_t> data) {
+        return http::ResponseReader(*session.desc, std::move(data));
+    });
+}
+
+auto http::Http::reroute(std::string path, etl::Ref<const RequestReader> req, etl::Ref<ResponseWriter> res) -> Result<void> {
+    auto it = std::find_if(routers.begin(), routers.end(), [&](http::Router& router) {
         return router.path == path;
     });
 
     if (it == routers.end()) {
-        return Err(Server::Error{StatusNotFound, "path " + path + " is not found"});
+        return Err(Error{StatusNotFound, "path " + path + " is not found"});
     }
 
     it->function(*req, *res);
     return Ok();
 }
 
-void http::Server::bind(StreamSessionServer& server, BindArg is_tcp_server) const {
+void http::Http::bind(StreamSessionServer& server, BindArg is_tcp_server) const {
     server.handler = [this, is_tcp_server](Descriptor& desc, const std::string& name, const std::vector<uint8_t>& data) -> Stream {
         auto [req, res] = execute(desc, data);
 
         // handle socket configuration
         if (is_tcp_server.is_tcp_server) {
-            if (auto socket = static_cast<Socket*>(&desc); socket) {
+            if (auto socket = static_cast<TCP*>(&desc); socket) {
                 auto it = req.headers.find("Connection");
                 if (it == req.headers.end()) {
                     it = req.headers.find("connection");
@@ -71,7 +91,7 @@ void http::Server::bind(StreamSessionServer& server, BindArg is_tcp_server) cons
     };
 }
 
-auto http::Server::execute(Descriptor& desc, const std::vector<uint8_t>& data) const -> std::pair<RequestReader, ResponseWriter> {
+auto http::Http::execute(Descriptor& desc, const std::vector<uint8_t>& data) const -> std::pair<RequestReader, ResponseWriter> {
     auto start = delameta_detail_get_time_stamp();
     auto req = http::RequestReader(desc, data);
     auto res = http::ResponseWriter{};
@@ -121,7 +141,7 @@ auto http::Server::execute(Descriptor& desc, const std::vector<uint8_t>& data) c
     return {std::move(req), std::move(res)};
 }
 
-http::Server::Context::Context(const RequestReader& req) {
+http::Http::Context::Context(const RequestReader& req) {
     auto it = req.headers.find("Content-Type");
     if (it == req.headers.end()) {
         it = req.headers.find("content-type");
@@ -141,11 +161,11 @@ http::Server::Context::Context(const RequestReader& req) {
     }
 }
 
-bool http::Server::Context::content_type_starts_with(std::string_view prefix) const {
+bool http::Http::Context::content_type_starts_with(std::string_view prefix) const {
     return content_type.substr(0, prefix.length()) == prefix;
 }
 
-auto http::Server::Context::percent_encoding_at(const char* key) const -> http::Server::Result<std::string_view> {
+auto http::Http::Context::percent_encoding_at(const char* key) const -> http::Result<std::string_view> {
     const std::string k = key;
     auto it = percent_encoding.find(k);
     if (it == percent_encoding.end()) return etl::Err(Error{StatusBadRequest, "key '" + k + "' not found"});

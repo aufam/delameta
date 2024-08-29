@@ -1,31 +1,30 @@
 #include <boost/preprocessor.hpp>
 #include <delameta/debug.h>
-#include <delameta/http/server.h>
-#include <delameta/http/client.h>
-#include <delameta/tcp/client.h>
+#include <delameta/http/http.h>
+#include <delameta/tcp.h>
 #include <algorithm>
 
 using namespace Project;
 using namespace Project::delameta::http;
+using delameta::TCP;
 using delameta::Stream;
 using delameta::URL;
-using delameta::Error;
 using delameta::info;
 using etl::Ref;
 using etl::Ok;
 using etl::Err;
 
 // define some json rules for some http classes
-JSON_DEFINE(Project::delameta::http::Server::Router, 
+JSON_DEFINE(Router, 
     JSON_ITEM("methods", methods), 
     JSON_ITEM("path", path)
 )
 
-JSON_DEFINE(Project::delameta::http::Server::Error, 
+JSON_DEFINE(Error, 
     JSON_ITEM("err", what)
 )
 
-JSON_DEFINE(Project::delameta::URL, 
+JSON_DEFINE(URL, 
     JSON_ITEM("url", url), 
     JSON_ITEM("protocol", protocol), 
     JSON_ITEM("host", host), 
@@ -52,12 +51,12 @@ struct Bar {
 };
 
 template<>
-auto Server::convert_string_into(std::string_view str) -> Server::Result<Bar> {
+auto Http::convert_string_into(std::string_view str) -> Result<Bar> {
     return Ok(Bar{str.size()});
 }
 
 template<>
-void Server::process_result(Bar& bar, const RequestReader&, ResponseWriter& res) {
+void Http::process_result(Bar& bar, const RequestReader&, ResponseWriter& res) {
     res.body = "Bar{" + std::to_string(bar.num) + "}";
     res.headers["Content-Type"] = "text/plain";
 }
@@ -65,7 +64,7 @@ void Server::process_result(Bar& bar, const RequestReader&, ResponseWriter& res)
 // example JWT dependency injection
 static const char* const access_token = "Bearer 1234";
 
-static auto get_token(const RequestReader& req, ResponseWriter&) -> Server::Result<std::string_view> {
+static auto get_token(const RequestReader& req, ResponseWriter&) -> Result<std::string_view> {
     std::string_view token = "";
     auto it = req.headers.find("Authentication");
     if (it == req.headers.end()) {
@@ -74,12 +73,12 @@ static auto get_token(const RequestReader& req, ResponseWriter&) -> Server::Resu
     if (it != req.headers.end()) {
         token = it->second;
     } else {
-        return Err(Server::Error{StatusUnauthorized, "No authentication provided"});
+        return Err(Error{StatusUnauthorized, "No authentication provided"});
     }
     if (token == access_token) {
         return Ok(token);
     } else {
-        return Err(Server::Error{StatusUnauthorized, "Token doesn't match"});
+        return Err(Error{StatusUnauthorized, "Token doesn't match"});
     }
 }
 
@@ -92,8 +91,8 @@ HTTP_SETUP(app) {
         DBG(info, msg);
     };
 
-    // example custom handler: jsonify Server::Error
-    app.error_handler = [](Server::Error err, const RequestReader&, ResponseWriter& res) {
+    // example custom handler: jsonify Error
+    app.error_handler = [](Error err, const RequestReader&, ResponseWriter& res) {
         res.status = err.status;
         res.body = etl::json::serialize(err);
         res.headers["Content-Type"] = "application/json";
@@ -115,9 +114,9 @@ HTTP_SETUP(app) {
     // - get request param (in this case the body as string_view)
     // - possible error return value
     app.Post("/body", std::tuple{arg::body},
-    [](std::string_view body) -> Server::Result<std::string_view> {
+    [](std::string_view body) -> Result<std::string_view> {
         if (body.empty()) {
-            return etl::Err(Server::Error{StatusBadRequest, "Body is empty"});
+            return etl::Err(Error{StatusBadRequest, "Body is empty"});
         } else {
             return etl::Ok(body);
         }
@@ -136,8 +135,8 @@ HTTP_SETUP(app) {
 
     // example: 
     // - it will find "bar" key in the request headers and request queries
-    // - if found, it will be deserialized using custom Server::convert_string_into
-    // - since Server::process_result for Bar is defined, the return value of this function will be used to process the result 
+    // - if found, it will be deserialized using custom Http::convert_string_into
+    // - since Http::process_result for Bar is defined, the return value of this function will be used to process the result 
     app.Get("/bar", std::tuple{arg::arg("bar")}, 
     [](Bar bar) -> Bar { 
         return bar; 
@@ -156,7 +155,7 @@ HTTP_SETUP(app) {
 
     // example: print all routes of this app as json list
     app.Get("/routes", {},
-    [&]() -> Ref<const std::list<Server::Router>> {
+    [&]() -> Ref<const std::list<Router>> {
         return etl::ref_const(app.routers);
     });
 
@@ -187,24 +186,22 @@ HTTP_SETUP(app) {
     // example: redirect to the given path
     app.route("/redirect", {"GET", "POST", "PUT", "PATCH", "HEAD", "TRACE", "DELETE", "OPTIONS"}, 
         std::tuple{arg::request, arg::arg("url")}, 
-    [](Ref<const RequestReader> req, std::string url_str) -> Server::Result<ResponseReader> {
+    [](Ref<const RequestReader> req, std::string url_str) -> Result<ResponseReader> {
         URL url = url_str;
-        using TCPClient = delameta::tcp::Client;
-        return TCPClient::New(__FILE__, __LINE__, {url.host}).and_then([&](TCPClient cli) {
-            RequestWriter data = *req;
-            data.url = url;
-            return request(cli, std::move(data));
-        });
+        auto session = TRY(TCP::Open(FL, {url.host}));
+        RequestWriter data = *req;
+        data.url = url;
+        return request(session, std::move(data));
     });
 
     app.Delete("/delete_route", std::tuple{arg::arg("path")},
-    [&](std::string path) -> Server::Result<void> {
-        auto it = std::find_if(app.routers.begin(), app.routers.end(), [&path](Server::Router& router) {
+    [&](std::string path) -> Result<void> {
+        auto it = std::find_if(app.routers.begin(), app.routers.end(), [&path](Router& router) {
             return router.path == path;
         });
 
         if (it == app.routers.end()) {
-            return Err(Server::Error{StatusBadRequest, "path " + path + " not found"});
+            return Err(Error{StatusBadRequest, "path " + path + " not found"});
         }
 
         app.routers.erase(it);

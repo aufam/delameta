@@ -1,13 +1,16 @@
-#include "delameta/serial/server.h"
+#include "delameta/serial.h"
+#include "helper.h"
+#include <fcntl.h>
+#include <sys/ioctl.h>
+#include <unistd.h>
+#include <cstring>
+#include <termios.h>
 #include <dirent.h>
 #include <cstring>
-#include <fcntl.h>
-#include <unistd.h>
-#include <termios.h>
 #include <thread>
 #include <mutex>
 #include <atomic>
-#include "../helper.h"
+#include <algorithm>
 
 using namespace Project;
 using namespace Project::delameta;
@@ -15,6 +18,7 @@ using namespace std::literals;
 
 using etl::Err;
 using etl::Ok;
+using etl::defer;
 
 static Result<int> get_baudrate(const char* file, int line, int baud) {
     switch (baud) {
@@ -57,36 +61,46 @@ static Result<int> get_baudrate(const char* file, int line, int baud) {
     }
 }
 
-auto delameta_detail_create_serial(const char* file, int line, std::string port, int baud) -> Result<FileDescriptor> {
-    auto log_errno = [file, line]() {
-        int code = errno;
-        std::string what = ::strerror(code);
-        warning(file, line, what);
-        return Err(Error{code, what});
-    };
+static auto log_errno(const char* file, int line) {
+    int code = errno;
+    std::string what = ::strerror(code);
+    warning(file, line, what);
+    return Err(Error{code, std::move(what)});
+}
 
-    if (port == "auto") {
+// TODO
+struct FileDescriptorHandler {
+    std::string filename;
+    int fd;
+    int counter;
+};
+
+static std::mutex handlers_mtx;
+static std::list<FileDescriptorHandler> handlers;
+
+auto Serial::Open(const char* file, int line, Args args) -> Result<Serial> {
+    if (args.port == "auto") {
         struct dirent *ent;
         auto dir = ::opendir("/dev/");
         if (!dir) {
-            return log_errno();
+            return log_errno(file, line);
         }   
         while ((ent = ::readdir(dir)) != nullptr) {
             if (::strstr(ent->d_name, "ttyACM") != nullptr || ::strstr(ent->d_name, "ttyUSB") != nullptr) 
-                port = std::string("/dev/") + ent->d_name;
+                args.port = std::string("/dev/") + ent->d_name;
         }
         ::closedir(dir);
     } 
 
-    auto [serial, err] = FileDescriptor::Open(file, line, port.c_str(), O_RDWR | O_NOCTTY | O_SYNC);
-    if (err) return Err(std::move(*err));
+    int fd = ::open(args.port.c_str(), O_RDWR | O_NOCTTY | O_SYNC);
+    if (fd < 0) return log_errno(file, line);
 
     struct termios tty = {};
-    if (::tcgetattr(serial->fd, &tty) != 0)
-        return log_errno();
+    if (::tcgetattr(fd, &tty) != 0)
+        return log_errno(file, line);
     
-    auto [baud_val, baud_err] = get_baudrate(file, line, baud);
-    if (baud_err) return Err(std::move(*err));
+    auto [baud_val, baud_err] = get_baudrate(file, line, args.baud);
+    if (baud_err) return Err(std::move(*baud_err));
 
     ::cfsetispeed(&tty, *baud_val);
     ::cfsetospeed(&tty, *baud_val);
@@ -106,34 +120,61 @@ auto delameta_detail_create_serial(const char* file, int line, std::string port,
     tty.c_cc[VTIME] = 1; // 100ms
     tty.c_cc[VMIN]  = 0; 
 
-    if (::tcsetattr(serial->fd, TCSANOW, &tty) != 0)
-        return log_errno();
+    if (::tcsetattr(fd, TCSANOW, &tty) != 0)
+        return log_errno(file, line);
 
-    ::tcflush(serial->fd, TCIOFLUSH); // clear rx buffer
-    return Ok(std::move(*serial));
+    ::tcflush(fd, TCIOFLUSH); // clear rx buffer
+
+    info(file, line, "Created fd: " + std::to_string(fd));
+    return Ok(Serial(file, line, fd, args.timeout));
 }
 
-auto serial::Server::New(const char* file, int line, Args args) -> Result<Server> {
-    return delameta_detail_create_serial(file, line, args.port, args.baud).then([&](FileDescriptor serial) {
-        info(file, line, "Created serial server: " + std::to_string(serial.fd));
-        return Server(std::move(serial));
-    });
+Serial::Serial(const char* file, int line, int fd, int timeout) 
+    : Descriptor()
+    , StreamSessionClient(this)
+    , fd(fd)
+    , timeout(timeout)
+    , file(file)
+    , line(line) { delameta_detail_set_non_blocking(fd); }
+
+Serial::Serial(Serial&& other) 
+    : Descriptor()
+    , StreamSessionClient(this)
+    , fd(std::exchange(other.fd, -1))
+    , timeout(other.timeout)
+    , file(other.file)
+    , line(other.line) {}
+
+Serial::~Serial() {
+    if (fd < 0) return;
+    ::close(fd);
+    fd = -1;
 }
 
-serial::Server::Server(FileDescriptor&& fd) 
-    : StreamSessionServer({})
-    , fd(std::move(fd)) {}
-
-serial::Server::Server(Server&& other) 
-    : StreamSessionServer(std::move(other.handler))
-    , fd(std::move(other.fd))
-    , on_stop(std::move(other.on_stop)) {}
-
-serial::Server::~Server() {
-    stop();
+auto Serial::read() -> Result<std::vector<uint8_t>> {
+    return delameta_detail_read(file, line, fd, timeout, &delameta_detail_is_fd_alive);
 }
 
-auto serial::Server::start() -> Result<void> {
+auto Serial::read_until(size_t n) -> Result<std::vector<uint8_t>> {
+    return delameta_detail_read_until(file, line, fd, timeout, &delameta_detail_is_fd_alive, n);
+}
+
+auto Serial::read_as_stream(size_t n) -> Stream {
+    return delameta_detail_read_as_stream(file, line, fd, timeout, this, n);
+}
+
+auto Serial::write(std::string_view data) -> Result<void> {
+    return delameta_detail_write(file, line, fd, timeout, &delameta_detail_is_fd_alive, data);
+}
+
+void Serial::wait_until_ready() {
+    // TODO
+}
+
+auto Server<Serial>::start(const char* file, int line, Serial::Args args) -> Result<void> {
+    auto [ser, ser_err] = Serial::Open(file, line, std::move(args));
+    if (ser_err) return Err(std::move(*ser_err));
+
     std::list<std::thread> threads;
     std::mutex mtx;
     std::atomic_bool is_running {true};
@@ -146,18 +187,18 @@ auto serial::Server::start() -> Result<void> {
         }
         on_stop = {};
     };
- 
-    while (is_running and delameta_detail_is_fd_alive(fd.fd)) {
-        fd.wait_until_ready();
-        auto read_result = fd.read();
+
+    while (is_running and delameta_detail_is_fd_alive(ser->fd)) {
+        ser->wait_until_ready();
+        auto read_result = ser->read();
         if (read_result.is_err()) {
             break;
         }
 
         std::lock_guard<std::mutex> lock(mtx);
-        threads.emplace_back([this, data=std::move(read_result.unwrap()), &threads, &mtx, &is_running]() mutable {
-            auto stream = execute_stream_session(fd, delameta_detail_get_filename(fd.fd), data);
-            stream >> fd;
+        threads.emplace_back([this, &ser, data=std::move(read_result.unwrap()), &threads, &mtx, &is_running]() mutable {
+            auto stream = execute_stream_session(*ser, delameta_detail_get_filename(ser->fd), data);
+            stream >> *ser;
 
             // remove this thread from threads
             if (is_running) {
@@ -173,10 +214,10 @@ auto serial::Server::start() -> Result<void> {
     }
 
     stop();
-    return etl::Ok();
+    return Ok();
 }
 
-void serial::Server::stop() {
+void Server<Serial>::stop() {
     if (on_stop) {
         on_stop();
     }

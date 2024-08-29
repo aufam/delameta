@@ -1,11 +1,11 @@
 #include <boost/preprocessor.hpp>
 #include <delameta/debug.h>
-#include <delameta/http/server.h>
-#include <delameta/serial/client.h>
+#include <delameta/http/http.h>
+#include <delameta/serial.h>
 
 using namespace Project;
-using namespace delameta::http;
-using delameta::serial::Client;
+namespace http = delameta::http;
+using delameta::Serial;
 using delameta::Stream;
 using etl::Ok;
 using etl::Ref;
@@ -15,14 +15,14 @@ HTTP_EXTERN_OBJECT(app);
 HTTP_ROUTE(
     ("/serial", ("POST")), 
     (serial_handler),
-        (std::string        , port   , arg::default_val("port", std::string("auto")))
-        (int                , baud   , arg::default_val("baud", 9600)               )
-        (int                , timeout, arg::default_val("timeout", 5)               )
-        (std::string_view   , data   , arg::body                                    )
-        (Ref<ResponseWriter>, res    , arg::response                                ),
-    (Server::Result<void>)
+        (std::string              , port   , http::arg::default_val("port", std::string("auto")))
+        (int                      , baud   , http::arg::default_val("baud", 9600)               )
+        (int                      , timeout, http::arg::default_val("timeout", 5)               )
+        (std::string_view         , data   , http::arg::body                                    )
+        (Ref<http::ResponseWriter>, res    , http::arg::response                                ),
+    (http::Result<void>)
 ) {
-    auto cli = TRY(Client::New(FL, {port, baud, timeout}));
+    auto cli = TRY(Serial::Open(FL, {port, baud, timeout}));
 
     Stream s;
     s << data;

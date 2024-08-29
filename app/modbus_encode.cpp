@@ -1,6 +1,6 @@
 #include <boost/preprocessor.hpp>
 #include <fmt/format.h>
-#include <delameta/http/server.h>
+#include <delameta/http/http.h>
 #include <delameta/modbus/api.h>
 
 static std::vector<uint8_t> hexStringToBytes(const std::string& hex) {
@@ -42,12 +42,12 @@ HTTP_EXTERN_OBJECT(app);
 static HTTP_ROUTE(
     ("/modbus_encode", ("POST")),
     (modbus_encode), (std::string, hex, http::arg::body),
-    (http::Server::Result<std::string>)
+    (http::Result<std::string>)
 ) {
     try {
         auto vec = hexStringToBytes(hex);
         return Ok(bytesToHexString(modbus::add_checksum(vec)));
     } catch (const std::exception& e) {
-        return Err(http::Server::Error{http::StatusBadRequest, e.what()});
+        return Err(http::Error{http::StatusBadRequest, e.what()});
     }
 }

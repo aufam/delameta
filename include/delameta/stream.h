@@ -6,6 +6,7 @@
 #include <vector>
 #include <list>
 #include <functional>
+#include <etl/ref.h>
 
 namespace Project::delameta {
     
@@ -69,6 +70,7 @@ namespace Project::delameta {
     public:
         using StreamSessionHandler = std::function<Stream(Descriptor&, const std::string&, const std::vector<uint8_t>&)>;
 
+        StreamSessionServer() = default;
         StreamSessionServer(StreamSessionHandler handler);
         virtual ~StreamSessionServer() = default;
 
@@ -82,7 +84,7 @@ namespace Project::delameta {
     class StreamSessionClient : public Movable {
     public:
         StreamSessionClient(Descriptor* desc);
-        virtual ~StreamSessionClient();
+        virtual ~StreamSessionClient() = default;
 
         StreamSessionClient(StreamSessionClient&& other);
         StreamSessionClient& operator=(StreamSessionClient&& other);
@@ -90,6 +92,9 @@ namespace Project::delameta {
         Result<std::vector<uint8_t>> request(Stream& in_stream);
         Descriptor* desc;
     };
+
+    template <typename T>
+    class Server {};
 }
 
 #ifdef FMT_FORMAT_H_

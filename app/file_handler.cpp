@@ -1,42 +1,35 @@
 #include <boost/preprocessor.hpp>
 #include <delameta/debug.h>
-#include <delameta/http/server.h>
-#include <delameta/file_descriptor.h>
+#include <delameta/http/http.h>
+#include <delameta/file.h>
 #include <algorithm>
-#include <fcntl.h>
 #include <dirent.h>
 
 using namespace Project;
-using namespace delameta::http;
+namespace http = delameta::http;
+using delameta::File;
 using delameta::Stream;
-using delameta::FileDescriptor;
 using etl::Ref;
 using etl::Err;
 using etl::Ok;
 
-struct File {
-    FileDescriptor fd;
-    size_t size;
-};
-
-static Server::Result<File> open_file(const char* file, int line, const std::string& filename, int flag);
 static std::string content_type(const std::string& file);
 
 HTTP_EXTERN_OBJECT(app);
 
 static HTTP_ROUTE(
     ("/ls", ("GET")),
-    (ls), (std::string, path, arg::arg("path")),
-    (Server::Result<std::list<std::string>>)
+    (ls), (std::string, path, http::arg::arg("path")),
+    (http::Result<std::list<std::string>>)
 ) {
-    DIR* dir = opendir(path.c_str());
+    DIR* dir = ::opendir(path.c_str());
     if (dir == nullptr) {
-        return Err(Server::Error{StatusBadRequest, "Error opening " + path});
+        return Err(http::Error{http::StatusBadRequest, "Error opening " + path});
     }
 
     struct dirent* entry;
     std::list<std::string> items;
-    while ((entry = readdir(dir)) != nullptr) {
+    while ((entry = ::readdir(dir)) != nullptr) {
         items.emplace_back(entry->d_name);
     }
 
@@ -46,57 +39,57 @@ static HTTP_ROUTE(
 
 static HTTP_ROUTE(
     ("/file_size", ("GET")),
-    (file_size), (std::string, filename, arg::arg("filename")),
-    (Server::Result<std::string>)
+    (file_size), (std::string, filename, http::arg::arg("filename")),
+    (http::Result<std::string>)
 ) {
-    return open_file(FL, filename, O_RDONLY).then([](File file) {
-        return std::to_string(file.size) + " bytes";
+    return File::Open(FL, {filename}).then([](File file) {
+        return std::to_string(file.file_size()) + " bytes";
     });
 }
 
 static HTTP_ROUTE(
     ("/download", ("GET")),
     (download), 
-        (std::string        , filename, arg::arg("filename"))
-        (Ref<ResponseWriter>, res     , arg::response       ),
-    (Server::Result<void>)
+        (std::string        , filename, http::arg::arg("filename"))
+        (Ref<http::ResponseWriter>, res     , http::arg::response       ),
+    (http::Result<void>)
 ) {
-    return open_file(FL, filename, O_RDONLY).then([&](File file) {
-        res->headers["Content-Length"] = std::to_string(file.size);
+    return File::Open(FL, {filename}).then([&](File file) {
+        res->headers["Content-Length"] = std::to_string(file.file_size());
         res->headers["Content-Type"] = content_type(filename);
-        file.fd >> res->body_stream;
+        file >> res->body_stream;
     });
 }
 
 static HTTP_ROUTE(
     ("/upload", ("PUT")),
     (upload), 
-        (std::string, filename   , arg::arg("filename"))
-        (Stream     , body_stream, arg::body           ),
-    (Server::Result<void>)
+        (std::string, filename   , http::arg::arg("filename"))
+        (Stream     , body_stream, http::arg::body           ),
+    (http::Result<void>)
 ) {
-    return open_file(FL, filename, O_WRONLY | O_CREAT | O_TRUNC).then([&](File file) {
-        file.fd << body_stream;
+    return File::Open(FL, {filename, "w"}).then([&](File file) {
+        file << body_stream;
     });
 }
 
 static HTTP_ROUTE(
     ("/route_file", ("POST")),
     (route_file),
-        (std::string, path    , arg::arg("path"))
-        (std::string, filename, arg::arg("filename")),
-    (Server::Result<void>)
+        (std::string, path    , http::arg::arg("path"))
+        (std::string, filename, http::arg::arg("filename")),
+    (http::Result<void>)
 ) {
-    auto it = std::find_if(app.routers.begin(), app.routers.end(), [&](Server::Router& router) {
+    auto it = std::find_if(app.routers.begin(), app.routers.end(), [&](http::Router& router) {
         return router.path == path;
     });
 
     if (it != app.routers.end()) {
-        return Err(Server::Error{StatusConflict, "path " + path + " is already exist"});
+        return Err(http::Error{http::StatusConflict, "path " + path + " is already exist"});
     }
 
-    app.route(path, {"GET", "PUT"}, std::tuple{arg::method, arg::body, arg::response}, 
-    [filename](std::string_view method, Stream body_stream, Ref<ResponseWriter> res) -> Server::Result<void> {
+    app.route(path, {"GET", "PUT"}, std::tuple{http::arg::method, http::arg::body, http::arg::response}, 
+    [filename](std::string_view method, Stream body_stream, Ref<http::ResponseWriter> res) -> http::Result<void> {
         if (method == "GET") {
             return download(filename, res);
         } else {
@@ -105,20 +98,6 @@ static HTTP_ROUTE(
     });
 
     return Ok();
-}
-
-static auto open_file(const char* file, int line, const std::string& filename, int flag) -> Server::Result<File> {
-    auto [stream, stream_err] = FileDescriptor::Open(file, line, filename.c_str(), flag);
-    if (stream_err) {
-        return Err(Server::Error{StatusBadRequest, stream_err->what});
-    }
-
-    auto [file_size, file_size_err] = stream->file_size();
-    if (file_size_err) {
-        return Err(Server::Error{StatusInternalServerError, file_size_err->what});
-    }
-
-    return Ok(File{std::move(*stream), *file_size});
 }
 
 static std::string content_type(const std::string& file) {

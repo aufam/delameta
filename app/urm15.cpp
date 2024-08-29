@@ -1,8 +1,8 @@
 #include <boost/preprocessor.hpp>
 #include <delameta/debug.h>
-#include <delameta/http/server.h>
+#include <delameta/http/http.h>
 #include <delameta/modbus/client.h>
-#include <delameta/serial/client.h>
+#include <delameta/serial.h>
 #include <chrono>
 #include <thread>
 
@@ -10,7 +10,7 @@ using namespace Project;
 using namespace std::literals;
 namespace http = delameta::http;
 using delameta::modbus::Client;
-using Session = delameta::serial::Client;
+using delameta::Serial;
 using etl::Ok;
 using etl::Err;
 
@@ -30,10 +30,10 @@ static HTTP_ROUTE(
         (std::string, port   , http::arg::default_val("port", std::string("auto"))  )
         (int        , baud   , http::arg::default_val("baud", 9600)                 )
         (int        , tout   , http::arg::default_val("tout", 5)                    ),
-    (http::Server::Result<URM15>)
+    (http::Result<URM15>)
 ) {
     auto session = TRY(
-        Session::New(FL, {.port=port, .baud=baud, .timeout=tout})
+        Serial::Open(FL, {.port=port, .baud=baud, .timeout=tout})
     );
 
     Client cli(address, session);
@@ -55,10 +55,10 @@ static HTTP_ROUTE(
         (std::string, port   , http::arg::default_val("port", std::string("auto"))  )
         (int        , baud   , http::arg::default_val("baud", 19200)                )
         (int        , tout   , http::arg::default_val("tout", 5)                    ),
-    (http::Server::Result<std::string>)
+    (http::Result<std::string>)
 ) {
-    Session session = TRY(
-        Session::New(FL, {.port=port, .baud=baud, .timeout=tout})
+    auto session = TRY(
+        Serial::Open(FL, {.port=port, .baud=baud, .timeout=tout})
     );
 
     Client cli(0x00, session);

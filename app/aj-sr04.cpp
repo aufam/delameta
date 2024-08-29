@@ -1,12 +1,12 @@
 #include <boost/preprocessor.hpp>
 #include <delameta/debug.h>
-#include <delameta/http/server.h>
-#include <delameta/serial/client.h>
+#include <delameta/http/http.h>
+#include <delameta/serial.h>
 
 using namespace Project;
 using namespace std::literals;
 namespace http = delameta::http;
-using Session = delameta::serial::Client;
+using delameta::Serial;
 using delameta::Stream;
 using etl::Ok;
 using etl::Err;
@@ -19,10 +19,10 @@ static HTTP_ROUTE(
         (std::string, port   , http::arg::default_val("port", std::string("auto"))  )
         (int        , baud   , http::arg::default_val("baud", 9600)                 )
         (int        , tout   , http::arg::default_val("tout", 5)                    ),
-    (http::Server::Result<std::string>)
+    (http::Result<std::string>)
 ) {
     auto session = TRY(
-        Session::New(FL, {.port=port, .baud=baud, .timeout=tout})
+        Serial::Open(FL, {.port=port, .baud=baud, .timeout=tout})
     );
 
     Stream s;

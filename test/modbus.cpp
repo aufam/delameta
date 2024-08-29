@@ -1,4 +1,4 @@
-#include <delameta/modbus/server.h>
+#include <delameta/modbus/modbus.h>
 #include <gtest/gtest.h>
 
 using namespace Project;
@@ -7,7 +7,7 @@ namespace modbus = delameta::modbus;
 TEST(Modbus, coils) {
     static bool coils[4] = {1, 0, 0, 0};
 
-    modbus::Server handler(0x0f);
+    modbus::Modbus handler(0x0f);
     handler.CoilSetter(0x1001, [](bool value) { coils[0] = value; });
     handler.CoilSetter(0x1002, [](bool value) { coils[1] = value; });
     handler.CoilSetter(0x1003, [](bool value) { coils[2] = value; });
@@ -52,7 +52,7 @@ TEST(Modbus, coils) {
 TEST(Modbus, holding_registers) {
     static uint16_t holding_registers[4] = {0xaaaa, 0xbbbb, 0xcccc, 0xdddd};
 
-    modbus::Server handler(0x0f);
+    modbus::Modbus handler(0x0f);
     handler.HoldingRegisterSetter(0x2001, [](uint16_t value) { holding_registers[0] = value; });
     handler.HoldingRegisterSetter(0x2002, [](uint16_t value) { holding_registers[1] = value; });
     handler.HoldingRegisterSetter(0x2003, [](uint16_t value) { holding_registers[2] = value; });
@@ -104,7 +104,7 @@ TEST(Modbus, holding_registers) {
 TEST(Modbus, analog_inputs) {
     static uint16_t analog_inputs[4] = {0x0123, 0x4567, 0x89ab, 0xcdef};
 
-    modbus::Server handler(0x0f);
+    modbus::Modbus handler(0x0f);
     handler.AnalogInputGetter(0x3001, []() { return analog_inputs[0]; });
     handler.AnalogInputGetter(0x3002, []() { return analog_inputs[1]; });
     handler.AnalogInputGetter(0x3003, []() { return analog_inputs[2]; });

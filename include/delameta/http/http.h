@@ -1,86 +1,36 @@
-#ifndef PROJECT_DELAMETA_HTTP_SERVER_H
-#define PROJECT_DELAMETA_HTTP_SERVER_H
+#ifndef PROJECT_DELAMETA_HTTP_HTTP_H
+#define PROJECT_DELAMETA_HTTP_HTTP_H
 
 #include "delameta/http/request.h"
 #include "delameta/http/response.h"
+#include "delameta/http/arg.h"
+#include "delameta/http/error.h"
 #include "delameta/json.h"
 
 namespace Project::delameta::http {
 
-    class Server : public Movable {
+    delameta::Result<ResponseReader> request(StreamSessionClient& session, RequestWriter req);
+
+    template <typename R, typename... Args>
+    using Handler = std::function<R(Args..., const RequestReader&, ResponseWriter&)>;
+
+    struct Router {
+        std::string path;
+        std::vector<const char*> methods;
+        Handler<void> function;
+    };
+
+    template <typename T> struct is_handler : is_handler<decltype(std::function(std::declval<T>()))> {};
+    template <typename T> struct is_handler<std::function<T(const RequestReader&, ResponseWriter&)>> : std::true_type {};
+    template <typename T> static constexpr bool is_handler_v = is_handler<T>::value;
+    
+    class Http : public Movable {
     public:
-        Server() = default;
-        virtual ~Server() = default;
+        Http() = default;
+        virtual ~Http() = default;
 
-        Server(Server&&) noexcept = default;
-        Server& operator=(Server&&) noexcept = default;
-
-        template <typename R, typename... Args>
-        using Handler = std::function<R(Args..., const RequestReader&, ResponseWriter&)>;
-
-        struct Error {
-            int status;
-            std::string what;
-
-            Error(int status);
-            Error(int status, std::string what);
-            Error(delameta::Error);
-
-            operator delameta::Error() const& { return {status, what}; }
-            operator delameta::Error() && { return {status, std::move(what)}; }
-        };
-
-        template <typename T>
-        using Result = etl::Result<T, Error>;
-
-        struct Router {
-            std::string path;
-            std::vector<const char*> methods;
-            Handler<void> function;
-        };
-
-        struct Arg { const char* name; };
-
-        template <typename T>
-        struct ArgDefaultVal { const char* name; T default_value; };
-
-        template <typename F>
-        struct ArgDefaultFn { const char* name; F default_fn; };
-
-        struct ArgJsonItem { const char* key; };
-
-        template <typename F>
-        struct ArgJsonItemDefaultVal { const char* key; F default_value; };
-    
-        template <typename F>
-        struct ArgJsonItemDefaultFn { const char* key; F default_fn; };
-
-        template <typename F>
-        struct ArgDepends { F depends; };
-
-        struct ArgPercentEncodingItem { const char* key; };
-
-        struct ArgRequest {};
-        struct ArgResponse {};
-        struct ArgMethod {};
-        struct ArgURL {};
-        struct ArgHeaders {};
-        struct ArgQueries {};
-        struct ArgPath {};
-        struct ArgFullPath {};
-        struct ArgFragment {};
-        struct ArgVersion {};
-        struct ArgBody {};
-        struct ArgJson {};
-        struct ArgText {};
-    
-        template <typename T> struct is_server_result : std::false_type {};
-        template <typename T, typename E> struct is_server_result<etl::Result<T, E>> : std::is_convertible<E, Error> {};
-        template <typename T> static constexpr bool is_server_result_v = is_server_result<T>::value;
-
-        template <typename T> struct is_handler : is_handler<decltype(std::function(std::declval<T>()))> {};
-        template <typename T> struct is_handler<std::function<T(const RequestReader&, ResponseWriter&)>> : std::true_type {};
-        template <typename T> static constexpr bool is_handler_v = is_handler<T>::value;
+        Http(Http&&) noexcept = default;
+        Http& operator=(Http&&) noexcept = default;
 
         template <typename... Args, typename F> 
         auto route(std::string path, std::vector<const char*> methods, std::tuple<Args...> args, F&& handler) {
@@ -445,63 +395,63 @@ namespace Project::delameta::http {
 
 
 namespace Project::delameta::http::arg {
-    inline Server::Arg arg(const char* name) { return {name}; }
-    inline Server::ArgJsonItem json_item(const char* key) { return {key}; }
-    inline Server::ArgPercentEncodingItem percent_encoding(const char* key) { return {key}; }
+    inline Arg arg(const char* name) { return {name}; }
+    inline ArgJsonItem json_item(const char* key) { return {key}; }
+    inline ArgPercentEncodingItem percent_encoding(const char* key) { return {key}; }
 
     template <typename F>
     auto depends(F&& depends_function) {
-        static_assert(Server::is_handler_v<std::decay_t<F>>, 
+        static_assert(is_handler_v<std::decay_t<F>>, 
             "The function signature should be R(const RequestReader&, ResponseWriter&)");
-        return Server::ArgDepends<F> { std::move(std::forward<F>(depends_function)) };
+        return ArgDepends<F> { std::move(std::forward<F>(depends_function)) };
     }
 
     template <typename T>
     auto default_val(const char* name, T&& default_value) {
-        return Server::ArgDefaultVal<T> { name, std::forward<T>(default_value) };
+        return ArgDefaultVal<T> { name, std::forward<T>(default_value) };
     }
 
     template <typename F>
     auto default_fn(const char* name, F&& default_function) {
-        static_assert(Server::is_handler_v<std::decay_t<F>>, 
+        static_assert(is_handler_v<std::decay_t<F>>, 
             "The function signature should be R(const RequestReader&, ResponseWriter&)");
-        return Server::ArgDefaultFn<F> { name, std::forward<F>(default_function) };
+        return ArgDefaultFn<F> { name, std::forward<F>(default_function) };
     }
 
     template <typename T>
     auto json_item_default_val(const char* key, T&& default_value) {
-        return Server::ArgJsonItemDefaultVal<T> { key, std::forward<T>(default_value) };
+        return ArgJsonItemDefaultVal<T> { key, std::forward<T>(default_value) };
     }
 
     template <typename F>
     auto json_item_default_fn(const char* key, F&& default_function) {
-        static_assert(Server::is_handler_v<std::decay_t<F>>, 
+        static_assert(is_handler_v<std::decay_t<F>>, 
             "The function signature should be R(const RequestReader&, ResponseWriter&)");
-        return Server::ArgJsonItemDefaultFn<F> { key, std::forward<F>(default_function) };
+        return ArgJsonItemDefaultFn<F> { key, std::forward<F>(default_function) };
     }
 
-    inline static constexpr Server::ArgRequest request {};
-    inline static constexpr Server::ArgResponse response {};
-    inline static constexpr Server::ArgURL url {};
-    inline static constexpr Server::ArgHeaders headers {};
-    inline static constexpr Server::ArgQueries queries {};
-    inline static constexpr Server::ArgPath path {};
-    inline static constexpr Server::ArgFullPath full_path {};
-    inline static constexpr Server::ArgFragment fragment {};
-    inline static constexpr Server::ArgVersion version {};
-    inline static constexpr Server::ArgMethod method {};
-    inline static constexpr Server::ArgBody body {};
-    inline static constexpr Server::ArgJson json {};
-    inline static constexpr Server::ArgText text {};
+    inline static constexpr ArgRequest request {};
+    inline static constexpr ArgResponse response {};
+    inline static constexpr ArgURL url {};
+    inline static constexpr ArgHeaders headers {};
+    inline static constexpr ArgQueries queries {};
+    inline static constexpr ArgPath path {};
+    inline static constexpr ArgFullPath full_path {};
+    inline static constexpr ArgFragment fragment {};
+    inline static constexpr ArgVersion version {};
+    inline static constexpr ArgMethod method {};
+    inline static constexpr ArgBody body {};
+    inline static constexpr ArgJson json {};
+    inline static constexpr ArgText text {};
 }
 
 #ifdef BOOST_PREPROCESSOR_HPP
 
 #define HTTP_DEFINE_OBJECT(o) \
-    ::Project::delameta::http::Server o __attribute__((init_priority(101)))
+    ::Project::delameta::http::Http o __attribute__((init_priority(101)))
 
 #define HTTP_EXTERN_OBJECT(o) \
-    extern ::Project::delameta::http::Server o; static auto& _http_server = o
+    extern ::Project::delameta::http::Http o; static auto& _http_server = o
 
 #define HTTP_LATE_INIT __attribute__((init_priority(102)))
 
@@ -552,11 +502,11 @@ namespace Project::delameta::http::arg {
 #ifdef FMT_FORMAT_H_
 
 template <> 
-struct fmt::formatter<Project::delameta::http::Server::Error> {
+struct fmt::formatter<Project::delameta::http::Error> {
     constexpr auto parse(fmt::format_parse_context& ctx) { return ctx.end(); }
 
     template <typename Ctx>
-    inline auto format(const Project::delameta::http::Server::Error& m, Ctx& ctx) const {
+    inline auto format(const Project::delameta::http::Error& m, Ctx& ctx) const {
         return fmt::format_to(ctx.out(), "http::Error {{code: {}, what: {}}}", m.status, m.what);
     }
 };

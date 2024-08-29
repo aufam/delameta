@@ -1,10 +1,9 @@
 #include <boost/preprocessor.hpp>
-#include <delameta/http/server.h>
+#include <delameta/http/http.h>
 #include <cstdio>
 
 using namespace Project;
 using namespace delameta;
-using http::Server;
 using etl::Err;
 using etl::Ok;
 using etl::defer;
@@ -15,7 +14,7 @@ HTTP_EXTERN_OBJECT(app);
 static HTTP_ROUTE(
     ("/exec", ("GET")), 
     (execute_cmd), (std::string, cmd, http::arg::arg("cmd")),
-    (Server::Result<std::string>)
+    (http::Result<std::string>)
 ) {
     char buffer[128];
     std::string result;
@@ -24,7 +23,7 @@ static HTTP_ROUTE(
     auto pipe_close = defer | [&]() { ::pclose(pipe); };
 
     if (!pipe) {
-        return Err(Server::Error{http::StatusInternalServerError, "Unable to execute " + cmd});
+        return Err(http::Error{http::StatusInternalServerError, "Unable to execute " + cmd});
     }
 
     while (::fgets(buffer, 128, pipe) != nullptr) {

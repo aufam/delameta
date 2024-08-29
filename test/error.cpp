@@ -2,7 +2,7 @@
 #include <fmt/format.h>
 #include <delameta/debug.h>
 #include <delameta/error.h>
-#include <delameta/http/server.h>
+#include <delameta/http/http.h>
 #include <delameta/modbus/api.h>
 #include <gtest/gtest.h>
 
@@ -11,11 +11,11 @@ using namespace Project;
 TEST(Error, elision) {
     {
         delameta::Error e(-1, "Fatal error");
-        delameta::http::Server::Error he = e;
+        delameta::http::Error he = e;
         EXPECT_EQ(he.status, delameta::http::StatusInternalServerError);
         EXPECT_EQ(he.what, e.what + ": -1");
     } {
-        delameta::http::Server::Error he(delameta::http::StatusOK, "OK");
+        delameta::http::Error he(delameta::http::StatusOK, "OK");
         delameta::Error e = he;
         EXPECT_EQ(e.code, delameta::http::StatusOK);
         EXPECT_EQ(e.what, "OK");
@@ -31,11 +31,11 @@ TEST(Error, elision) {
         EXPECT_EQ(me.what, e.what);
     } {
         delameta::modbus::Error me(delameta::modbus::Error::InvalidCRC);
-        delameta::http::Server::Error he = me;
+        delameta::http::Error he = me;
         EXPECT_EQ(he.status, delameta::http::StatusInternalServerError);
         EXPECT_EQ(he.what, me.what + ": " + std::to_string((int)delameta::modbus::Error::InvalidCRC));
     } {
-        delameta::http::Server::Error he(delameta::http::StatusOK, "OK");
+        delameta::http::Error he(delameta::http::StatusOK, "OK");
         delameta::modbus::Error me = delameta::Error(he);
         EXPECT_EQ(me.code, delameta::http::StatusOK);
         EXPECT_EQ(me.what, "OK");

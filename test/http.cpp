@@ -1,25 +1,24 @@
-#include <delameta/http/server.h>
+#include <delameta/http/http.h>
 #include <gtest/gtest.h>
 
 using namespace Project;
 using namespace delameta::http;
-using delameta::Result;
 using delameta::Stream;
 using etl::Ok;
 using etl::Err;
 
 class DummyDescriptor : public delameta::Descriptor {
 public:
-    Result<std::vector<uint8_t>> read() override {
+    delameta::Result<std::vector<uint8_t>> read() override {
         return Err(delameta::Error(-1, "Not implemented"));
     }
-    Result<std::vector<uint8_t>> read_until(size_t) override {
+    delameta::Result<std::vector<uint8_t>> read_until(size_t) override {
         return Err(delameta::Error(-1, "Not implemented"));
     }
     Stream read_as_stream(size_t) override {
         return {};
     }
-    Result<void> write(std::string_view) override {
+    delameta::Result<void> write(std::string_view) override {
         return Err(delameta::Error(-1, "Not implemented"));
     }
 };
@@ -88,7 +87,7 @@ TEST(Http, response) {
 }
 
 TEST(Http, handler) {
-    Server handler;
+    Http handler;
     
     handler.route("/test", {"GET"}, std::tuple{arg::body, arg::default_val("id", 0)},
     [](std::string body, int id) {
@@ -157,7 +156,7 @@ TEST(Http, handler) {
 }
 
 TEST(Http, json) {
-    Server handler;
+    Http handler;
     handler.route("/json", {"POST"}, std::tuple{
         arg::json_item("num"), 
         arg::json_item("text"),
@@ -195,7 +194,7 @@ TEST(Http, json) {
 }
 
 TEST(Http, form) {
-    Server handler;
+    Http handler;
     handler.route("/form", {"POST"}, std::tuple{
         arg::percent_encoding("num"), 
         arg::percent_encoding("text")

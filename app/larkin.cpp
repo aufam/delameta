@@ -1,8 +1,8 @@
 #include <boost/preprocessor.hpp>
 #include <delameta/debug.h>
-#include <delameta/http/server.h>
+#include <delameta/http/http.h>
 #include <delameta/modbus/client.h>
-#include <delameta/serial/client.h>
+#include <delameta/serial.h>
 #include <chrono>
 #include <thread>
 
@@ -10,7 +10,6 @@ using namespace Project;
 using namespace delameta;
 using namespace std::literals;
 using delameta::modbus::Client;
-using Serial = delameta::serial::Client;
 
 static float power_of_ten(int exponent) {
     float result = 1.0;
@@ -61,10 +60,10 @@ JSON_DECLARE(
     (float, frequency)
 )
 
-static http::Server::Result<Larkin> LarkinNew(const std::vector<uint16_t>& data) {
+static http::Result<Larkin> LarkinNew(const std::vector<uint16_t>& data) {
     if (data.size() != RegisterSize) 
         return etl::Err(
-            http::Server::Error{http::StatusInternalServerError, 
+            http::Error{http::StatusInternalServerError, 
             "received size is not valid: " + std::to_string(data.size())
         });
     
@@ -121,9 +120,9 @@ static HTTP_ROUTE(
         (std::string, port   , http::arg::default_val("port", std::string("auto"))  )
         (int        , baud   , http::arg::default_val("baud", 9600)                 )
         (int        , tout   , http::arg::default_val("tout", 5)                    ),
-    (http::Server::Result<Larkin>)
+    (http::Result<Larkin>)
 ) {
-    auto session = TRY(Serial::New(FL, {port, baud, tout}));
+    auto session = TRY(Serial::Open(FL, {port, baud, tout}));
     Client cli(address, session);
 
     auto chunk1 = TRY(cli.ReadHoldingRegisters(RegisterAddress, RegisterSize / 2));

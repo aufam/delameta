@@ -6,13 +6,13 @@
 
 namespace Project::delameta::modbus {
 
-    class Server : public Movable {
+    class Modbus : public Movable {
     public:
-        Server(uint8_t server_address) : server_address(server_address) {}
-        virtual ~Server() = default;
+        Modbus(uint8_t server_address) : server_address(server_address) {}
+        virtual ~Modbus() = default;
 
-        Server(Server&&) noexcept = default;
-        Server& operator=(Server&&) noexcept = default;
+        Modbus(Modbus&&) noexcept = default;
+        Modbus& operator=(Modbus&&) noexcept = default;
 
         const std::function<bool()>& CoilGetter(uint16_t register_address, std::function<bool()> getter);
         const std::function<void(bool)>& CoilSetter(uint16_t register_address, std::function<void(bool)> setter);

@@ -1,17 +1,17 @@
 #include <boost/preprocessor.hpp>
 #include <delameta/debug.h>
-#include <delameta/http/server.h>
+#include <delameta/http/http.h>
 #include <delameta/modbus/client.h>
-#include <delameta/serial/client.h>
+#include <delameta/serial.h>
 #include <chrono>
 #include <thread>
 
 using namespace Project;
 using namespace std::literals;
 namespace http = delameta::http;
+using delameta::Serial;
 using delameta::Stream;
 using delameta::modbus::Client;
-using Session = delameta::serial::Client;
 using etl::Ok;
 using etl::Err;
 
@@ -37,10 +37,10 @@ static HTTP_ROUTE(
         (std::string, port   , http::arg::default_val("port", std::string("auto"))  )
         (int        , baud   , http::arg::default_val("baud", 9600)                 )
         (int        , tout   , http::arg::default_val("tout", 5)                    ),
-    (http::Server::Result<PZEM>)
+    (http::Result<PZEM>)
 ) {
     auto session = TRY(
-        Session::New(FL, {.port=port, .baud=baud, .timeout=tout})
+        Serial::Open(FL, {.port=port, .baud=baud, .timeout=tout})
     );
 
     Client cli(address, session);
@@ -69,10 +69,10 @@ static HTTP_ROUTE(
         (std::string, port   , http::arg::default_val("port", std::string("auto"))  )
         (int        , baud   , http::arg::default_val("baud", 9600)                 )
         (int        , tout   , http::arg::default_val("tout", 5)                    ),
-    (http::Server::Result<void>)
+    (http::Result<void>)
 ) {
     auto session = TRY(
-        Session::New(FL, {.port=port, .baud=baud, .timeout=tout})
+        Serial::Open(FL, {.port=port, .baud=baud, .timeout=tout})
     );
 
     std::vector<uint8_t> buf { uint8_t(address), 0x41, 0x37, 0x21 };
@@ -92,10 +92,10 @@ static HTTP_ROUTE(
         (std::string, port   , http::arg::default_val("port", std::string("auto"))  )
         (int        , baud   , http::arg::default_val("baud", 9600)                 )
         (int        , tout   , http::arg::default_val("tout", 5)                    ),
-    (http::Server::Result<void>)
+    (http::Result<void>)
 ) {
     auto session = TRY(
-        Session::New(FL, {.port=port, .baud=baud, .timeout=tout})
+        Serial::Open(FL, {.port=port, .baud=baud, .timeout=tout})
     );
 
     std::vector<uint8_t> buf { uint8_t(address), 0x42 };

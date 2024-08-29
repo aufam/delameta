@@ -1,4 +1,4 @@
-#include "delameta/modbus/server.h"
+#include "delameta/modbus/modbus.h"
 #include "delameta/debug.h"
 
 using namespace Project;
@@ -24,7 +24,7 @@ static void write_value_into_buffer(T value, uint8_t*& ptr, int& bit_count) {
     }
 } 
 
-void modbus::Server::bind(StreamSessionServer& server, bool accept_all_address) const {
+void modbus::Modbus::bind(StreamSessionServer& server, bool accept_all_address) const {
     server.handler = [this, accept_all_address](Descriptor&, const std::string& name, const std::vector<uint8_t>& data) -> Stream {
         auto res = execute(data, accept_all_address);
         Stream s;
@@ -38,39 +38,39 @@ void modbus::Server::bind(StreamSessionServer& server, bool accept_all_address) 
     };
 }
 
-auto modbus::Server::CoilGetter(uint16_t register_address, std::function<bool()> getter) -> const std::function<bool()>& {
+auto modbus::Modbus::CoilGetter(uint16_t register_address, std::function<bool()> getter) -> const std::function<bool()>& {
     return coil_getters[register_address] = std::move(getter);
 }
 
-auto modbus::Server::CoilSetter(uint16_t register_address, std::function<void(bool)> setter) -> const std::function<void(bool)>& {
+auto modbus::Modbus::CoilSetter(uint16_t register_address, std::function<void(bool)> setter) -> const std::function<void(bool)>& {
     return coil_setters[register_address] = std::move(setter);
 }
 
-auto modbus::Server::HoldingRegisterGetter(uint16_t register_address, std::function<uint16_t()> getter) -> const std::function<uint16_t()>& {
+auto modbus::Modbus::HoldingRegisterGetter(uint16_t register_address, std::function<uint16_t()> getter) -> const std::function<uint16_t()>& {
     return holding_register_getters[register_address] = std::move(getter);
 }
 
-auto modbus::Server::HoldingRegisterSetter(uint16_t register_address, std::function<void(uint16_t)> setter) -> const std::function<void(uint16_t)>& {
+auto modbus::Modbus::HoldingRegisterSetter(uint16_t register_address, std::function<void(uint16_t)> setter) -> const std::function<void(uint16_t)>& {
     return holding_register_setters[register_address] = std::move(setter);
 }
 
-auto modbus::Server::DiscreteInputGetter(uint16_t register_address, std::function<bool()> getter) -> const std::function<bool()>&  {
+auto modbus::Modbus::DiscreteInputGetter(uint16_t register_address, std::function<bool()> getter) -> const std::function<bool()>&  {
     return discrete_input_getters[register_address] = std::move(getter);
 }
 
-auto modbus::Server::AnalogInputGetter(uint16_t register_address, std::function<uint16_t()> getter)-> const std::function<uint16_t()>& {
+auto modbus::Modbus::AnalogInputGetter(uint16_t register_address, std::function<uint16_t()> getter)-> const std::function<uint16_t()>& {
     return analog_input_getters[register_address] = std::move(getter);
 }
 
-auto modbus::Server::ExceptionStatusGetter(std::function<uint8_t()> getter) -> const std::function<uint8_t()>& {
+auto modbus::Modbus::ExceptionStatusGetter(std::function<uint8_t()> getter) -> const std::function<uint8_t()>& {
     return exception_status_getter = std::move(getter);
 }
 
-auto modbus::Server::DiagnosticGetter(uint8_t sub_function, std::function<Result<uint16_t>(uint16_t)> getter) -> const std::function<Result<uint16_t>(uint16_t)>& {
+auto modbus::Modbus::DiagnosticGetter(uint8_t sub_function, std::function<Result<uint16_t>(uint16_t)> getter) -> const std::function<Result<uint16_t>(uint16_t)>& {
     return diagnostic_getters[sub_function] = std::move(getter);
 }
 
-auto modbus::Server::execute(const std::vector<uint8_t>& data, bool accept_all_address) const -> Result<std::vector<uint8_t>> {
+auto modbus::Modbus::execute(const std::vector<uint8_t>& data, bool accept_all_address) const -> Result<std::vector<uint8_t>> {
     if (not modbus::is_valid(data)) 
         return Err(Error::InvalidCRC);
 
@@ -141,19 +141,19 @@ static auto read_helper(
     return Ok(std::move(res));
 }
 
-auto modbus::Server::execute_read_coils(const std::vector<uint8_t>& data) const -> Result<std::vector<uint8_t>> {
+auto modbus::Modbus::execute_read_coils(const std::vector<uint8_t>& data) const -> Result<std::vector<uint8_t>> {
     return read_helper(data, coil_getters);
 }
 
-auto modbus::Server::execute_read_discrete_inputs(const std::vector<uint8_t>& data) const -> Result<std::vector<uint8_t>> {
+auto modbus::Modbus::execute_read_discrete_inputs(const std::vector<uint8_t>& data) const -> Result<std::vector<uint8_t>> {
     return read_helper(data, discrete_input_getters);
 }
 
-auto modbus::Server::execute_read_holding_registers(const std::vector<uint8_t>& data) const -> Result<std::vector<uint8_t>> {
+auto modbus::Modbus::execute_read_holding_registers(const std::vector<uint8_t>& data) const -> Result<std::vector<uint8_t>> {
     return read_helper(data, holding_register_getters);
 }
 
-auto modbus::Server::execute_read_input_registers(const std::vector<uint8_t>& data) const -> Result<std::vector<uint8_t>> {
+auto modbus::Modbus::execute_read_input_registers(const std::vector<uint8_t>& data) const -> Result<std::vector<uint8_t>> {
     return read_helper(data, analog_input_getters);
 }
 
@@ -188,11 +188,11 @@ static auto write_single_helper(
     return Ok(std::move(res));
 }
 
-auto modbus::Server::execute_write_single_coil(const std::vector<uint8_t>& data) const -> Result<std::vector<uint8_t>> {
+auto modbus::Modbus::execute_write_single_coil(const std::vector<uint8_t>& data) const -> Result<std::vector<uint8_t>> {
     return write_single_helper(data, coil_setters);
 }
 
-auto modbus::Server::execute_write_single_register(const std::vector<uint8_t>& data) const -> Result<std::vector<uint8_t>> {
+auto modbus::Modbus::execute_write_single_register(const std::vector<uint8_t>& data) const -> Result<std::vector<uint8_t>> {
     return write_single_helper(data, holding_register_setters);
 }
 
@@ -238,15 +238,15 @@ static auto write_multiple_helper(
     return Ok(std::move(res));
 }
 
-auto modbus::Server::execute_write_multiple_coils(const std::vector<uint8_t>& data) const -> Result<std::vector<uint8_t>> {
+auto modbus::Modbus::execute_write_multiple_coils(const std::vector<uint8_t>& data) const -> Result<std::vector<uint8_t>> {
     return write_multiple_helper(data, coil_setters);
 }
 
-auto modbus::Server::execute_write_multiple_registers(const std::vector<uint8_t>& data) const -> Result<std::vector<uint8_t>> {
+auto modbus::Modbus::execute_write_multiple_registers(const std::vector<uint8_t>& data) const -> Result<std::vector<uint8_t>> {
     return write_multiple_helper(data, holding_register_setters);
 }
 
-auto modbus::Server::execute_read_exception_status(const std::vector<uint8_t>& data) const -> Result<std::vector<uint8_t>> {
+auto modbus::Modbus::execute_read_exception_status(const std::vector<uint8_t>& data) const -> Result<std::vector<uint8_t>> {
     if (data.size() != 4) return Err(Error::InvalidDataFrame);
     if (not exception_status_getter) return Err(Error::ExceptionStatusIsNotDefined);
 
@@ -258,7 +258,7 @@ auto modbus::Server::execute_read_exception_status(const std::vector<uint8_t>& d
     return Ok(std::move(res));
 }
 
-auto modbus::Server::execute_diagnostic(const std::vector<uint8_t>& data) const -> Result<std::vector<uint8_t>> {
+auto modbus::Modbus::execute_diagnostic(const std::vector<uint8_t>& data) const -> Result<std::vector<uint8_t>> {
     if (data.size() != 8) return Err(Error::InvalidDataFrame);
     uint16_t sub_function = data[2] << 8 | data[3];
     uint16_t input = data[4] << 8 | data[5];

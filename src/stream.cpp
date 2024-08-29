@@ -1,5 +1,6 @@
 #include "delameta/stream.h"
 #include "delameta/debug.h"
+#include <algorithm>
 
 using namespace Project;
 using namespace delameta;
@@ -75,12 +76,12 @@ Stream StreamSessionServer::execute_stream_session(Descriptor& desc, const std::
 
 StreamSessionClient::StreamSessionClient(Descriptor* desc) : desc(desc) {}
 
-StreamSessionClient::~StreamSessionClient() {
-    if (desc) {
-        delete desc;
-        desc = nullptr;
-    }
-}
+// StreamSessionClient::~StreamSessionClient() {
+//     if (desc) {
+//         delete desc;
+//         desc = nullptr;
+//     }
+// }
 
 StreamSessionClient::StreamSessionClient(StreamSessionClient&& other) : desc(std::exchange(other.desc, nullptr)) {}
 
