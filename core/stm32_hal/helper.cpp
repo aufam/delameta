@@ -12,7 +12,7 @@ using etl::Ok;
 
 struct addrinfo {
     uint8_t ip[4];
-    int port;
+    uint16_t port;
 };
 
 static const std::pair<const char*, int> protocol_default_ports[] = {

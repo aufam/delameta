@@ -167,8 +167,9 @@ auto Serial::write(std::string_view data) -> Result<void> {
     return delameta_detail_write(file, line, fd, timeout, &delameta_detail_is_fd_alive, data);
 }
 
-void Serial::wait_until_ready() {
+auto Serial::wait_until_ready() -> Result<void> {
     // TODO
+    return Ok();
 }
 
 auto Server<Serial>::start(const char* file, int line, Serial::Args args) -> Result<void> {

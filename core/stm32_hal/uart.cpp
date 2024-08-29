@@ -30,12 +30,12 @@ struct uart_handler_t {
 
 struct file_descriptor_uart_t {
     uart_handler_t* handler;
-    std::string_view __file;
-    int __oflag;
+    const char* port;
     const uint8_t* received_data;
     size_t received_data_len;
 
     void init();
+    void set_baudrate(uint32_t baud);
     Result<std::vector<uint8_t>> read(uint32_t tout);
     Result<std::vector<uint8_t>> read_until(uint32_t tout, size_t n);
     Result<void> write(uint32_t tout, std::string_view data);
@@ -45,49 +45,49 @@ struct file_descriptor_uart_t {
 #ifdef DELAMETA_STM32_USE_HAL_UART1
 extern UART_HandleTypeDef huart1;
 static uart_handler_t uart1_handler {&huart1, nullptr, nullptr, {}, {}};
-file_descriptor_uart_t file_descriptor_uart_instance1 {&uart1_handler, "/uart1", 0, nullptr, 0};
+file_descriptor_uart_t file_descriptor_uart_instance1 {&uart1_handler, "/uart1", nullptr, 0};
 #endif
 
 #ifdef DELAMETA_STM32_USE_HAL_UART2
 extern UART_HandleTypeDef huart2;
 static uart_handler_t uart2_handler {&huart2, nullptr, nullptr, {}, {}};
-file_descriptor_uart_t file_descriptor_uart_instance2 {&uart2_handler, "/uart2", 0, nullptr, 0};
+file_descriptor_uart_t file_descriptor_uart_instance2 {&uart2_handler, "/uart2", nullptr, 0};
 #endif
 
 #ifdef DELAMETA_STM32_USE_HAL_UART3
 extern UART_HandleTypeDef huart3;
 static uart_handler_t uart3_handler {&huart3, nullptr, nullptr, {}, {}};
-file_descriptor_uart_t file_descriptor_uart_instance3 {&uart3_handler, "/uart3", 0, nullptr, 0};
+file_descriptor_uart_t file_descriptor_uart_instance3 {&uart3_handler, "/uart3", nullptr, 0};
 #endif
 
 #ifdef DELAMETA_STM32_USE_HAL_UART4
 extern UART_HandleTypeDef huart4;
 static uart_handler_t uart4_handler {&huart4, nullptr, nullptr, {}, {}};
-file_descriptor_uart_t file_descriptor_uart_instance4 {&uart4_handler, "/uart4", 0, nullptr, 0};
+file_descriptor_uart_t file_descriptor_uart_instance4 {&uart4_handler, "/uart4", nullptr, 0};
 #endif
 
 #ifdef DELAMETA_STM32_USE_HAL_UART5
 extern UART_HandleTypeDef huart5;
 static uart_handler_t uart5_handler {&huart5, nullptr, nullptr, {}, {}};
-file_descriptor_uart_t file_descriptor_uart_instance5 {&uart5_handler, "/uart5", 0, nullptr, 0};
+file_descriptor_uart_t file_descriptor_uart_instance5 {&uart5_handler, "/uart5", nullptr, 0};
 #endif
 
 #ifdef DELAMETA_STM32_USE_HAL_UART6
 extern UART_HandleTypeDef huart6;
 static uart_handler_t uart6_handler {&huart6, nullptr, nullptr, {}, {}};
-file_descriptor_uart_t file_descriptor_uart_instance6 {&uart6_handler, "/uart6", 0, nullptr, 0};
+file_descriptor_uart_t file_descriptor_uart_instance6 {&uart6_handler, "/uart6", nullptr, 0};
 #endif
 
 #ifdef DELAMETA_STM32_USE_HAL_UART7
 extern UART_HandleTypeDef huart7;
 static uart_handler_t uart7_handler {&huart7, nullptr, nullptr, {}, {}};
-file_descriptor_uart_t file_descriptor_uart_instance7 {&uart7_handler, "/uart7", 0, nullptr, 0};
+file_descriptor_uart_t file_descriptor_uart_instance7 {&uart7_handler, "/uart7", nullptr, 0};
 #endif
 
 #ifdef DELAMETA_STM32_USE_HAL_UART8
 extern UART_HandleTypeDef huart8;
 static uart_handler_t uart8_handler {&huart8, nullptr, nullptr, {}, {}};
-file_descriptor_uart_t file_descriptor_uart_instance8 {&uart8_handler, "/uart8", 0, nullptr, 0};
+file_descriptor_uart_t file_descriptor_uart_instance8 {&uart8_handler, "/uart8", nullptr, 0};
 #endif
 
 void file_descriptor_uart_t::init() {
@@ -98,6 +98,11 @@ void file_descriptor_uart_t::init() {
     attr.cb_mem = &handler->uart_read_sem_cb;
     attr.cb_size = sizeof(handler->uart_read_sem_cb);
     handler->uart_read_sem = osSemaphoreNew(1, 1, &attr);
+}
+
+void file_descriptor_uart_t::set_baudrate(uint32_t baud) {
+    handler->huart->Init.BaudRate = 9600;
+    HAL_UART_Init(handler->huart);
 }
 
 auto file_descriptor_uart_t::read(uint32_t tout) -> Result<std::vector<uint8_t>> {

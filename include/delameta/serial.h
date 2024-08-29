@@ -29,7 +29,7 @@ namespace Project::delameta {
         Result<void> write(std::string_view data) override;
         using Descriptor::write;
 
-        void wait_until_ready();
+        Result<void> wait_until_ready();
 
         int fd;
         int timeout;

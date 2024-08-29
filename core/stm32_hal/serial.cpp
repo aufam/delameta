@@ -4,7 +4,7 @@
 #include "usbd_cdc_if.h"
 #endif
 
-#include "delameta/file_descriptor.h"
+#include "delameta/serial.h"
 #include "delameta/debug.h"
 #include "etl/time.h"
 #include "etl/heap.h"
@@ -23,23 +23,6 @@ using etl::Ok;
 #define DELAMETA_STM32_HAS_UART
 #endif
 
-#if defined(DELAMETA_STM32_USE_HAL_I2C1) || defined(DELAMETA_STM32_USE_HAL_I2C2) || \
-    defined(DELAMETA_STM32_USE_HAL_I2C3) || defined(DELAMETA_STM32_USE_HAL_I2C4) || \
-    defined(DELAMETA_STM32_USE_HAL_I2C5)
-#define DELAMETA_STM32_HAS_I2C
-#endif
-
-#if defined(DELAMETA_STM32_USE_HAL_CAN1) || defined(DELAMETA_STM32_USE_HAL_CAN2) || \
-    defined(DELAMETA_STM32_USE_HAL_CAN3) || defined(DELAMETA_STM32_USE_HAL_CAN)
-#define DELAMETA_STM32_HAS_CAN
-#endif
-
-#if defined(DELAMETA_STM32_USE_HAL_SPI1) || defined(DELAMETA_STM32_USE_HAL_SPI2) || \
-    defined(DELAMETA_STM32_USE_HAL_SPI3) || defined(DELAMETA_STM32_USE_HAL_SPI4) || \
-    defined(DELAMETA_STM32_USE_HAL_SPI5) || defined(DELAMETA_STM32_USE_HAL_SPI6)
-#define DELAMETA_STM32_HAS_SPI
-#endif
-
 #ifdef DELAMETA_STM32_HAS_UART
 struct uart_handler_t {
     UART_HandleTypeDef* huart;
@@ -51,8 +34,7 @@ struct uart_handler_t {
 
 struct file_descriptor_uart_t {
     uart_handler_t* handler;
-    std::string_view __file;
-    int __oflag;
+    const char* port;
     const uint8_t* received_data;
     size_t received_data_len;
 
@@ -94,7 +76,6 @@ extern file_descriptor_uart_t file_descriptor_uart_instance8;
 struct file_descriptor_i2c_t {
     I2C_HandleTypeDef* handler;
     const char* __file;
-    int __oflag;
     const uint8_t* received_data;
     size_t received_data_len;
 
@@ -127,7 +108,6 @@ extern file_descriptor_i2c_t file_descriptor_i2c_instance5;
 struct file_descriptor_can_t {
     CAN_HandleTypeDef* handler;
     const char* __file;
-    int __oflag;
     const uint8_t* received_data;
     size_t received_data_len;
 
@@ -146,7 +126,6 @@ extern file_descriptor_can_t file_descriptor_can_instance;
 struct file_descriptor_spi_t {
     SPI_HandleTypeDef* handler;
     const char* __file;
-    int __oflag;
     const uint8_t* received_data;
     size_t received_data_len;
 
@@ -189,8 +168,7 @@ struct usb_handler_t {
 
 struct file_descriptor_usb_t {
     usb_handler_t* handler;
-    std::string_view __file;
-    int __oflag;
+    const char* port;
     const uint8_t* received_data;
     size_t received_data_len;
 
@@ -206,10 +184,10 @@ extern file_descriptor_usb_t file_descriptor_usb_instance;
 #endif
 
 struct file_descriptor_dummy_t {
-    std::string_view __file;
-    int __oflag;
+    const char* port;
 
     void init() {}
+    void set_baudrate(uint32_t) {}
     Result<std::vector<uint8_t>> read(uint32_t) { return Err(Error{-1, "No impl"}); }
     Result<std::vector<uint8_t>> read_until(uint32_t, size_t) { return Err(Error{-1, "No impl"}); }
     Result<void> write(uint32_t, std::string_view) { return Err(Error{-1, "No impl"}); }
@@ -300,43 +278,47 @@ static file_descriptor_t file_descriptors[] = {
     #endif
 };
 
-FileDescriptor::FileDescriptor(const char* file, int line, int fd)
-    : fd(fd)
-    , timeout(-1)
+Serial::Serial(const char* file, int line, int fd, int timeout)
+    : Descriptor()
+    , StreamSessionClient(this)
+    , fd(fd)
+    , timeout(timeout)
     , file(file)
     , line(line) {}
 
-FileDescriptor::FileDescriptor(FileDescriptor&& other) 
-    : fd(std::exchange(other.fd, -1))
+Serial::Serial(Serial&& other) 
+    : Descriptor()
+    , StreamSessionClient(this)
+    , fd(std::exchange(other.fd, -1))
     , timeout(other.timeout)
     , file(other.file)
     , line(other.line) {}
 
-FileDescriptor::~FileDescriptor() {
+Serial::~Serial() {
     if (fd >= 0) {
         fd = -1;
     }
 }
 
-auto FileDescriptor::Open(const char* file, int line, const char* __file, int __oflag) -> Result<FileDescriptor> {
+auto Serial::Open(const char* file, int line, Args args) -> Result<Serial> {
     for (size_t i = 0; i < std::size(file_descriptors); ++i) {
         bool found = false;
         std::visit([&](auto* fd){
-            if (fd->__file == __file) {
-                fd->__oflag = __oflag;
+            if (!found && fd->port == args.port) { 
+                // fd->set_baudrate(args.baud);
                 found = true;
             }
         }, file_descriptors[i]);
 
         if (found) {
-            return Ok(FileDescriptor(file, line, i));
+            return Ok(Serial(file, line, i, args.timeout));
         }
     }
 
     return Err(Error{-1, "no __file"});
 }
 
-auto FileDescriptor::read() -> Result<std::vector<uint8_t>> {
+auto Serial::read() -> Result<std::vector<uint8_t>> {
     if (fd < 0 || fd >= (int)std::size(file_descriptors))
         return Err(Error{-1, "Invalid fd"});
 
@@ -344,7 +326,7 @@ auto FileDescriptor::read() -> Result<std::vector<uint8_t>> {
     return std::visit([&](auto* fd) { return fd->read(tout); }, file_descriptors[fd]);
 }
 
-auto FileDescriptor::read_until(size_t n) -> Result<std::vector<uint8_t>> {
+auto Serial::read_until(size_t n) -> Result<std::vector<uint8_t>> {
     if (fd < 0 || fd >= (int)std::size(file_descriptors))
         return Err(Error{-1, "Invalid fd"});
 
@@ -352,7 +334,7 @@ auto FileDescriptor::read_until(size_t n) -> Result<std::vector<uint8_t>> {
     return std::visit([&](auto* fd) { return fd->read_until(tout, n); }, file_descriptors[fd]);
 }
 
-auto FileDescriptor::read_as_stream(size_t n) -> Stream {
+auto Serial::read_as_stream(size_t n) -> Stream {
     Stream s;
     for (int total = n; total > 0;) {
         int size = std::min(total, 128);
@@ -371,7 +353,7 @@ auto FileDescriptor::read_as_stream(size_t n) -> Stream {
     return s;
 }
 
-auto FileDescriptor::write(std::string_view data) -> Result<void> {
+auto Serial::write(std::string_view data) -> Result<void> {
     if (fd < 0 || fd >= (int)std::size(file_descriptors))
         return Err(Error{-1, "Invalid fd"});
 
@@ -379,7 +361,7 @@ auto FileDescriptor::write(std::string_view data) -> Result<void> {
     return std::visit([&](auto* fd) { return fd->write(tout, data); }, file_descriptors[fd]);
 }
 
-auto FileDescriptor::wait_until_ready() -> Result<void> {
+auto Serial::wait_until_ready() -> Result<void> {
     if (fd < 0 || fd >= (int)std::size(file_descriptors))
         return Err(Error{-1, "Invalid fd"});
 
@@ -387,41 +369,35 @@ auto FileDescriptor::wait_until_ready() -> Result<void> {
     return std::visit([&](auto* fd) { return fd->wait_until_ready(tout); }, file_descriptors[fd]);
 }
 
-auto FileDescriptor::file_size() -> Result<size_t> {
-    return Err(Error{-1, "No impl"}); // not implemented yet
-}
+auto Server<Serial>::start(const char* file, int line, Serial::Args args) -> Result<void> {
+    auto [ser, ser_err] = Serial::Open(file, line, std::move(args));
+    if (ser_err) return Err(std::move(*ser_err));
 
-auto FileDescriptor::operator<<(Stream& other) -> FileDescriptor& {
-    other >> *this;
-    return *this;
-}
-
-auto FileDescriptor::operator>>(Stream& s) -> FileDescriptor& {
-    auto [size, size_err] = file_size();
-    if (size_err) {
-        return *this;
-    }
-
-    auto p_fd = new FileDescriptor(std::move(*this));
-
-    for (int total_size = int(*size); total_size > 0;) {
-        size_t n = std::min(total_size, 128);
-        s << [p_fd, n, buffer=std::vector<uint8_t>{}]() mutable -> std::string_view {
-            auto data = p_fd->read_until(n);
-            if (data.is_ok()) {
-                buffer = std::move(data.unwrap());
-            }
-            return {reinterpret_cast<const char*>(buffer.data()), buffer.size()};
-        };
-        total_size -= n;
-    }
-
-    s << [p_fd]() mutable -> std::string_view {
-        delete p_fd;
-        return "";
+    bool is_running {true};
+    on_stop = [this, &is_running]() { 
+        is_running = false;
+        on_stop = {};
     };
 
-    return *this;
+    while (is_running) {
+        auto wait_result = ser->wait_until_ready();
+        if (wait_result.is_err()) continue;
+
+        auto read_result = ser->read();
+        if (read_result.is_err()) continue;
+
+        auto stream = execute_stream_session(*ser, "Serial", read_result.unwrap());
+        stream >> *ser;
+    }
+
+    stop();
+    return Ok();
+}
+
+void Server<Serial>::stop() {
+    if (on_stop) {
+        on_stop();
+    }
 }
 
 // peripheral init init

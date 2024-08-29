@@ -177,7 +177,7 @@ Result<Endpoint> EndpointFactorySerial(const char* file, int line, const URL& ur
         args.timeout = std::stoi(it->second);
     } 
 
-    auto &path = uri.host.size() > 0 ? uri.host : uri.path;
+    args.port = uri.host.size() > 0 ? uri.host : uri.path;
     auto fd = Serial::Open(file, line, std::move(args));
     if (fd.is_err()) {
         return Err(std::move(fd.unwrap_err()));

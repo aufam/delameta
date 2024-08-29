@@ -25,12 +25,12 @@ struct usb_handler_t {
 
 struct file_descriptor_usb_t {
     usb_handler_t* handler;
-    std::string_view __file;
-    int __oflag;
+    const char* port;
     const uint8_t* received_data;
     size_t received_data_len;
 
     void init();
+    void set_baudrate(uint32_t baud);
     Result<std::vector<uint8_t>> read(uint32_t tout);
     Result<std::vector<uint8_t>> read_until(uint32_t tout, size_t n);
     Result<void> write(uint32_t tout, std::string_view data);
@@ -38,7 +38,7 @@ struct file_descriptor_usb_t {
 };
 
 static usb_handler_t usb_handler {};
-file_descriptor_usb_t file_descriptor_usb_instance {&usb_handler, "/usb", 0, nullptr, 0};
+file_descriptor_usb_t file_descriptor_usb_instance {&usb_handler, "/usb", nullptr, 0};
 
 void file_descriptor_usb_t::init() {
     osSemaphoreAttr_t attr = {};
@@ -50,6 +50,8 @@ void file_descriptor_usb_t::init() {
     attr.cb_size = sizeof(handler->usb_write_sem_cb);
     handler->usb_write_sem = osSemaphoreNew(1, 1, &attr);
 }
+
+void file_descriptor_usb_t::set_baudrate(uint32_t ) {}
 
 auto file_descriptor_usb_t::read(uint32_t tout) -> Result<std::vector<uint8_t>> {
     osThreadFlagsSet(handler->usb_read_thd, 0b10); // cancel the awaiting thread

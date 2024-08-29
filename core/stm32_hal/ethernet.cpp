@@ -2,12 +2,10 @@
 
 #include "main.h"
 #include "socket.h"
-#include "delameta/socket.h"
 #include "delameta/debug.h"
-#include "etl/async.h"
-#include "etl/heap.h"
+#include <etl/async.h>
+#include <etl/heap.h>
 #include <cstring>
-
 
 #ifndef DELAMETA_STM32_WIZCHIP_CS_PORT
 #error "DELAMETA_STM32_WIZCHIP_CS_PORT is not defined"
@@ -26,7 +24,6 @@
 #endif
 
 extern SPI_HandleTypeDef DELAMETA_STM32_WIZCHIP_SPI;
-extern SPI_HandleTypeDef DELAMETA_STM32_WIZCHIP_SPI;
 
 static wiz_NetInfo wizchip_net_info = { 
     .mac={0x00, 0x08, 0xdc, 0xff, 0xee, 0xdd},
@@ -37,7 +34,7 @@ static wiz_NetInfo wizchip_net_info = {
     .dhcp=NETINFO_STATIC,
 }; 
 
-static bool wizchip_is_setup = false;
+bool delameta_wizchip_is_setup = false;
 
 using namespace Project;
 using namespace Project::delameta;
@@ -45,12 +42,6 @@ using namespace etl::literals;
 
 using etl::Err;
 using etl::Ok;
-
-struct socket_descriptor_t {
-    bool is_busy;
-};
-
-static socket_descriptor_t socket_descriptors[_WIZCHIP_SOCK_NUM_];
 
 static void check_phy_link() {
     while (wizphy_getphylink() == PHY_LINK_OFF) {
@@ -71,7 +62,7 @@ extern "C" void delameta_stm32_hal_wizchip_set_net_info(
     if (gw) ::memcpy(wizchip_net_info.sn, sn, 4);
     if (dns) ::memcpy(wizchip_net_info.dns, dns, 4);
 
-    if (!wizchip_is_setup) return;
+    if (!delameta_wizchip_is_setup) return;
 
 	wiz_PhyConf phyConf;
 	wizphy_getphystat(&phyConf);
@@ -148,154 +139,9 @@ extern "C" void delameta_stm32_hal_wizchip_init() {
         }
 
         check_phy_link();
-        wizchip_is_setup = true;
+        delameta_wizchip_is_setup = true;
         delameta_stm32_hal_wizchip_set_net_info(nullptr, nullptr, nullptr, nullptr, nullptr);
     });
-}
-
-auto Socket::New(const char* file, int line, int protocol, int port, int flag) -> Result<Socket> {
-    while (!wizchip_is_setup) {
-        etl::time::sleep(100ms);
-    }
-    for (auto i: etl::range(_WIZCHIP_SOCK_NUM_)) if (!socket_descriptors[i].is_busy) {
-        auto res = ::socket(i, protocol, port, flag);
-        if (res < 0) {
-            return Err(Error{res, "socket"});
-        } else {
-            return Ok(Socket(file, line, i));
-        }
-    }
-
-    return Err(Error{-1, "no socket"});
-}
-
-Socket::Socket(const char* file, int line, int socket) 
-    : socket(socket)
-    , keep_alive(true)
-    , timeout(-1)
-    , max(-1) 
-    , file(file)
-    , line(line) {}
-
-Socket::Socket(Socket&& other) 
-    : socket(std::exchange(other.socket, -1))
-    , keep_alive(other.keep_alive)
-    , timeout(other.timeout)
-    , max(other.max) 
-    , file(other.file)
-    , line(other.line) {}
-
-Socket::~Socket() {
-    if (socket >= 0) {
-        ::close(socket);
-        socket_descriptors[socket].is_busy = false;
-        socket = -1;
-    }
-}
-
-auto Socket::read() -> Result<std::vector<uint8_t>> {
-    auto start = etl::time::now();
-    while (true) {
-        int stat = getSn_SR(socket);
-        if (stat != SOCK_ESTABLISHED) {
-            return Err(Error{stat, "Closed by peer"});
-        }
-
-        size_t len = ::getSn_RX_RSR(socket);
-        if (len == 0) {
-            if (timeout > 0 && etl::time::elapsed(start) > etl::time::seconds(timeout)) {
-                return Err(Error::TransferTimeout);
-            }
-            etl::time::sleep(10ms);
-            continue;
-        }
-
-        if (etl::heap::freeSize < len) {
-            return Err(Error{-1, "No memory"});
-        }
-
-        auto res = std::vector<uint8_t>(len);
-        ::recv(socket, res.data(), len);
-        return Ok(std::move(res));
-    }
-}
-
-auto Socket::read_until(size_t n) -> Result<std::vector<uint8_t>> {
-    if (n == 0 || etl::heap::freeSize < n) {
-        return Err(Error{-1, "No memory"});
-    }
-
-    auto start = etl::time::now();
-    std::vector<uint8_t> buffer(n);
-    size_t remaining_size = n;
-    auto ptr = buffer.data();
-
-    while (true) {
-        int stat = getSn_SR(socket);
-        if (stat != SOCK_ESTABLISHED) {
-            return Err(Error{stat, "Closed by peer"});
-        }
-
-        size_t len = ::getSn_RX_RSR(socket);
-        if (len == 0) {
-            if (timeout > 0 && etl::time::elapsed(start) > etl::time::seconds(timeout)) {
-                return Err(Error::TransferTimeout);
-            }
-            etl::time::sleep(10ms);
-            continue;
-        }
-
-        auto size = std::min(remaining_size, len);
-        ::recv(socket, ptr, size);    
-        remaining_size -= size;
-
-        if (remaining_size == 0) {
-            return Ok(std::move(buffer));
-        }
-    }
-}
-
-auto Socket::read_as_stream(size_t n) -> Stream {
-    Stream s;
-    for (int total = n; total > 0;) {
-        int size = std::min(total, 2048);
-        s << [this, size, buffer=std::vector<uint8_t>{}]() mutable -> std::string_view {
-            auto data = this->read_until(size);
-            if (data.is_ok()) {
-                buffer = std::move(data.unwrap());
-            } else {
-                warning(file, line, data.unwrap_err().what);
-            }
-            return {reinterpret_cast<const char*>(buffer.data()), buffer.size()};
-        };
-        total -= size;
-    }
-
-    return s;
-}
-
-auto Socket::write(std::string_view data) -> Result<void> {
-    size_t total = 0;
-    for (size_t i = 0; i < data.size();) {
-        int stat = getSn_SR(socket);
-        if (stat != SOCK_ESTABLISHED) {
-            return Err(Error{stat, "Closed by peer"});
-        }
-
-        auto n = std::min<size_t>(2048, data.size() - i);
-        auto sent = ::send(socket, (uint8_t*)&data[i], n);
-        
-        if (sent == 0) {
-            return Err(Error::ConnectionClosed);
-        } else if (sent < 0) {
-            return Err(Error{sent, "socket write"});
-        }
-
-        total += sent;
-        i += sent;
-    }
-
-    return Ok();
 }
 
 #endif
