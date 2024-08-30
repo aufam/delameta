@@ -180,7 +180,9 @@ auto Server<UDP>::start(const char* file, int line, UDP::Args args) -> Result<vo
     auto port = hint.unwrap().port;
 
     auto [sock, sock_err] = delameta_wizchip_socket_open(Sn_MR_UDP, port, 0);
-    if (sock_err) return Err(std::move(*sock_err));
+    if (sock_err) {
+        return Err(std::move(*sock_err));
+    }
 
     UDP session(file, line, *sock, args.timeout, new addrinfo({}));
 
@@ -192,7 +194,9 @@ auto Server<UDP>::start(const char* file, int line, UDP::Args args) -> Result<vo
 
     while (is_running) {
         auto read_result = session.read();
-        if (read_result.is_err()) break;
+        if (read_result.is_err()) {
+            break; 
+        }
 
         auto stream = execute_stream_session(session, "UDP", read_result.unwrap());
         stream >> session;

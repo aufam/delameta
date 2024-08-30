@@ -28,14 +28,14 @@ struct uart_handler_t {
     uint8_t uart_rx_buffer[128];
 };
 
-struct file_descriptor_uart_t {
+struct serial_descriptor_uart_t {
     uart_handler_t* handler;
     const char* port;
     const uint8_t* received_data;
     size_t received_data_len;
 
     void init();
-    void set_baudrate(uint32_t baud);
+    Result<void> set_baudrate(uint32_t baud);
     Result<std::vector<uint8_t>> read(uint32_t tout);
     Result<std::vector<uint8_t>> read_until(uint32_t tout, size_t n);
     Result<void> write(uint32_t tout, std::string_view data);
@@ -45,52 +45,52 @@ struct file_descriptor_uart_t {
 #ifdef DELAMETA_STM32_USE_HAL_UART1
 extern UART_HandleTypeDef huart1;
 static uart_handler_t uart1_handler {&huart1, nullptr, nullptr, {}, {}};
-file_descriptor_uart_t file_descriptor_uart_instance1 {&uart1_handler, "/uart1", nullptr, 0};
+serial_descriptor_uart_t serial_descriptor_uart_instance1 {&uart1_handler, "/uart1", nullptr, 0};
 #endif
 
 #ifdef DELAMETA_STM32_USE_HAL_UART2
 extern UART_HandleTypeDef huart2;
 static uart_handler_t uart2_handler {&huart2, nullptr, nullptr, {}, {}};
-file_descriptor_uart_t file_descriptor_uart_instance2 {&uart2_handler, "/uart2", nullptr, 0};
+serial_descriptor_uart_t serial_descriptor_uart_instance2 {&uart2_handler, "/uart2", nullptr, 0};
 #endif
 
 #ifdef DELAMETA_STM32_USE_HAL_UART3
 extern UART_HandleTypeDef huart3;
 static uart_handler_t uart3_handler {&huart3, nullptr, nullptr, {}, {}};
-file_descriptor_uart_t file_descriptor_uart_instance3 {&uart3_handler, "/uart3", nullptr, 0};
+serial_descriptor_uart_t serial_descriptor_uart_instance3 {&uart3_handler, "/uart3", nullptr, 0};
 #endif
 
 #ifdef DELAMETA_STM32_USE_HAL_UART4
 extern UART_HandleTypeDef huart4;
 static uart_handler_t uart4_handler {&huart4, nullptr, nullptr, {}, {}};
-file_descriptor_uart_t file_descriptor_uart_instance4 {&uart4_handler, "/uart4", nullptr, 0};
+serial_descriptor_uart_t serial_descriptor_uart_instance4 {&uart4_handler, "/uart4", nullptr, 0};
 #endif
 
 #ifdef DELAMETA_STM32_USE_HAL_UART5
 extern UART_HandleTypeDef huart5;
 static uart_handler_t uart5_handler {&huart5, nullptr, nullptr, {}, {}};
-file_descriptor_uart_t file_descriptor_uart_instance5 {&uart5_handler, "/uart5", nullptr, 0};
+serial_descriptor_uart_t serial_descriptor_uart_instance5 {&uart5_handler, "/uart5", nullptr, 0};
 #endif
 
 #ifdef DELAMETA_STM32_USE_HAL_UART6
 extern UART_HandleTypeDef huart6;
 static uart_handler_t uart6_handler {&huart6, nullptr, nullptr, {}, {}};
-file_descriptor_uart_t file_descriptor_uart_instance6 {&uart6_handler, "/uart6", nullptr, 0};
+serial_descriptor_uart_t serial_descriptor_uart_instance6 {&uart6_handler, "/uart6", nullptr, 0};
 #endif
 
 #ifdef DELAMETA_STM32_USE_HAL_UART7
 extern UART_HandleTypeDef huart7;
 static uart_handler_t uart7_handler {&huart7, nullptr, nullptr, {}, {}};
-file_descriptor_uart_t file_descriptor_uart_instance7 {&uart7_handler, "/uart7", nullptr, 0};
+serial_descriptor_uart_t serial_descriptor_uart_instance7 {&uart7_handler, "/uart7", nullptr, 0};
 #endif
 
 #ifdef DELAMETA_STM32_USE_HAL_UART8
 extern UART_HandleTypeDef huart8;
 static uart_handler_t uart8_handler {&huart8, nullptr, nullptr, {}, {}};
-file_descriptor_uart_t file_descriptor_uart_instance8 {&uart8_handler, "/uart8", nullptr, 0};
+serial_descriptor_uart_t serial_descriptor_uart_instance8 {&uart8_handler, "/uart8", nullptr, 0};
 #endif
 
-void file_descriptor_uart_t::init() {
+void serial_descriptor_uart_t::init() {
     HAL_UARTEx_ReceiveToIdle_DMA(handler->huart, handler->uart_rx_buffer, sizeof(handler->uart_rx_buffer));
     __HAL_DMA_DISABLE_IT(handler->huart->hdmarx, DMA_IT_HT);
 
@@ -100,12 +100,16 @@ void file_descriptor_uart_t::init() {
     handler->uart_read_sem = osSemaphoreNew(1, 1, &attr);
 }
 
-void file_descriptor_uart_t::set_baudrate(uint32_t baud) {
-    handler->huart->Init.BaudRate = 9600;
-    HAL_UART_Init(handler->huart);
+auto serial_descriptor_uart_t::set_baudrate(uint32_t baud) -> Result<void> {
+    handler->huart->Init.BaudRate = baud;
+    if (auto res = HAL_UART_Init(handler->huart); res == HAL_OK) {
+        return Ok();
+    } else {
+        return Err(Error{res, "set baud"});
+    }
 }
 
-auto file_descriptor_uart_t::read(uint32_t tout) -> Result<std::vector<uint8_t>> {
+auto serial_descriptor_uart_t::read(uint32_t tout) -> Result<std::vector<uint8_t>> {
     osThreadFlagsSet(handler->uart_read_thd, 0b10); // cancel the awaiting thread
     handler->uart_read_thd = osThreadGetId();
 
@@ -129,7 +133,7 @@ auto file_descriptor_uart_t::read(uint32_t tout) -> Result<std::vector<uint8_t>>
     return Ok(std::vector<uint8_t>(received_data, received_data + received_data_len));
 }
 
-auto file_descriptor_uart_t::read_until(uint32_t tout, size_t n) -> Result<std::vector<uint8_t>> {
+auto serial_descriptor_uart_t::read_until(uint32_t tout, size_t n) -> Result<std::vector<uint8_t>> {
     if (n == 0 || etl::heap::freeSize < n) {
         return Err(Error{-1, "No memory"});
     }
@@ -171,14 +175,14 @@ auto file_descriptor_uart_t::read_until(uint32_t tout, size_t n) -> Result<std::
     return Err(Error::TransferTimeout);
 }
 
-auto file_descriptor_uart_t::write(uint32_t tout, std::string_view data) -> Result<void> {
+auto serial_descriptor_uart_t::write(uint32_t tout, std::string_view data) -> Result<void> {
     while (huart1.gState != HAL_UART_STATE_READY);
     if (auto res = HAL_UART_Transmit(handler->huart, (const uint8_t*) data.data(), data.size(), tout); res != HAL_OK)
         return Err(Error{static_cast<int>(res), "hal error"});
     return Ok();
 }
 
-auto file_descriptor_uart_t::wait_until_ready(uint32_t tout) -> Result<void> {
+auto serial_descriptor_uart_t::wait_until_ready(uint32_t tout) -> Result<void> {
     if (osSemaphoreAcquire(handler->uart_read_sem, tout) != osOK) {
         return Err(Error::TransferTimeout);
     }
@@ -186,30 +190,30 @@ auto file_descriptor_uart_t::wait_until_ready(uint32_t tout) -> Result<void> {
 }
 
 extern "C" void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
-    file_descriptor_uart_t* uart_fd = nullptr;
+    serial_descriptor_uart_t* uart_fd = nullptr;
     #ifdef DELAMETA_STM32_USE_HAL_UART1
-    if (huart->Instance == huart1.Instance) {uart_fd = &file_descriptor_uart_instance1;}
+    if (huart->Instance == huart1.Instance) {uart_fd = &serial_descriptor_uart_instance1;}
     #endif
     #ifdef DELAMETA_STM32_USE_HAL_UART2
-    if (huart->Instance == huart2.Instance) {uart_fd = &file_descriptor_uart_instance2;}
+    if (huart->Instance == huart2.Instance) {uart_fd = &serial_descriptor_uart_instance2;}
     #endif
     #ifdef DELAMETA_STM32_USE_HAL_UART3
-    if (huart->Instance == huart3.Instance) {uart_fd = &file_descriptor_uart_instance3;}
+    if (huart->Instance == huart3.Instance) {uart_fd = &serial_descriptor_uart_instance3;}
     #endif
     #ifdef DELAMETA_STM32_USE_HAL_UART4
-    if (huart->Instance == huart4.Instance) {uart_fd = &file_descriptor_uart_instance4;}
+    if (huart->Instance == huart4.Instance) {uart_fd = &serial_descriptor_uart_instance4;}
     #endif
     #ifdef DELAMETA_STM32_USE_HAL_UART5
-    if (huart->Instance == huart5.Instance) {uart_fd = &file_descriptor_uart_instance5;}
+    if (huart->Instance == huart5.Instance) {uart_fd = &serial_descriptor_uart_instance5;}
     #endif
     #ifdef DELAMETA_STM32_USE_HAL_UART6
-    if (huart->Instance == huart6.Instance) {uart_fd = &file_descriptor_uart_instance6;}
+    if (huart->Instance == huart6.Instance) {uart_fd = &serial_descriptor_uart_instance6;}
     #endif
     #ifdef DELAMETA_STM32_USE_HAL_UART7
-    if (huart->Instance == huart7.Instance) {uart_fd = &file_descriptor_uart_instance7;}
+    if (huart->Instance == huart7.Instance) {uart_fd = &serial_descriptor_uart_instance7;}
     #endif
     #ifdef DELAMETA_STM32_USE_HAL_UART8
-    if (huart->Instance == huart8.Instance) {uart_fd = &file_descriptor_uart_instance8;}
+    if (huart->Instance == huart8.Instance) {uart_fd = &serial_descriptor_uart_instance8;}
     #endif
     if (uart_fd) {
         uart_fd->received_data = uart_fd->handler->uart_rx_buffer;

@@ -3,9 +3,12 @@
 #include "main.h"
 #include "socket.h"
 #include "delameta/debug.h"
+#include "delameta/error.h"
 #include <etl/async.h>
 #include <etl/heap.h>
 #include <cstring>
+#include <FreeRTOS.h>
+#include <etl/mutex.h>
 
 #ifndef DELAMETA_STM32_WIZCHIP_CS_PORT
 #error "DELAMETA_STM32_WIZCHIP_CS_PORT is not defined"
@@ -49,6 +52,51 @@ static void check_phy_link() {
         etl::task::sleep(50ms).await();
     }
 };
+
+struct socket_descriptor_t {
+    bool is_busy;
+};
+socket_descriptor_t delameta_wizchip_socket_descriptors[_WIZCHIP_SOCK_NUM_];
+
+struct addrinfo {
+    uint8_t ip[4];
+    uint16_t port;
+};
+auto delameta_detail_resolve_domain(const std::string& domain) -> Result<addrinfo>;
+
+static etl::Mutex mtx;
+
+auto delameta_wizchip_socket_status() -> std::string {
+    std::string res;
+    res.reserve(_WIZCHIP_SOCK_NUM_ * 8);
+    res += "{";
+    for (auto &desc : delameta_wizchip_socket_descriptors) {
+        res += desc.is_busy ? "true" : "false";
+        res += ",";
+    }
+    res.back() = '}';
+    return res;
+}
+
+auto delameta_wizchip_socket_open(uint8_t protocol, int port, int flag) -> Result<int> {
+    while (!delameta_wizchip_is_setup) {
+        etl::time::sleep(100ms);
+    }
+
+    auto lock = mtx.lock().await();
+
+    for (auto i: etl::range(_WIZCHIP_SOCK_NUM_)) if (!delameta_wizchip_socket_descriptors[i].is_busy) {
+        auto res = ::socket(i, protocol, port, flag);
+        if (res < 0) {
+            return Err(Error{res, "socket"});
+        } else {
+            delameta_wizchip_socket_descriptors[i].is_busy = true;
+            return Ok(i);
+        }
+    }
+
+    return Err(Error{-1, "no socket"});
+}
 
 extern "C" void delameta_stm32_hal_wizchip_set_net_info(
     const uint8_t mac[6], 
@@ -123,6 +171,8 @@ extern "C" void delameta_stm32_hal_wizchip_init() {
         }
     );
 
+    mtx.init();
+
     etl::async([]() {
         etl::task::sleep(100ms).await();
         HAL_GPIO_WritePin(DELAMETA_STM32_WIZCHIP_CS_PORT, DELAMETA_STM32_WIZCHIP_CS_PIN, GPIO_PIN_RESET);
@@ -130,7 +180,7 @@ extern "C" void delameta_stm32_hal_wizchip_init() {
         HAL_GPIO_WritePin(DELAMETA_STM32_WIZCHIP_CS_PORT, DELAMETA_STM32_WIZCHIP_CS_PIN, GPIO_PIN_SET);
         etl::task::sleep(100ms).await();
     
-        DBG(info, "ethernet start");
+        DBG(info, "ethernet is starting...");
 
         uint8_t memsize[2][8] = { {2,2,2,2,2,2,2,2}, {2,2,2,2,2,2,2,2} };
         if (wizchip_init(memsize[0], memsize[1]) == -1) {

@@ -19,32 +19,16 @@ using etl::Ok;
 struct socket_descriptor_t {
     bool is_busy;
 };
-socket_descriptor_t delameta_wizchip_socket_descriptors[_WIZCHIP_SOCK_NUM_];
+extern socket_descriptor_t delameta_wizchip_socket_descriptors[_WIZCHIP_SOCK_NUM_];
 
 struct addrinfo {
     uint8_t ip[4];
     uint16_t port;
 };
 auto delameta_detail_resolve_domain(const std::string& domain) -> Result<addrinfo>;
+auto delameta_wizchip_socket_open(uint8_t protocol, int port, int flag) -> Result<int>;
 
 int delameta_wizchip_dummy_client_port = 50000;
-
-auto delameta_wizchip_socket_open(uint8_t protocol, int port, int flag) -> Result<int> {
-    while (!delameta_wizchip_is_setup) {
-        etl::time::sleep(100ms);
-    }
-
-    for (auto i: etl::range(_WIZCHIP_SOCK_NUM_)) if (!delameta_wizchip_socket_descriptors[i].is_busy) {
-        auto res = ::socket(i, protocol, port, flag);
-        if (res < 0) {
-            return Err(Error{res, "socket"});
-        } else {
-            return Ok(i);
-        }
-    }
-
-    return Err(Error{-1, "no socket"});
-}
 
 auto TCP::Open(const char* file, int line, Args args) -> Result<TCP> {
     auto hint = delameta_detail_resolve_domain(args.host);

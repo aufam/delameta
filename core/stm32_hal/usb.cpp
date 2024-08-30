@@ -23,14 +23,14 @@ struct usb_handler_t {
     StaticSemaphore_t usb_write_sem_cb; 
 };
 
-struct file_descriptor_usb_t {
+struct serial_descriptor_usb_t {
     usb_handler_t* handler;
     const char* port;
     const uint8_t* received_data;
     size_t received_data_len;
 
     void init();
-    void set_baudrate(uint32_t baud);
+    Result<void> set_baudrate(uint32_t baud);
     Result<std::vector<uint8_t>> read(uint32_t tout);
     Result<std::vector<uint8_t>> read_until(uint32_t tout, size_t n);
     Result<void> write(uint32_t tout, std::string_view data);
@@ -38,9 +38,9 @@ struct file_descriptor_usb_t {
 };
 
 static usb_handler_t usb_handler {};
-file_descriptor_usb_t file_descriptor_usb_instance {&usb_handler, "/usb", nullptr, 0};
+serial_descriptor_usb_t serial_descriptor_usb_instance {&usb_handler, "/usb", nullptr, 0};
 
-void file_descriptor_usb_t::init() {
+void serial_descriptor_usb_t::init() {
     osSemaphoreAttr_t attr = {};
     attr.cb_mem = &handler->usb_read_sem_cb;
     attr.cb_size = sizeof(handler->usb_read_sem_cb);
@@ -51,9 +51,11 @@ void file_descriptor_usb_t::init() {
     handler->usb_write_sem = osSemaphoreNew(1, 1, &attr);
 }
 
-void file_descriptor_usb_t::set_baudrate(uint32_t ) {}
+auto serial_descriptor_usb_t::set_baudrate(uint32_t) -> Result<void> {
+    return Ok();
+}
 
-auto file_descriptor_usb_t::read(uint32_t tout) -> Result<std::vector<uint8_t>> {
+auto serial_descriptor_usb_t::read(uint32_t tout) -> Result<std::vector<uint8_t>> {
     osThreadFlagsSet(handler->usb_read_thd, 0b10); // cancel the awaiting thread
     handler->usb_read_thd = osThreadGetId();
 
@@ -77,7 +79,7 @@ auto file_descriptor_usb_t::read(uint32_t tout) -> Result<std::vector<uint8_t>> 
     return Ok(std::vector<uint8_t>(received_data, received_data + received_data_len));
 }
 
-auto file_descriptor_usb_t::read_until(uint32_t tout, size_t n) -> Result<std::vector<uint8_t>> {
+auto serial_descriptor_usb_t::read_until(uint32_t tout, size_t n) -> Result<std::vector<uint8_t>> {
     if (n == 0 || etl::heap::freeSize < n) {
         return Err(Error{-1, "No memory"});
     }
@@ -119,7 +121,7 @@ auto file_descriptor_usb_t::read_until(uint32_t tout, size_t n) -> Result<std::v
     return Err(Error::TransferTimeout);
 }
 
-auto file_descriptor_usb_t::write(uint32_t, std::string_view data) -> Result<void> {
+auto serial_descriptor_usb_t::write(uint32_t, std::string_view data) -> Result<void> {
     static size_t last_data_size;
     osSemaphoreAcquire(handler->usb_write_sem, last_data_size); // assuming the speed is 1 byte / ms
     if (auto res = CDC_Transmit_FS((uint8_t*)data.data(), data.size()); res != USBD_OK) {
@@ -129,7 +131,7 @@ auto file_descriptor_usb_t::write(uint32_t, std::string_view data) -> Result<voi
     return Ok();
 }
 
-auto file_descriptor_usb_t::wait_until_ready(uint32_t tout) -> Result<void> {
+auto serial_descriptor_usb_t::wait_until_ready(uint32_t tout) -> Result<void> {
     if (osSemaphoreAcquire(handler->usb_read_sem, tout) != osOK) {
         return Err(Error::TransferTimeout);
     }
@@ -137,8 +139,8 @@ auto file_descriptor_usb_t::wait_until_ready(uint32_t tout) -> Result<void> {
 }
 
 extern "C" void CDC_ReceiveCplt_Callback(const uint8_t *pbuf, uint32_t len) {
-    file_descriptor_usb_instance.received_data = pbuf;
-    file_descriptor_usb_instance.received_data_len = len;
+    serial_descriptor_usb_instance.received_data = pbuf;
+    serial_descriptor_usb_instance.received_data_len = len;
     osThreadFlagsSet(usb_handler.usb_read_thd, 0b1);
 }
 extern "C" void CDC_TransmitCplt_Callback(const uint8_t *pbuf, uint32_t len) {

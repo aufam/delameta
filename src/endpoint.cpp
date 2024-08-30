@@ -68,7 +68,13 @@ auto Endpoint::write(std::string_view data) -> Result<void> {
     return desc->write(data);
 }
 
-#if defined(__linux__) || defined(__APPLE__)
+#if defined(USE_HAL_DRIVER)
+__attribute__((weak))
+Result<Endpoint> EndpointFactoryStdInOut(const char*, int, const URL&) {
+    return Err(Error{-1, "no impl"});
+}
+
+#else
 #include <iostream>
 
 class StdInOut : public Descriptor {

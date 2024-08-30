@@ -32,13 +32,14 @@ struct uart_handler_t {
     uint8_t uart_rx_buffer[128];
 };
 
-struct file_descriptor_uart_t {
+struct serial_descriptor_uart_t {
     uart_handler_t* handler;
     const char* port;
     const uint8_t* received_data;
     size_t received_data_len;
 
     void init();
+    Result<void> set_baudrate(uint32_t baud);
     Result<std::vector<uint8_t>> read(uint32_t tout);
     Result<std::vector<uint8_t>> read_until(uint32_t tout, size_t n);
     Result<void> write(uint32_t tout, std::string_view data);
@@ -46,34 +47,34 @@ struct file_descriptor_uart_t {
 };
 
 #ifdef DELAMETA_STM32_USE_HAL_UART1
-extern file_descriptor_uart_t file_descriptor_uart_instance1;
+extern serial_descriptor_uart_t serial_descriptor_uart_instance1;
 #endif
 #ifdef DELAMETA_STM32_USE_HAL_UART2
-extern file_descriptor_uart_t file_descriptor_uart_instance2;
+extern serial_descriptor_uart_t serial_descriptor_uart_instance2;
 #endif
 #ifdef DELAMETA_STM32_USE_HAL_UART3
-extern file_descriptor_uart_t file_descriptor_uart_instance3;
+extern serial_descriptor_uart_t serial_descriptor_uart_instance3;
 #endif
 #ifdef DELAMETA_STM32_USE_HAL_UART4
-extern file_descriptor_uart_t file_descriptor_uart_instance4;
+extern serial_descriptor_uart_t serial_descriptor_uart_instance4;
 #endif
 #ifdef DELAMETA_STM32_USE_HAL_UART5
-extern file_descriptor_uart_t file_descriptor_uart_instance5;
+extern serial_descriptor_uart_t serial_descriptor_uart_instance5;
 #endif
 #ifdef DELAMETA_STM32_USE_HAL_UART6
-extern file_descriptor_uart_t file_descriptor_uart_instance6;
+extern serial_descriptor_uart_t serial_descriptor_uart_instance6;
 #endif
 #ifdef DELAMETA_STM32_USE_HAL_UART7
-extern file_descriptor_uart_t file_descriptor_uart_instance7;
+extern serial_descriptor_uart_t serial_descriptor_uart_instance7;
 #endif
 #ifdef DELAMETA_STM32_USE_HAL_UART8
-extern file_descriptor_uart_t file_descriptor_uart_instance8;
+extern serial_descriptor_uart_t serial_descriptor_uart_instance8;
 #endif
 
 #endif
 
 #ifdef DELAMETA_STM32_HAS_I2C
-struct file_descriptor_i2c_t {
+struct serial_descriptor_i2c_t {
     I2C_HandleTypeDef* handler;
     const char* __file;
     const uint8_t* received_data;
@@ -87,25 +88,25 @@ struct file_descriptor_i2c_t {
 };
 
 #ifdef DELAMETA_STM32_USE_HAL_I2C1
-extern file_descriptor_i2c_t file_descriptor_i2c_instance1;
+extern serial_descriptor_i2c_t serial_descriptor_i2c_instance1;
 #endif
 #ifdef DELAMETA_STM32_USE_HAL_I2C2
-extern file_descriptor_i2c_t file_descriptor_i2c_instance2;
+extern serial_descriptor_i2c_t serial_descriptor_i2c_instance2;
 #endif
 #ifdef DELAMETA_STM32_USE_HAL_I2C3
-extern file_descriptor_i2c_t file_descriptor_i2c_instance3;
+extern serial_descriptor_i2c_t serial_descriptor_i2c_instance3;
 #endif
 #ifdef DELAMETA_STM32_USE_HAL_I2C4
-extern file_descriptor_i2c_t file_descriptor_i2c_instance4;
+extern serial_descriptor_i2c_t serial_descriptor_i2c_instance4;
 #endif
 #ifdef DELAMETA_STM32_USE_HAL_I2C5
-extern file_descriptor_i2c_t file_descriptor_i2c_instance5;
+extern serial_descriptor_i2c_t serial_descriptor_i2c_instance5;
 #endif
 
 #endif
 
 #ifdef DELAMETA_STM32_HAS_CAN
-struct file_descriptor_can_t {
+struct serial_descriptor_can_t {
     CAN_HandleTypeDef* handler;
     const char* __file;
     const uint8_t* received_data;
@@ -118,12 +119,12 @@ struct file_descriptor_can_t {
     Result<void> wait_until_ready(uint32_t tout);
 };
 
-extern file_descriptor_can_t file_descriptor_can_instance;
+extern serial_descriptor_can_t serial_descriptor_can_instance;
 
 #endif
 
 #ifdef DELAMETA_STM32_HAS_SPI
-struct file_descriptor_spi_t {
+struct serial_descriptor_spi_t {
     SPI_HandleTypeDef* handler;
     const char* __file;
     const uint8_t* received_data;
@@ -137,22 +138,22 @@ struct file_descriptor_spi_t {
 };
 
 #ifdef DELAMETA_STM32_USE_HAL_SPI1
-extern file_descriptor_spi_t file_descriptor_spi_instance1;
+extern serial_descriptor_spi_t serial_descriptor_spi_instance1;
 #endif
 #ifdef DELAMETA_STM32_USE_HAL_SPI2
-extern file_descriptor_spi_t file_descriptor_spi_instance2;
+extern serial_descriptor_spi_t serial_descriptor_spi_instance2;
 #endif
 #ifdef DELAMETA_STM32_USE_HAL_SPI3
-extern file_descriptor_spi_t file_descriptor_spi_instance3;
+extern serial_descriptor_spi_t serial_descriptor_spi_instance3;
 #endif
 #ifdef DELAMETA_STM32_USE_HAL_SPI4
-extern file_descriptor_spi_t file_descriptor_spi_instance4;
+extern serial_descriptor_spi_t serial_descriptor_spi_instance4;
 #endif
 #ifdef DELAMETA_STM32_USE_HAL_SPI5
-extern file_descriptor_spi_t file_descriptor_spi_instance5;
+extern serial_descriptor_spi_t serial_descriptor_spi_instance5;
 #endif
 #ifdef DELAMETA_STM32_USE_HAL_SPI6
-extern file_descriptor_spi_t file_descriptor_spi_instance6;
+extern serial_descriptor_spi_t serial_descriptor_spi_instance6;
 #endif
 
 #endif
@@ -166,115 +167,116 @@ struct usb_handler_t {
     StaticSemaphore_t usb_write_sem_cb; 
 };
 
-struct file_descriptor_usb_t {
+struct serial_descriptor_usb_t {
     usb_handler_t* handler;
     const char* port;
     const uint8_t* received_data;
     size_t received_data_len;
 
     void init();
+    Result<void> set_baudrate(uint32_t baud);
     Result<std::vector<uint8_t>> read(uint32_t tout);
     Result<std::vector<uint8_t>> read_until(uint32_t tout, size_t n);
     Result<void> write(uint32_t tout, std::string_view data);
     Result<void> wait_until_ready(uint32_t tout);
 };
 
-extern file_descriptor_usb_t file_descriptor_usb_instance;
+extern serial_descriptor_usb_t serial_descriptor_usb_instance;
 
 #endif
 
-struct file_descriptor_dummy_t {
+struct serial_descriptor_dummy_t {
     const char* port;
 
     void init() {}
-    void set_baudrate(uint32_t) {}
-    Result<std::vector<uint8_t>> read(uint32_t) { return Err(Error{-1, "No impl"}); }
-    Result<std::vector<uint8_t>> read_until(uint32_t, size_t) { return Err(Error{-1, "No impl"}); }
-    Result<void> write(uint32_t, std::string_view) { return Err(Error{-1, "No impl"}); }
-    Result<void> wait_until_ready(uint32_t) { return Err(Error{-1, "No impl"}); }
+    Result<void> set_baudrate(uint32_t) { return Err(Error{-1, "no impl"}); }
+    Result<std::vector<uint8_t>> read(uint32_t) { return Err(Error{-1, "no impl"}); }
+    Result<std::vector<uint8_t>> read_until(uint32_t, size_t) { return Err(Error{-1, "no impl"}); }
+    Result<void> write(uint32_t, std::string_view) { return Err(Error{-1, "no impl"}); }
+    Result<void> wait_until_ready(uint32_t) { return Err(Error{-1, "no impl"}); }
 };
 
-using file_descriptor_t = std::variant<file_descriptor_dummy_t*
+using serial_descriptor_t = std::variant<serial_descriptor_dummy_t*
     #ifdef DELAMETA_STM32_HAS_UART
-    , file_descriptor_uart_t*
+    , serial_descriptor_uart_t*
     #endif
     #ifdef DELAMETA_STM32_HAS_I2C
-    , file_descriptor_i2c_t*
+    , serial_descriptor_i2c_t*
     #endif
     #ifdef DELAMETA_STM32_HAS_SPI
-    , file_descriptor_spi_t*
+    , serial_descriptor_spi_t*
     #endif
     #ifdef DELAMETA_STM32_HAS_CAN
-    , file_descriptor_can_t*
+    , serial_descriptor_can_t*
     #endif
     #ifdef DELAMETA_STM32_USE_HAL_USB
-    , file_descriptor_usb_t*
+    , serial_descriptor_usb_t*
     #endif
 >;
 
-static file_descriptor_t file_descriptors[] = {
+static serial_descriptor_t serial_descriptors[] = {
     #ifdef DELAMETA_STM32_USE_HAL_UART1
-    &file_descriptor_uart_instance1,
+    &serial_descriptor_uart_instance1,
     #endif
     #ifdef DELAMETA_STM32_USE_HAL_UART2
-    &file_descriptor_uart_instance2,
+    &serial_descriptor_uart_instance2,
     #endif
     #ifdef DELAMETA_STM32_USE_HAL_UART3
-    &file_descriptor_uart_instance3,
+    &serial_descriptor_uart_instance3,
     #endif
     #ifdef DELAMETA_STM32_USE_HAL_UART4
-    &file_descriptor_uart_instance4,
+    &serial_descriptor_uart_instance4,
     #endif
     #ifdef DELAMETA_STM32_USE_HAL_UART5
-    &file_descriptor_uart_instance5,
+    &serial_descriptor_uart_instance5,
     #endif
     #ifdef DELAMETA_STM32_USE_HAL_UART6
-    &file_descriptor_uart_instance6,
+    &serial_descriptor_uart_instance6,
     #endif
     #ifdef DELAMETA_STM32_USE_HAL_UART7
-    &file_descriptor_uart_instance7,
+    &serial_descriptor_uart_instance7,
     #endif
     #ifdef DELAMETA_STM32_USE_HAL_UART8
-    &file_descriptor_uart_instance8,
+    &serial_descriptor_uart_instance8,
     #endif
     #ifdef DELAMETA_STM32_USE_HAL_I2C1
-    &file_descriptor_i2c_instance1,
+    &serial_descriptor_i2c_instance1,
     #endif
     #ifdef DELAMETA_STM32_USE_HAL_I2C2
-    &file_descriptor_i2c_instance2,
+    &serial_descriptor_i2c_instance2,
     #endif
     #ifdef DELAMETA_STM32_USE_HAL_I2C3
-    &file_descriptor_i2c_instance3,
+    &serial_descriptor_i2c_instance3,
     #endif
     #ifdef DELAMETA_STM32_USE_HAL_I2C4
-    &file_descriptor_i2c_instance4,
+    &serial_descriptor_i2c_instance4,
     #endif
     #ifdef DELAMETA_STM32_USE_HAL_I2C5
-    &file_descriptor_i2c_instance5,
+    &serial_descriptor_i2c_instance5,
     #endif
     #ifdef DELAMETA_STM32_HAS_CAN
-    &file_descriptor_can_instance,
+    &serial_descriptor_can_instance,
     #endif
     #ifdef DELAMETA_STM32_USE_HAL_SPI1
-    &file_descriptor_spi_instance1,
+    &serial_descriptor_spi_instance1,
     #endif
     #ifdef DELAMETA_STM32_USE_HAL_SPI2
-    &file_descriptor_spi_instance2,
+    &serial_descriptor_spi_instance2,
     #endif
     #ifdef DELAMETA_STM32_USE_HAL_SPI3
-    &file_descriptor_spi_instance3,
+    &serial_descriptor_spi_instance3,
     #endif
     #ifdef DELAMETA_STM32_USE_HAL_SPI4
-    &file_descriptor_spi_instance4,
+    &serial_descriptor_spi_instance4,
     #endif
     #ifdef DELAMETA_STM32_USE_HAL_SPI5
-    &file_descriptor_spi_instance5,
+    &serial_descriptor_spi_instance5,
     #endif
     #ifdef DELAMETA_STM32_USE_HAL_SPI6
-    &file_descriptor_spi_instance6,
+    &serial_descriptor_spi_instance6,
     #endif
     #ifdef DELAMETA_STM32_USE_HAL_USB
-    &file_descriptor_usb_instance,
+    &serial_descriptor_usb_instance,
     #endif
 };
 
@@ -301,37 +303,45 @@ Serial::~Serial() {
 }
 
 auto Serial::Open(const char* file, int line, Args args) -> Result<Serial> {
-    for (size_t i = 0; i < std::size(file_descriptors); ++i) {
+    for (size_t i = 0; i < std::size(serial_descriptors); ++i) {
         bool found = false;
+        Error err{HAL_OK, ""};
         std::visit([&](auto* fd){
             if (!found && fd->port == args.port) { 
-                // fd->set_baudrate(args.baud);
+                auto set_result = fd->set_baudrate(args.baud);
+                if (set_result.is_err()) {
+                    err = std::move(set_result.unwrap_err()); 
+                }
                 found = true;
             }
-        }, file_descriptors[i]);
+        }, serial_descriptors[i]);
 
         if (found) {
-            return Ok(Serial(file, line, i, args.timeout));
+            if (err.code == HAL_OK) {
+                return Ok(Serial(file, line, i, args.timeout));
+            } else {
+                return Err(std::move(err));
+            }
         }
     }
 
-    return Err(Error{-1, "no __file"});
+    return Err(Error{-1, "not found"});
 }
 
 auto Serial::read() -> Result<std::vector<uint8_t>> {
-    if (fd < 0 || fd >= (int)std::size(file_descriptors))
+    if (fd < 0 || fd >= (int)std::size(serial_descriptors))
         return Err(Error{-1, "Invalid fd"});
 
     uint32_t tout = timeout > 0 ? timeout : osWaitForever;
-    return std::visit([&](auto* fd) { return fd->read(tout); }, file_descriptors[fd]);
+    return std::visit([&](auto* fd) { return fd->read(tout); }, serial_descriptors[fd]);
 }
 
 auto Serial::read_until(size_t n) -> Result<std::vector<uint8_t>> {
-    if (fd < 0 || fd >= (int)std::size(file_descriptors))
+    if (fd < 0 || fd >= (int)std::size(serial_descriptors))
         return Err(Error{-1, "Invalid fd"});
 
     uint32_t tout = timeout > 0 ? timeout : osWaitForever;
-    return std::visit([&](auto* fd) { return fd->read_until(tout, n); }, file_descriptors[fd]);
+    return std::visit([&](auto* fd) { return fd->read_until(tout, n); }, serial_descriptors[fd]);
 }
 
 auto Serial::read_as_stream(size_t n) -> Stream {
@@ -354,19 +364,19 @@ auto Serial::read_as_stream(size_t n) -> Stream {
 }
 
 auto Serial::write(std::string_view data) -> Result<void> {
-    if (fd < 0 || fd >= (int)std::size(file_descriptors))
+    if (fd < 0 || fd >= (int)std::size(serial_descriptors))
         return Err(Error{-1, "Invalid fd"});
 
     uint32_t tout = timeout > 0 ? timeout : osWaitForever;
-    return std::visit([&](auto* fd) { return fd->write(tout, data); }, file_descriptors[fd]);
+    return std::visit([&](auto* fd) { return fd->write(tout, data); }, serial_descriptors[fd]);
 }
 
 auto Serial::wait_until_ready() -> Result<void> {
-    if (fd < 0 || fd >= (int)std::size(file_descriptors))
+    if (fd < 0 || fd >= (int)std::size(serial_descriptors))
         return Err(Error{-1, "Invalid fd"});
 
     uint32_t tout = timeout > 0 ? timeout : osWaitForever;
-    return std::visit([&](auto* fd) { return fd->wait_until_ready(tout); }, file_descriptors[fd]);
+    return std::visit([&](auto* fd) { return fd->wait_until_ready(tout); }, serial_descriptors[fd]);
 }
 
 auto Server<Serial>::start(const char* file, int line, Serial::Args args) -> Result<void> {
@@ -400,9 +410,9 @@ void Server<Serial>::stop() {
     }
 }
 
-// peripheral init init
+// peripheral init
 extern "C" void delameta_stm32_hal_init() {
-    for (auto& fd: file_descriptors) {
+    for (auto& fd: serial_descriptors) {
         std::visit([](auto* fd) { fd->init(); }, fd);
     }
 }
