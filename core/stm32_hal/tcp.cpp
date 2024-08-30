@@ -254,4 +254,62 @@ void Server<TCP>::stop() {
     }
 }
 
+#else
+#include "delameta/tcp.h"
+
+using namespace Project;
+using namespace Project::delameta;
+using namespace std::literals;
+
+using etl::Err;
+using etl::Ok;
+
+#define NOT_IMPLEMENTED return Err(Error{-1, "no impl"});
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+
+auto TCP::Open(const char* file, int line, Args args) -> Result<TCP> {
+    NOT_IMPLEMENTED
+}
+
+TCP::TCP(const char* file, int line, int socket, int timeout) 
+    : Descriptor()
+    , StreamSessionClient(this)
+    , socket(socket)
+    , keep_alive(true)
+    , timeout(timeout)
+    , max(-1) 
+    , file(file)
+    , line(line) {}
+
+TCP::TCP(TCP&& other) 
+    : Descriptor()
+    , StreamSessionClient(this)
+    , socket(std::exchange(other.socket, -1))
+    , keep_alive(other.keep_alive)
+    , timeout(other.timeout)
+    , max(other.max) 
+    , file(other.file)
+    , line(other.line) {}
+
+TCP::~TCP() {}
+
+auto TCP::read() -> Result<std::vector<uint8_t>> {
+    NOT_IMPLEMENTED
+}
+
+auto TCP::read_until(size_t n) -> Result<std::vector<uint8_t>> {
+    NOT_IMPLEMENTED
+}
+
+auto TCP::read_as_stream(size_t n) -> Stream {
+    return {};
+}
+
+auto TCP::write(std::string_view data) -> Result<void> {
+    NOT_IMPLEMENTED
+}
+
+#pragma GCC diagnostic pop
 #endif

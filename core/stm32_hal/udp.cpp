@@ -218,4 +218,60 @@ void Server<UDP>::stop() {
     }
 }
 
+#else
+#include "delameta/udp.h"
+
+using namespace Project;
+using namespace Project::delameta;
+using namespace std::literals;
+
+using etl::Err;
+using etl::Ok;
+
+#define NOT_IMPLEMENTED return Err(Error{-1, "no impl"});
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+
+auto UDP::Open(const char* file, int line, Args args) -> Result<UDP> {
+    NOT_IMPLEMENTED
+}
+
+UDP::UDP(const char* file, int line, int socket, int timeout, void* peer)
+    : Descriptor()
+    , StreamSessionClient(this)
+    , socket(socket)
+    , timeout(timeout)
+    , peer(peer)
+    , file(file)
+    , line(line) {}
+
+UDP::UDP(UDP&& other)
+    : Descriptor()
+    , StreamSessionClient(this)
+    , socket(std::exchange(other.socket, -1))
+    , timeout(other.timeout)
+    , peer(std::exchange(other.peer, nullptr))
+    , file(other.file)
+    , line(other.line) {}
+
+UDP::~UDP() {}
+
+auto UDP::read() -> Result<std::vector<uint8_t>> {
+    NOT_IMPLEMENTED
+}
+
+auto UDP::read_until(size_t n) -> Result<std::vector<uint8_t>> {
+    NOT_IMPLEMENTED
+}
+
+auto UDP::read_as_stream(size_t n) -> Stream {
+    return {};
+}
+
+auto UDP::write(std::string_view data) -> Result<void> {
+    NOT_IMPLEMENTED
+}
+
+#pragma GCC diagnostic pop
 #endif
