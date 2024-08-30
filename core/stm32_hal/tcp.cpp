@@ -97,7 +97,12 @@ auto TCP::read() -> Result<std::vector<uint8_t>> {
         }
 
         auto res = std::vector<uint8_t>(len);
-        ::recv(socket, res.data(), len);
+        int32_t sz = ::recv(socket, res.data(), len);
+        if (sz <= 0) {
+            return Err(Error::ConnectionClosed);
+        }
+        res.resize(sz);
+
         return Ok(std::move(res));
     }
 }
@@ -128,8 +133,12 @@ auto TCP::read_until(size_t n) -> Result<std::vector<uint8_t>> {
         }
 
         auto size = std::min(remaining_size, len);
-        ::recv(socket, ptr, size);    
-        remaining_size -= size;
+        int32_t sz = ::recv(socket, ptr, size);
+        if (sz <= 0) {
+            return Err(Error::ConnectionClosed);
+        }
+        remaining_size -= sz;
+        ptr += sz;
 
         if (remaining_size == 0) {
             return Ok(std::move(buffer));

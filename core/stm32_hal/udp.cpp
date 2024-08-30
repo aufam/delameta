@@ -94,7 +94,9 @@ auto UDP::read() -> Result<std::vector<uint8_t>> {
         auto res = std::vector<uint8_t>(len);
         auto peer_ = reinterpret_cast<addrinfo*>(peer);
 
-        ::recvfrom(socket, res.data(), len, peer_->ip, &peer_->port);
+        int32_t sz = ::recvfrom(socket, res.data(), len, peer_->ip, &peer_->port);
+        res.resize(sz);
+
         return Ok(std::move(res));
     }
 }
@@ -122,8 +124,12 @@ auto UDP::read_until(size_t n) -> Result<std::vector<uint8_t>> {
         auto size = std::min(remaining_size, len);
         auto peer_ = reinterpret_cast<addrinfo*>(peer);
 
-        ::recvfrom(socket, ptr, size, peer_->ip, &peer_->port);
-        remaining_size -= size;
+        int32_t sz = ::recvfrom(socket, ptr, size, peer_->ip, &peer_->port);
+        if (sz <= 0) {
+            return Err(Error::ConnectionClosed);
+        }
+        remaining_size -= sz;
+        ptr += sz;
 
         if (remaining_size == 0) {
             return Ok(std::move(buffer));
