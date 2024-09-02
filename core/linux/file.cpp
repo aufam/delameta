@@ -111,24 +111,26 @@ auto File::operator<<(Stream& other) -> File& {
 }
 
 auto File::operator>>(Stream& s) -> File& {
-    auto size = file_size();
+    auto total = file_size();
     auto p_fd = new File(std::move(*this));
 
-    for (size_t total_size = size; total_size > 0;) {
-        size_t n = std::min(total_size, (size_t)MAX_HANDLE_SZ);
-        s << [p_fd, n, buffer=std::vector<uint8_t>{}]() mutable -> std::string_view {
-            auto data = p_fd->read_until(n);
-            if (data.is_ok()) {
-                buffer = std::move(data.unwrap());
-            }
-            return {reinterpret_cast<const char*>(buffer.data()), buffer.size()};
-        };
-        total_size -= n;
-    }
+    s << [p_fd, total, buffer=std::vector<uint8_t>{}](Stream& s) mutable -> std::string_view {
+        size_t n = std::min(total, (size_t)MAX_HANDLE_SZ);
+        auto data = p_fd->read_until(n);
 
-    s << [p_fd]() mutable -> std::string_view {
-        delete p_fd;
-        return "";
+        if (data.is_ok()) {
+            buffer = std::move(data.unwrap());
+            total -= n;
+            s.again = total > 0;
+        } else {
+            buffer = {};
+            warning(p_fd->file, p_fd->line, data.unwrap_err().what);
+        }
+
+        if (!s.again) {
+            delete p_fd;
+        }
+        return {reinterpret_cast<const char*>(buffer.data()), buffer.size()};
     };
 
     return *this;

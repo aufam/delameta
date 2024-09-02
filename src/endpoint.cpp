@@ -122,7 +122,7 @@ public:
 
     Stream read_as_stream(size_t n) override {
         Stream s;
-        s << [this, n, data=std::vector<uint8_t>()]() mutable -> std::string_view {
+        s << [this, n, data=std::vector<uint8_t>()](Stream&) mutable -> std::string_view {
             auto read_result = read_until(n);
             if (read_result.is_ok()) data = std::move(read_result.unwrap());
             return {reinterpret_cast<const char*>(data.data()), data.size()};

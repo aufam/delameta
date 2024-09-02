@@ -6,6 +6,7 @@ using namespace delameta::http;
 using delameta::Stream;
 using etl::Ok;
 using etl::Err;
+namespace json = delameta::json;
 
 class DummyDescriptor : public delameta::Descriptor {
 public:
@@ -47,7 +48,7 @@ TEST(Http, request) {
     EXPECT_EQ(req.headers.at("Content-Type"), "application/x-www-form-urlencoded");
     EXPECT_EQ(req.headers.at("Content-Length"), "22");
     EXPECT_EQ(req.headers.at("Connection"), "keep-alive");
-    EXPECT_EQ(req.body_stream.rules.front()(), "name=JohnDoe&age=30\r\n");
+    EXPECT_EQ(req.body_stream.rules.front()(req.body_stream), "name=JohnDoe&age=30\r\n");
 }
 
 TEST(Http, response) {
@@ -83,7 +84,7 @@ TEST(Http, response) {
     EXPECT_EQ(res.headers.at("Server"), "Apache/2.4.41 (Ubuntu)");
     EXPECT_EQ(res.headers.at("Content-Type"), "text/html");
     EXPECT_EQ(res.headers.at("Content-Length"), "187");
-    EXPECT_EQ(res.body_stream.rules.front()(), body);
+    EXPECT_EQ(res.body_stream.rules.front()(res.body_stream), body);
 }
 
 TEST(Http, handler) {
@@ -162,7 +163,7 @@ TEST(Http, json) {
         arg::json_item("text"),
         arg::json_item("list"),
         arg::json_item("map"),
-    }, [](int num, std::string text, etl::json::List list, etl::json::Map map) {
+    }, [](int num, std::string text, json::List list, json::Map map) {
         EXPECT_EQ(num, 42);
         EXPECT_EQ(text, "text");
         EXPECT_EQ(std::get<double>(list[0]), 42);
@@ -190,10 +191,21 @@ TEST(Http, json) {
     DummyDescriptor desc;
     const auto payload_vec = std::vector<uint8_t>(payload.begin(), payload.end());
     auto [req, res] = handler.execute(desc, payload_vec);
-    EXPECT_EQ(res.status, delameta::http::StatusOK);
+    EXPECT_EQ(res.status, StatusOK);
 }
 
 TEST(Http, form) {
+    static const std::string body = R"(num=42&text=test+123%2F456-789)";
+
+    class Chunked : public DummyDescriptor {
+    public:
+        Stream read_as_stream(size_t) override {
+            Stream s;
+            s << body;
+            return s;
+        }
+    };
+
     Http handler;
     handler.route("/form", {"POST"}, std::tuple{
         arg::percent_encoding("num"), 
@@ -203,15 +215,13 @@ TEST(Http, form) {
         EXPECT_EQ(text, "test 123/456-789");
     });
 
-    std::string body = R"(num=42&text=test+123%2F456-789)";
-    std::string payload = 
+    std::string header = 
         "POST /form HTTP/1.1\r\n"
         "Content-Type: application/x-www-form-urlencoded; charset=utf-8\r\n"
-        "Content-Length: " + std::to_string(body.size()) + "\r\n\r\n" +
-        body;
+        "Content-Length: " + std::to_string(body.size()) + "\r\n\r\n";
     
-    DummyDescriptor desc;
-    const auto payload_vec = std::vector<uint8_t>(payload.begin(), payload.end());
-    auto [req, res] = handler.execute(desc, payload_vec);
-    EXPECT_EQ(res.status, delameta::http::StatusOK);
+    Chunked desc;
+    const auto header_vec = std::vector<uint8_t>(header.begin(), header.end());
+    auto [req, res] = handler.execute(desc, header_vec);
+    EXPECT_EQ(res.status, StatusOK);
 }

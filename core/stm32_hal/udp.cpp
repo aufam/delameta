@@ -139,19 +139,22 @@ auto UDP::read_until(size_t n) -> Result<std::vector<uint8_t>> {
 
 auto UDP::read_as_stream(size_t n) -> Stream {
     Stream s;
-    for (int total = n; total > 0;) {
-        int size = std::min(total, 2048);
-        s << [this, size, buffer=std::vector<uint8_t>{}]() mutable -> std::string_view {
-            auto data = this->read_until(size);
-            if (data.is_ok()) {
-                buffer = std::move(data.unwrap());
-            } else {
-                warning(file, line, data.unwrap_err().what);
-            }
-            return {reinterpret_cast<const char*>(buffer.data()), buffer.size()};
-        };
-        total -= size;
-    }
+
+    s << [this, p_total, buffer=std::vector<uint8_t>{}](Stream& s) mutable -> std::string_view {
+        size_t n = std::min(total, (size_t)128);
+        auto data = self->read_until(n);
+
+        if (data.is_ok()) {
+            buffer = std::move(data.unwrap());
+            total -= n;
+            s.again = total > 0;
+        } else {
+            buffer = {};
+            warning(file, line, data.unwrap_err().what);
+        }
+
+        return {reinterpret_cast<const char*>(buffer.data()), buffer.size()};
+    };
 
     return s;
 }

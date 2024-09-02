@@ -169,13 +169,14 @@ auto Server<TCP>::start(const char* file, int line, Args args) -> Result<void> {
                 continue;
             }
 
-            TCP session(file, line, sock_client, -1);
+            TCP session(file, line, sock_client, 1);
             session.keep_alive = args.keep_alive;
         
             for (int cnt = 1; is_running and delameta_detail_is_socket_alive(sock_client); ++cnt) {
-                auto received_result = session.read();
+                auto received_result = session.read(); // TODO: read() doesn't check for is_running
                 if (received_result.is_err()) {
-                    break;
+                    if (received_result.unwrap_err().code == Error::TransferTimeout) continue;
+                    else break;
                 }
 
                 auto stream = this->execute_stream_session(session, delameta_detail_get_ip(session.socket), received_result.unwrap());

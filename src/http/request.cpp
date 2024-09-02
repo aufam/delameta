@@ -52,15 +52,33 @@ void http::RequestReader::parse(Descriptor& desc, const std::vector<uint8_t>& da
 }
 
 auto http::RequestWriter::dump() -> Stream {
+    std::string first_line;
+    first_line.reserve(method.size() + 1 + url.full_path.size() + 1 + version.size() + 2);
+    first_line += method;
+    first_line += ' ';
+    first_line += url.full_path;
+    first_line += ' ';
+    first_line += version;
+    first_line += "\r\n";
+
     Stream s;
-    std::string payload = std::move(method) + " " + std::move(url.full_path) + " " + std::move(version) + "\r\n";
-    for (auto &[key, value]: headers) {
-        payload += std::move(key) + ": " + std::move(value) + "\r\n";
-    }
+    s << std::move(first_line);
+    s << [buffer=std::string(), headers=std::move(headers)](Stream& s) mutable -> std::string_view {
+        s.again = !headers.empty();
+        if (!s.again) {
+            return "\r\n";
+        }
 
-    payload += "\r\n";
-
-    s << std::move(payload);
+        auto it = headers.begin();
+        buffer.clear();
+        buffer.reserve(it->first.size() + 2 + it->second.size() + 2);
+        buffer += it->first;
+        buffer += ": ";
+        buffer += it->second;
+        buffer += "\r\n";
+        headers.erase(it);
+        return buffer;
+    };
 
     if (!body.empty()) {
         s << std::move(body);
@@ -137,7 +155,7 @@ void delameta_detail_http_request_response_reader_parse_headers_body(
         headers[std::string_view(key.data(), key.len())] = std::string_view(value.data(), value.len());
     }
 
-    body_stream.rules.push_front([body=std::string(sv.data() + body_start, body_length)]() -> std::string_view {
+    body_stream.rules.push_front([body=std::string(sv.data() + body_start, body_length)](Stream&) -> std::string_view {
         return body;
     });
 }

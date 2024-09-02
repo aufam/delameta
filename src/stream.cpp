@@ -7,49 +7,63 @@ using namespace delameta;
 
 using etl::Err;
 
+Stream::~Stream() {
+    if (at_destructor) at_destructor();
+}
+
 Stream& Stream::operator<<(std::string_view data) {
-    return (rules.push_back([data]() { return data; }), *this);
+    return (rules.push_back([data](Stream&) { return data; }), *this);
 }
 
 Stream& Stream::operator<<(const char* data) {
-    return (rules.push_back([data]() -> std::string_view { return data; }), *this);
+    return (rules.push_back([data](Stream&) -> std::string_view { return data; }), *this);
 }
 
 Stream& Stream::operator<<(std::string data) {
-    return (rules.push_back([data=std::move(data)]() -> std::string_view { return data; }), *this);
+    return (rules.push_back([data=std::move(data)](Stream&) -> std::string_view { return data; }), *this);
 }
 
 Stream& Stream::operator<<(std::vector<uint8_t> data) {
-    return (rules.push_back([data=std::move(data)]() -> std::string_view { return {reinterpret_cast<const char*>(data.data()), data.size()}; }), *this);
+    return (rules.push_back([data=std::move(data)](Stream&) -> std::string_view { return {reinterpret_cast<const char*>(data.data()), data.size()}; }), *this);
 }
 
 Stream& Stream::operator<<(Stream& other) {
+    if (!at_destructor) at_destructor = std::move(other.at_destructor);
+    else at_destructor = [f1=std::move(at_destructor), f2=std::move(other.at_destructor)]() { f1(); f2(); };
     return (rules.splice(rules.end(), std::move(other.rules)), *this);
 }
 
 Stream& Stream::operator<<(Stream&& other) {
+    if (!at_destructor) at_destructor = std::move(other.at_destructor);
+    else at_destructor = [f1=std::move(at_destructor), f2=std::move(other.at_destructor)]() { f1(); f2(); };
     return (rules.splice(rules.end(), std::move(other.rules)), *this);
 }
 
 Stream& Stream::operator>>(Stream& other) {
-    return (other.rules.splice(other.rules.end(), std::move(rules)), *this);
+    other << *this;
+    return *this;
 }
 
 Stream& Stream::operator<<(Rule in) {
     return (rules.push_back(std::move(in)), *this);
 }
 
+Stream& Stream::operator<<(std::function<std::string_view()> in) {
+    return (rules.push_back([in=std::move(in)](Stream&) { return in(); }), *this);
+}
+
 Stream& Stream::operator>>(std::function<void(std::string_view)> out) {
     while (!rules.empty()) {
-        auto data = rules.front()();
+        again = false;
+        auto data = rules.front()(*this);
         out(data);
-        rules.pop_front();
+        if (!again) rules.pop_front();
     }
     return *this;
 }
 
 Stream& Stream::operator<<(Descriptor& des) {
-    rules.emplace_back([&des, data = std::vector<uint8_t>()]() mutable {
+    rules.emplace_back([&des, data = std::vector<uint8_t>()](Stream&) mutable {
         auto res = des.read();
         if (res.is_err()) return std::string_view{};
         data = std::move(res.unwrap());
@@ -60,10 +74,11 @@ Stream& Stream::operator<<(Descriptor& des) {
 
 Stream& Stream::operator>>(Descriptor& des) {
     while (!rules.empty()) {
-        auto data = rules.front()();
+        again = false;
+        auto data = rules.front()(*this);
         auto res = des.write(data);
         if (res.is_err()) return *this;
-        rules.pop_front();
+        if (!again) rules.pop_front();
     }
     return *this;
 }
@@ -75,13 +90,6 @@ Stream StreamSessionServer::execute_stream_session(Descriptor& desc, const std::
 }
 
 StreamSessionClient::StreamSessionClient(Descriptor* desc) : desc(desc) {}
-
-// StreamSessionClient::~StreamSessionClient() {
-//     if (desc) {
-//         delete desc;
-//         desc = nullptr;
-//     }
-// }
 
 StreamSessionClient::StreamSessionClient(StreamSessionClient&& other) : desc(std::exchange(other.desc, nullptr)) {}
 

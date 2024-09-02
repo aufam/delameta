@@ -42,13 +42,15 @@ namespace Project::delameta {
     class Stream : public Movable {
     public:
         Stream() = default;
-        virtual ~Stream() = default;
+        virtual ~Stream();
 
         Stream(Stream&&) noexcept = default;
         Stream& operator=(Stream&&) noexcept = default;
 
-        using Rule = std::function<std::string_view()>;
+        using Rule = std::function<std::string_view(Stream&)>;
         std::list<Rule> rules = {};
+        std::function<void()> at_destructor;
+        bool again = false;
 
         Stream& operator<<(std::string_view data);
         Stream& operator<<(const char* data);
@@ -60,6 +62,7 @@ namespace Project::delameta {
         Stream& operator>>(Stream& other);
 
         Stream& operator<<(Rule in);
+        Stream& operator<<(std::function<std::string_view()> out);
         Stream& operator>>(std::function<void(std::string_view)> out);
 
         Stream& operator<<(Descriptor& des);

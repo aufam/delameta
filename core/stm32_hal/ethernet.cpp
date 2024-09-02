@@ -79,7 +79,7 @@ auto delameta_wizchip_socket_status() -> std::string {
 }
 
 auto delameta_wizchip_socket_open(uint8_t protocol, int port, int flag) -> Result<int> {
-    while (!delameta_wizchip_is_setup) {
+    if (!delameta_wizchip_is_setup) {
         etl::time::sleep(100ms);
     }
 
@@ -174,6 +174,8 @@ extern "C" void delameta_stm32_hal_wizchip_init() {
     mtx.init();
 
     etl::async([]() {
+        auto lock = mtx.lock().await();
+
         etl::task::sleep(100ms).await();
         HAL_GPIO_WritePin(DELAMETA_STM32_WIZCHIP_CS_PORT, DELAMETA_STM32_WIZCHIP_CS_PIN, GPIO_PIN_RESET);
         etl::task::sleep(100ms).await();
@@ -189,8 +191,8 @@ extern "C" void delameta_stm32_hal_wizchip_init() {
         }
 
         check_phy_link();
-        delameta_wizchip_is_setup = true;
         delameta_stm32_hal_wizchip_set_net_info(nullptr, nullptr, nullptr, nullptr, nullptr);
+        delameta_wizchip_is_setup = true;
     });
 }
 

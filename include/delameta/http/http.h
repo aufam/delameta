@@ -283,20 +283,38 @@ namespace Project::delameta::http {
 
         template <typename T> static Result<T>
         process_arg(const ArgURL&, const RequestReader& req, ResponseWriter&, Context&) {
-            static_assert(std::is_same_v<T, etl::Ref<const decltype(RequestReader::url)>>);
-            return etl::Ok(etl::ref_const(req.url));
+            static_assert(
+                std::is_same_v<T, decltype(RequestReader::url)> || 
+                std::is_same_v<T, etl::Ref<const decltype(RequestReader::url)>>
+            );
+            if constexpr (std::is_same_v<T, decltype(RequestReader::url)>)
+                return etl::Ok(req.url);
+            else
+                return etl::Ok(etl::ref_const(req.url));
         }
 
         template <typename T> static Result<T>
         process_arg(const ArgHeaders&, const RequestReader& req, ResponseWriter&, Context&) {
-            static_assert(std::is_same_v<T, etl::Ref<const decltype(RequestReader::headers)>>);
-            return etl::Ok(etl::ref_const(req.headers));
+            static_assert(
+                std::is_same_v<T, decltype(RequestReader::headers)> ||
+                std::is_same_v<T, etl::Ref<const decltype(RequestReader::headers)>>
+            );
+            if constexpr (std::is_same_v<T, decltype(RequestReader::headers)>)
+                return etl::Ok(req.headers);
+            else 
+                return etl::Ok(etl::ref_const(req.headers));
         }
 
         template <typename T> static Result<T>
         process_arg(const ArgQueries&, const RequestReader& req, ResponseWriter&, Context&) {
-            static_assert(std::is_same_v<T, etl::Ref<const decltype(URL::queries)>>);
-            return etl::Ok(etl::ref_const(req.url.queries));
+            static_assert(
+                std::is_same_v<T, decltype(URL::queries)> ||
+                std::is_same_v<T, etl::Ref<const decltype(URL::queries)>>
+            );
+            if constexpr (std::is_same_v<T, decltype(URL::queries)>)
+                return etl::Ok(req.url.queries);
+            else 
+                return etl::Ok(etl::ref_const(req.url.queries));
         }
 
         template <typename T> static Result<T>
@@ -350,12 +368,20 @@ namespace Project::delameta::http {
 
         template <typename T> static void
         process_result(T& result, const RequestReader&, ResponseWriter& res) {
+            auto ct = res.headers.find("Content-Type");
+            if (ct == res.headers.end()) {
+                ct = res.headers.find("content-type");
+            }
+
             if constexpr (std::is_same_v<T, std::string> || std::is_same_v<T, std::string_view> || std::is_same_v<T, const char*>) {
                 res.body = std::move(result);
-                res.headers["Content-Type"] = "text/plain";
+                if (ct == res.headers.end()) res.headers["Content-Type"] = "text/plain";
             } else if constexpr (etl::is_etl_string_v<T> || std::is_same_v<T, etl::StringView>) {
                 res.body = std::string(result.data(), result.len());
-                res.headers["Content-Type"] = "text/plain";
+                if (ct == res.headers.end()) res.headers["Content-Type"] = "text/plain";
+            } else if constexpr (std::is_arithmetic_v<T>) {
+                res.body = etl::json::serialize(result);
+                if (ct == res.headers.end()) res.headers["Content-Type"] = "text/plain";
             } else if constexpr (std::is_same_v<T, ResponseWriter>) {
                 res = std::move(result);
             } else if constexpr (std::is_same_v<T, ResponseReader>) {
@@ -363,8 +389,9 @@ namespace Project::delameta::http {
             } else if constexpr (std::is_same_v<T, Stream>) {
                 res.body_stream = std::move(result);
             } else {
-                res.body = etl::json::serialize(result);
-                res.headers["Content-Type"] = "application/json";
+                if (ct == res.headers.end()) res.headers["Content-Type"] = "application/json";
+                res.headers["Content-Length"] = std::to_string(etl::json::size_max(result));
+                res.body_stream = delameta::json::serialize_as_stream(std::move(result));
             }
         }
 
