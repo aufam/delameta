@@ -349,7 +349,7 @@ auto Serial::read_as_stream(size_t n) -> Stream {
 
     s << [this, total=n, buffer=std::vector<uint8_t>{}](Stream& s) mutable -> std::string_view {
         size_t n = std::min(total, (size_t)128);
-        auto data = self->read_until(n);
+        auto data = this->read_until(n);
 
         if (data.is_ok()) {
             buffer = std::move(data.unwrap());

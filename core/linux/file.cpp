@@ -112,11 +112,10 @@ auto File::operator<<(Stream& other) -> File& {
 
 auto File::operator>>(Stream& s) -> File& {
     auto total = file_size();
-    auto p_fd = new File(std::move(*this));
 
-    s << [p_fd, total, buffer=std::vector<uint8_t>{}](Stream& s) mutable -> std::string_view {
+    s << [self=std::move(*this), total, buffer=std::vector<uint8_t>{}](Stream& s) mutable -> std::string_view {
         size_t n = std::min(total, (size_t)MAX_HANDLE_SZ);
-        auto data = p_fd->read_until(n);
+        auto data = self.read_until(n);
 
         if (data.is_ok()) {
             buffer = std::move(data.unwrap());
@@ -124,11 +123,7 @@ auto File::operator>>(Stream& s) -> File& {
             s.again = total > 0;
         } else {
             buffer = {};
-            warning(p_fd->file, p_fd->line, data.unwrap_err().what);
-        }
-
-        if (!s.again) {
-            delete p_fd;
+            warning(self.file, self.line, data.unwrap_err().what);
         }
         return {reinterpret_cast<const char*>(buffer.data()), buffer.size()};
     };
