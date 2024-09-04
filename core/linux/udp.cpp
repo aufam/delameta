@@ -87,7 +87,7 @@ auto UDP::write(std::string_view data) -> Result<void> {
     return delameta_detail_sendto(file, line, socket, timeout, peer, data);
 }
 
-auto Server<UDP>::start(const char* file, int line, UDP::Args args) -> Result<void> {
+auto Server<UDP>::start(const char* file, int line, Args args) -> Result<void> {
     auto [udp, err] = UDP::Open(file, line, {args.host, true, args.timeout});
     if (err) return Err(std::move(*err));
 
