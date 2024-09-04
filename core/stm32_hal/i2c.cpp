@@ -1,6 +1,7 @@
 #include "main.h" // from Core/Src
 #include "delameta/debug.h"
-#include "delameta/stream.h"
+#include "delameta/endpoint.h"
+#include "delameta/utils.h"
 #include "etl/heap.h"
 
 using namespace Project;
@@ -16,87 +17,142 @@ using etl::Ok;
 #endif
 
 #ifdef DELAMETA_STM32_HAS_I2C
-struct file_descriptor_i2c_t {
+struct I2C_Endpoint_Args {
     I2C_HandleTypeDef* handler;
-    const char* __file;
-    int __oflag;
-    const uint8_t* received_data;
-    size_t received_data_len;
-
-    void init();
-    Result<std::vector<uint8_t>> read(uint32_t tout);
-    Result<std::vector<uint8_t>> read_until(uint32_t tout, size_t n);
-    Result<void> write(uint32_t tout, std::string_view data);
-    Result<void> wait_until_ready(uint32_t tout);
+    uint16_t device_address;
+    uint16_t mem_address;
+    uint32_t timeout = HAL_MAX_DELAY;
 };
 
-#ifdef DELAMETA_STM32_USE_HAL_I2C1
-extern I2C_HandleTypeDef hi2c1;
-file_descriptor_i2c_t file_descriptor_i2c_instance1 = {&hi2c1, "/i2c1", 0, nullptr, 0};
-#endif
-#ifdef DELAMETA_STM32_USE_HAL_I2C2
-extern I2C_HandleTypeDef hi2c2;
-file_descriptor_i2c_t file_descriptor_i2c_instance2 = {&hi2c2, "/i2c2", 0, nullptr, 0};
-#endif
-#ifdef DELAMETA_STM32_USE_HAL_I2C3
-extern I2C_HandleTypeDef hi2c3;
-file_descriptor_i2c_t file_descriptor_i2c_instance3 = {&hi2c3, "/i2c3", 0, nullptr, 0};
-#endif
-#ifdef DELAMETA_STM32_USE_HAL_I2C4
-extern I2C_HandleTypeDef hi2c4;
-file_descriptor_i2c_t file_descriptor_i2c_instance4 = {&hi2c4, "/i2c4", 0, nullptr, 0};
-#endif
-#ifdef DELAMETA_STM32_USE_HAL_I2C5
-extern I2C_HandleTypeDef hi2c5;
-file_descriptor_i2c_t file_descriptor_i2c_instance5 = {&hi2c5, "/i2c5", 0, nullptr, 0};
-#endif
+class I2C_Endpoint : public I2C_Endpoint_Args, public Descriptor {
+public:
+    I2C_Endpoint(I2C_Endpoint_Args args) : I2C_Endpoint_Args(args) {}
 
-void file_descriptor_i2c_t::init() {}
+    Result<std::vector<uint8_t>> read() override;
+    Stream read_as_stream(size_t n) override;
+    Result<std::vector<uint8_t>> read_until(size_t n) override;
 
-auto file_descriptor_i2c_t::read(uint32_t tout) -> Result<std::vector<uint8_t>> {
-    uint16_t device_address = (desc.__oflag >> 16) & 0xffff;
-    uint16_t mem_address = (desc.__oflag >> 0) & 0xffff;
-    if (auto res = HAL_I2C_IsDeviceReady(handler, device_address, 1, tout); res != HAL_OK)
+    Result<void> write(std::string_view data) override;
+};
+
+auto I2C_Endpoint::read() -> Result<std::vector<uint8_t>> {
+    if (auto res = HAL_I2C_IsDeviceReady(handler, device_address, 1, timeout); res != HAL_OK)
         return Err(Error{static_cast<int>(res), "hal error"});
     
     uint8_t byte;
-    if (auto res = HAL_I2C_Mem_Read(handler, device_address, mem_address, 1, &byte, 1, tout); res != HAL_OK)
+    if (auto res = HAL_I2C_Mem_Read(handler, device_address, mem_address, 1, &byte, 1, timeout); res != HAL_OK)
         return Err(Error{static_cast<int>(res), "hal error"});
 
     return Ok(std::vector<uint8_t>({byte}));
 }
 
-auto file_descriptor_i2c_t::read_until(uint32_t tout, size_t n) -> Result<std::vector<uint8_t>> {
+auto I2C_Endpoint::read_until(size_t n) -> Result<std::vector<uint8_t>> {
     if (n == 0 || etl::heap::freeSize < n) {
         return Err(Error{-1, "No memory"});
     }
 
     std::vector<uint8_t> buffer(n);
-    uint16_t device_address = (desc.__oflag >> 16) & 0xffff;
-    uint16_t mem_address = (desc.__oflag >> 0) & 0xffff;
-    if (auto res = HAL_I2C_IsDeviceReady(handler, device_address, 1, tout); res != HAL_OK)
+    if (auto res = HAL_I2C_IsDeviceReady(handler, device_address, 1, timeout); res != HAL_OK)
         return Err(Error{static_cast<int>(res), "hal error"});
 
-    if (auto res = HAL_I2C_Mem_Read(handler, device_address, mem_address, 1, buffer.data(), buffer.size(), tout); res != HAL_OK)
+    if (auto res = HAL_I2C_Mem_Read(handler, device_address, mem_address, 1, buffer.data(), buffer.size(), timeout); res != HAL_OK)
         return Err(Error{static_cast<int>(res), "hal error"});
 
     return Ok(std::move(buffer));
 }
 
-auto file_descriptor_i2c_t::write(uint32_t tout, std::string_view data) -> Result<void> {
-    uint16_t device_address = (desc.__oflag >> 16) & 0xffff;
-    uint16_t mem_address = (desc.__oflag >> 0) & 0xffff;
+auto I2C_Endpoint::read_as_stream(size_t n) -> Stream {
+    Stream s;
 
-    if (auto res = HAL_I2C_IsDeviceReady(handler, device_address, 1, tout); res != HAL_OK)
+    s << [this, total=n, buffer=std::vector<uint8_t>{}](Stream& s) mutable -> std::string_view {
+        buffer = {};
+        size_t n = std::min(total, (size_t)128);
+        auto data = this->read_until(n);
+
+        if (data.is_ok()) {
+            buffer = std::move(data.unwrap());
+            total -= n;
+            s.again = total > 0;
+        }
+
+        return {reinterpret_cast<const char*>(buffer.data()), buffer.size()};
+    };
+
+    return s;
+}
+
+auto I2C_Endpoint::write(std::string_view data) -> Result<void> {
+    if (auto res = HAL_I2C_IsDeviceReady(handler, device_address, 1, timeout); res != HAL_OK)
         return Err(Error{static_cast<int>(res), "hal error"});
 
-    if (auto res = HAL_I2C_Mem_Write(handler, device_address, mem_address, 1, (uint8_t*)data.data(), data.size(), tout); res != HAL_OK)
+    if (auto res = HAL_I2C_Mem_Write(handler, device_address, mem_address, 1, (uint8_t*)data.data(), data.size(), timeout); res != HAL_OK)
         return Err(Error{static_cast<int>(res), "hal error"});
 
     return Ok();
 }
 
-auto file_descriptor_i2c_t::wait_until_ready(uint32_t) -> Result<void> {
-    return Ok();
+static Result<Endpoint> EndpointFactoryI2C(const char*, int, const URL& uri) {
+    I2C_Endpoint_Args args = {};
+
+    #ifdef DELAMETA_STM32_USE_HAL_I2C1
+    extern I2C_HandleTypeDef hi2c1;
+    if (uri.host == "/i2c1") args.handler = &hi2c1;
+    #endif
+    #ifdef DELAMETA_STM32_USE_HAL_I2C2
+    extern I2C_HandleTypeDef hi2c2;
+    if (uri.host == "/i2c2") args.handler = &hi2c2;
+    #endif
+    #ifdef DELAMETA_STM32_USE_HAL_I2C3
+    extern I2C_HandleTypeDef hi2c3;
+    if (uri.host == "/i2c3") args.handler = &hi2c3;
+    #endif
+    #ifdef DELAMETA_STM32_USE_HAL_I2C4
+    extern I2C_HandleTypeDef hi2c4;
+    if (uri.host == "/i2c4") args.handler = &hi2c4;
+    #endif
+    #ifdef DELAMETA_STM32_USE_HAL_I2C5
+    extern I2C_HandleTypeDef hi2c5;
+    if (uri.host == "/i2c5") args.handler = &hi2c5;
+    #endif
+
+    if (args.handler == nullptr) 
+        return Err(Error{-1, "Invalid host"});
+
+    auto it = uri.queries.find("device-address");
+    if (it != uri.queries.end()) {
+        auto res = string_num_into<uint32_t>(it->second);
+        if (res.is_err())
+            return Err(Error{-1, res.unwrap_err()});
+        args.timeout = res.unwrap();
+    } else {
+        return Err(Error{-1, "missing device-address"});
+    }
+
+    it = uri.queries.find("mem-address");
+    if (it != uri.queries.end()) {
+        auto res = string_num_into<uint32_t>(it->second);
+        if (res.is_err())
+            return Err(Error{-1, res.unwrap_err()});
+        args.timeout = res.unwrap();
+    } else {
+        return Err(Error{-1, "missing mem-address"});
+    }
+
+    it = uri.queries.find("timeout");
+    if (it != uri.queries.end()) {
+        auto res = string_num_into<uint32_t>(it->second);
+        if (res.is_err())
+            return Err(Error{-1, res.unwrap_err()});
+        args.timeout = res.unwrap();
+    } 
+
+    return Ok(new I2C_Endpoint(args));
 }
+
+extern std::unordered_map<std::string_view, EndpointFactoryFunction> delameta_endpoints_map;
+
+void delameta_i2c_init() {
+    delameta_endpoints_map["i2c"] = &EndpointFactoryI2C;
+}
+
 #endif

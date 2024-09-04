@@ -36,12 +36,11 @@ auto UDP::Open(const char* file, int line, Args args) -> Result<UDP> {
         return Err(std::move(hint.unwrap_err()));
     }
 
-    auto port = delameta_wizchip_dummy_client_port++;
+    auto peer = args.as_server ? new addrinfo{} : new addrinfo(hint.unwrap());
+    auto port = args.as_server ? hint.unwrap().port : delameta_wizchip_dummy_client_port++;
     if (delameta_wizchip_dummy_client_port == 0xffff) {
         delameta_wizchip_dummy_client_port = 50000;
     }
-
-    auto peer = new addrinfo(hint.unwrap());
 
     return delameta_wizchip_socket_open(Sn_MR_UDP, port, 0).then([&](int sock) {
         return UDP(file, line, sock, args.timeout, peer);
@@ -140,16 +139,16 @@ auto UDP::read_until(size_t n) -> Result<std::vector<uint8_t>> {
 auto UDP::read_as_stream(size_t n) -> Stream {
     Stream s;
 
-    s << [this, p_total, buffer=std::vector<uint8_t>{}](Stream& s) mutable -> std::string_view {
+    s << [this, total=n, buffer=std::vector<uint8_t>{}](Stream& s) mutable -> std::string_view {
+        buffer = {};
         size_t n = std::min(total, (size_t)128);
-        auto data = self->read_until(n);
+        auto data = this->read_until(n);
 
         if (data.is_ok()) {
             buffer = std::move(data.unwrap());
             total -= n;
             s.again = total > 0;
         } else {
-            buffer = {};
             warning(file, line, data.unwrap_err().what);
         }
 
@@ -180,20 +179,8 @@ auto UDP::write(std::string_view data) -> Result<void> {
     return Ok();
 }
 
-auto Server<UDP>::start(const char* file, int line, UDP::Args args) -> Result<void> {
-    auto hint = delameta_detail_resolve_domain(args.host);
-    if (hint.is_err()) {
-        return Err(std::move(hint.unwrap_err()));
-    }
-
-    auto port = hint.unwrap().port;
-
-    auto [sock, sock_err] = delameta_wizchip_socket_open(Sn_MR_UDP, port, 0);
-    if (sock_err) {
-        return Err(std::move(*sock_err));
-    }
-
-    UDP session(file, line, *sock, args.timeout, new addrinfo({}));
+auto Server<UDP>::start(const char* file, int line, Args args) -> Result<void> {
+    auto [udp, err] = UDP::Open(file, line, {args.host, true, args.timeout});
 
     bool is_running {true};
     on_stop = [this, &is_running]() { 
@@ -201,6 +188,7 @@ auto Server<UDP>::start(const char* file, int line, UDP::Args args) -> Result<vo
         on_stop = {};
     };
 
+    auto &session = *udp;
     while (is_running) {
         auto read_result = session.read();
         if (read_result.is_err()) {

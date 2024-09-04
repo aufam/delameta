@@ -15,6 +15,7 @@ using namespace Project::delameta;
 using namespace etl::literals;
 using etl::Err;
 using etl::Ok;
+using etl::defer;
 
 struct socket_descriptor_t {
     bool is_busy;
@@ -150,15 +151,15 @@ auto TCP::read_as_stream(size_t n) -> Stream {
     Stream s;
 
     s << [this, total=n, buffer=std::vector<uint8_t>{}](Stream& s) mutable -> std::string_view {
+        buffer = {};
         size_t n = std::min(total, (size_t)128);
-        auto data = self->read_until(n);
+        auto data = this->read_until(n);
 
         if (data.is_ok()) {
             buffer = std::move(data.unwrap());
             total -= n;
             s.again = total > 0;
         } else {
-            buffer = {};
             warning(file, line, data.unwrap_err().what);
         }
 
@@ -200,10 +201,22 @@ auto Server<TCP>::start(const char* file, int line, Args args) -> Result<void> {
 
     auto port = hint.unwrap().port;
 
+    if (args.max_socket >= etl::task::resources()) return Err(Error{-1, "no tasks"});
+    if (args.max_socket <= 0) return Err(Error{-1, "invalid arg"});
+
+    std::vector<TCP*> sessions;
+    sessions.reserve(args.max_socket - 1);
+
+    for (int i = 0; i < args.max_socket - 1; ++i) {
+        auto [sock, sock_err] = delameta_wizchip_socket_open(Sn_MR_TCP, port, Sn_MR_ND);
+        if (sock_err) return Err(std::move(*sock_err));
+
+        sessions.push_back(new TCP(file, line, *sock, 1));
+    }
+
     auto [sock, sock_err] = delameta_wizchip_socket_open(Sn_MR_TCP, port, Sn_MR_ND);
     if (sock_err) return Err(std::move(*sock_err));
-
-    TCP session(file, line, *sock, -1);
+    TCP main_session(file, line, *sock, 1);
 
     bool is_running {true};
     on_stop = [this, &is_running]() { 
@@ -211,43 +224,75 @@ auto Server<TCP>::start(const char* file, int line, Args args) -> Result<void> {
         on_stop = {};
     };
 
-    while (is_running) {
-        ::listen(session.socket);
+    auto work = +[](
+        StreamSessionServer* self,
+        TCP* session, 
+        int port,
+        int* session_sem, 
+        bool* is_running,
+        std::vector<TCP*>* sessions,
+        osThreadId_t join_thd
+    ) {
+        while (*is_running) {
+            ::listen(session->socket);
+            while (getSn_SR(session->socket) != SOCK_ESTABLISHED) {
+                etl::time::sleep(1ms);
+            }
 
-        while (getSn_SR(session.socket) != SOCK_ESTABLISHED) {
+            for (int cnt = 1; *is_running; ++cnt) {
+                auto read_result = session->read();
+                if (read_result.is_err()) {
+                    warning(session->file, session->line, read_result.unwrap_err().what);
+                    break;
+                }
+
+                auto stream = self->execute_stream_session(*session, "TCP", read_result.unwrap());
+                stream >> *session;
+
+                if (not session->keep_alive) {
+                    if (session->max > 0 and cnt >= session->max) {
+                        info(session->file, session->line, "Reached maximum receive: " + std::to_string(session->socket));
+                    }
+                    break;
+                    info(session->file, session->line, "not keep alive");
+                }
+            }
+
+            ::disconnect(session->socket);
+            etl::time::sleep(1ms);
+            auto res = ::socket(session->socket, Sn_MR_TCP, port, Sn_MR_ND);
+            if (res < 0) {
+                warning(session->file, session->line, "Unable to initialize socket again");
+                break;
+            }
             etl::time::sleep(1ms);
         }
 
-        for (int cnt = 1; is_running; ++cnt) {
-            auto read_result = session.read();
-            if (read_result.is_err()) {
-                warning(session.file, session.line, read_result.unwrap_err().what);
-                break;
-            }
-
-            auto stream = execute_stream_session(session, "TCP", read_result.unwrap());
-            stream >> session;
-
-            if (not session.keep_alive) {
-                if (session.max > 0 and cnt >= session.max) {
-                    info(session.file, session.line, "Reached maximum receive: " + std::to_string(session.socket));
-                }
-                break;
-                info(session.file, session.line, "not keep alive");
-            }
+        if (session_sem != nullptr && ++(*session_sem) == (int)sessions->size()) {
+            // notify main session
+            osThreadFlagsSet(join_thd, 0b1);
         }
+    };
 
-        ::disconnect(session.socket);
-        etl::time::sleep(1ms);
-        auto res = ::socket(session.socket, Sn_MR_TCP, port, Sn_MR_ND);
-        if (res < 0) {
-            warning(session.file, session.line, "Unable to initialize socket again");
-            break;
-        }
-        etl::time::sleep(1ms);
+    int sem = 0;
+    auto join_thd = osThreadGetId();
+
+    for (auto session: sessions) {
+        // launch each session in a separate task
+        etl::async(std::move(work), this, session, port, &sem, &is_running, &sessions, join_thd);
+    }
+
+    work(this, &main_session, port, nullptr, &is_running, &sessions, join_thd);
+    if (sessions.size() > 0) {
+        // join all session threads;
+        osThreadFlagsWait(0b1, osFlagsWaitAny, osWaitForever);
     }
 
     stop();
+    for (auto session : sessions) {
+        delete session;
+    }
+
     return etl::Ok();
 }
 

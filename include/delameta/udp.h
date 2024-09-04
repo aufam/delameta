@@ -16,6 +16,7 @@ namespace Project::delameta {
 
         struct Args {
             std::string host;
+            bool as_server = false;
             int timeout = -1;
         };
 
@@ -39,8 +40,13 @@ namespace Project::delameta {
     template<>
     class Server<UDP> : public StreamSessionServer {
     public:
-        Result<void> start(const char* file, int line, UDP::Args args);
-        Result<void> start(UDP::Args args) { return start("", 0, args); }
+        struct Args {
+            std::string host;
+            int timeout = -1;
+        };
+
+        Result<void> start(const char* file, int line, Args args);
+        Result<void> start(Args args) { return start("", 0, args); }
         void stop();
     
     protected:

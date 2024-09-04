@@ -70,92 +70,6 @@ extern serial_descriptor_uart_t serial_descriptor_uart_instance7;
 #ifdef DELAMETA_STM32_USE_HAL_UART8
 extern serial_descriptor_uart_t serial_descriptor_uart_instance8;
 #endif
-
-#endif
-
-#ifdef DELAMETA_STM32_HAS_I2C
-struct serial_descriptor_i2c_t {
-    I2C_HandleTypeDef* handler;
-    const char* __file;
-    const uint8_t* received_data;
-    size_t received_data_len;
-
-    void init();
-    Result<std::vector<uint8_t>> read(uint32_t tout);
-    Result<std::vector<uint8_t>> read_until(uint32_t tout, size_t n);
-    Result<void> write(uint32_t tout, std::string_view data);
-    Result<void> wait_until_ready(uint32_t tout);
-};
-
-#ifdef DELAMETA_STM32_USE_HAL_I2C1
-extern serial_descriptor_i2c_t serial_descriptor_i2c_instance1;
-#endif
-#ifdef DELAMETA_STM32_USE_HAL_I2C2
-extern serial_descriptor_i2c_t serial_descriptor_i2c_instance2;
-#endif
-#ifdef DELAMETA_STM32_USE_HAL_I2C3
-extern serial_descriptor_i2c_t serial_descriptor_i2c_instance3;
-#endif
-#ifdef DELAMETA_STM32_USE_HAL_I2C4
-extern serial_descriptor_i2c_t serial_descriptor_i2c_instance4;
-#endif
-#ifdef DELAMETA_STM32_USE_HAL_I2C5
-extern serial_descriptor_i2c_t serial_descriptor_i2c_instance5;
-#endif
-
-#endif
-
-#ifdef DELAMETA_STM32_HAS_CAN
-struct serial_descriptor_can_t {
-    CAN_HandleTypeDef* handler;
-    const char* __file;
-    const uint8_t* received_data;
-    size_t received_data_len;
-
-    void init();
-    Result<std::vector<uint8_t>> read(uint32_t tout);
-    Result<std::vector<uint8_t>> read_until(uint32_t tout, size_t n);
-    Result<void> write(uint32_t tout, std::string_view data);
-    Result<void> wait_until_ready(uint32_t tout);
-};
-
-extern serial_descriptor_can_t serial_descriptor_can_instance;
-
-#endif
-
-#ifdef DELAMETA_STM32_HAS_SPI
-struct serial_descriptor_spi_t {
-    SPI_HandleTypeDef* handler;
-    const char* __file;
-    const uint8_t* received_data;
-    size_t received_data_len;
-
-    void init();
-    Result<std::vector<uint8_t>> read(uint32_t tout);
-    Result<std::vector<uint8_t>> read_until(uint32_t tout, size_t n);
-    Result<void> write(uint32_t tout, std::string_view data);
-    Result<void> wait_until_ready(uint32_t tout);
-};
-
-#ifdef DELAMETA_STM32_USE_HAL_SPI1
-extern serial_descriptor_spi_t serial_descriptor_spi_instance1;
-#endif
-#ifdef DELAMETA_STM32_USE_HAL_SPI2
-extern serial_descriptor_spi_t serial_descriptor_spi_instance2;
-#endif
-#ifdef DELAMETA_STM32_USE_HAL_SPI3
-extern serial_descriptor_spi_t serial_descriptor_spi_instance3;
-#endif
-#ifdef DELAMETA_STM32_USE_HAL_SPI4
-extern serial_descriptor_spi_t serial_descriptor_spi_instance4;
-#endif
-#ifdef DELAMETA_STM32_USE_HAL_SPI5
-extern serial_descriptor_spi_t serial_descriptor_spi_instance5;
-#endif
-#ifdef DELAMETA_STM32_USE_HAL_SPI6
-extern serial_descriptor_spi_t serial_descriptor_spi_instance6;
-#endif
-
 #endif
 
 #ifdef DELAMETA_STM32_USE_HAL_USB
@@ -239,42 +153,6 @@ static serial_descriptor_t serial_descriptors[] = {
     #ifdef DELAMETA_STM32_USE_HAL_UART8
     &serial_descriptor_uart_instance8,
     #endif
-    #ifdef DELAMETA_STM32_USE_HAL_I2C1
-    &serial_descriptor_i2c_instance1,
-    #endif
-    #ifdef DELAMETA_STM32_USE_HAL_I2C2
-    &serial_descriptor_i2c_instance2,
-    #endif
-    #ifdef DELAMETA_STM32_USE_HAL_I2C3
-    &serial_descriptor_i2c_instance3,
-    #endif
-    #ifdef DELAMETA_STM32_USE_HAL_I2C4
-    &serial_descriptor_i2c_instance4,
-    #endif
-    #ifdef DELAMETA_STM32_USE_HAL_I2C5
-    &serial_descriptor_i2c_instance5,
-    #endif
-    #ifdef DELAMETA_STM32_HAS_CAN
-    &serial_descriptor_can_instance,
-    #endif
-    #ifdef DELAMETA_STM32_USE_HAL_SPI1
-    &serial_descriptor_spi_instance1,
-    #endif
-    #ifdef DELAMETA_STM32_USE_HAL_SPI2
-    &serial_descriptor_spi_instance2,
-    #endif
-    #ifdef DELAMETA_STM32_USE_HAL_SPI3
-    &serial_descriptor_spi_instance3,
-    #endif
-    #ifdef DELAMETA_STM32_USE_HAL_SPI4
-    &serial_descriptor_spi_instance4,
-    #endif
-    #ifdef DELAMETA_STM32_USE_HAL_SPI5
-    &serial_descriptor_spi_instance5,
-    #endif
-    #ifdef DELAMETA_STM32_USE_HAL_SPI6
-    &serial_descriptor_spi_instance6,
-    #endif
     #ifdef DELAMETA_STM32_USE_HAL_USB
     &serial_descriptor_usb_instance,
     #endif
@@ -348,6 +226,7 @@ auto Serial::read_as_stream(size_t n) -> Stream {
     Stream s;
 
     s << [this, total=n, buffer=std::vector<uint8_t>{}](Stream& s) mutable -> std::string_view {
+        buffer = {};
         size_t n = std::min(total, (size_t)128);
         auto data = this->read_until(n);
 
@@ -355,9 +234,6 @@ auto Serial::read_as_stream(size_t n) -> Stream {
             buffer = std::move(data.unwrap());
             total -= n;
             s.again = total > 0;
-        } else {
-            buffer = {};
-            warning(file, line, data.unwrap_err().what);
         }
 
         return {reinterpret_cast<const char*>(buffer.data()), buffer.size()};
@@ -413,9 +289,15 @@ void Server<Serial>::stop() {
     }
 }
 
+__weak void delameta_i2c_init() {}
+__weak void delameta_spi_init() {}
+
 // peripheral init
 extern "C" void delameta_stm32_hal_init() {
     for (auto& fd: serial_descriptors) {
         std::visit([](auto* fd) { fd->init(); }, fd);
     }
+
+    delameta_i2c_init();
+    delameta_spi_init();
 }

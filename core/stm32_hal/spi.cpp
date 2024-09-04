@@ -1,6 +1,7 @@
 #include "main.h" // from Core/Src
 #include "delameta/debug.h"
-#include "delameta/stream.h"
+#include "delameta/endpoint.h"
+#include "delameta/utils.h"
 #include "etl/heap.h"
 
 using namespace Project;
@@ -15,76 +16,116 @@ using etl::Ok;
 #endif
 
 #ifdef DELAMETA_STM32_HAS_SPI
-struct file_descriptor_spi_t {
+struct SPI_Endpoint_Args {
     SPI_HandleTypeDef* handler;
-    const char* __file;
-    int __oflag;
-    const uint8_t* received_data;
-    size_t received_data_len;
-
-    void init();
-    Result<std::vector<uint8_t>> read(uint32_t tout);
-    Result<std::vector<uint8_t>> read_until(uint32_t tout, size_t n);
-    Result<void> write(uint32_t tout, std::string_view data);
-    Result<void> wait_until_ready(uint32_t tout);
+    uint32_t timeout = HAL_MAX_DELAY;
 };
 
-#ifdef DELAMETA_STM32_USE_HAL_SPI1
-extern SPI_HandleTypeDef hspi1;
-file_descriptor_spi_t file_descriptor_spi_instance1 {&hspi1, "/spi1", 0, nullptr, 0};
-#endif
-#ifdef DELAMETA_STM32_USE_HAL_SPI2
-extern SPI_HandleTypeDef hspi2;
-file_descriptor_spi_t file_descriptor_spi_instance2 {&hspi2, "/spi2", 0, nullptr, 0};
-#endif
-#ifdef DELAMETA_STM32_USE_HAL_SPI3
-extern SPI_HandleTypeDef hspi3;
-file_descriptor_spi_t file_descriptor_spi_instance3 {&hspi3, "/spi3", 0, nullptr, 0};
-#endif
-#ifdef DELAMETA_STM32_USE_HAL_SPI4
-extern SPI_HandleTypeDef hspi4;
-file_descriptor_spi_t file_descriptor_spi_instance4 {&hspi4, "/spi4", 0, nullptr, 0};
-#endif
-#ifdef DELAMETA_STM32_USE_HAL_SPI5
-extern SPI_HandleTypeDef hspi5;
-file_descriptor_spi_t file_descriptor_spi_instance5 {&hspi5, "/spi5", 0, nullptr, 0};
-#endif
-#ifdef DELAMETA_STM32_USE_HAL_SPI6
-extern SPI_HandleTypeDef hspi6;
-file_descriptor_spi_t file_descriptor_spi_instance6 {&hspi6, "/spi6", 0, nullptr, 0};
-#endif
+class SPI_Endpoint : public SPI_Endpoint_Args, public Descriptor {
+public:
+    SPI_Endpoint(SPI_Endpoint_Args args) : SPI_Endpoint_Args(args) {}
 
-void file_descriptor_spi_t::init() {}
+    Result<std::vector<uint8_t>> read() override;
+    Stream read_as_stream(size_t n) override;
+    Result<std::vector<uint8_t>> read_until(size_t n) override;
 
-auto file_descriptor_spi_t::read(uint32_t tout) -> Result<std::vector<uint8_t>> {
+    Result<void> write(std::string_view data) override;
+};
+
+auto SPI_Endpoint::read() -> Result<std::vector<uint8_t>> {
     uint8_t byte;
-    if (auto res = HAL_SPI_Receive(handler, &byte, 1, tout); res != HAL_OK)
+    if (auto res = HAL_SPI_Receive(handler, &byte, 1, timeout); res != HAL_OK)
         return Err(Error{static_cast<int>(res), "hal error"});
 
     return Ok(std::vector<uint8_t>({byte}));
 }
 
-auto file_descriptor_spi_t::read_until(uint32_t tout, size_t n) -> Result<std::vector<uint8_t>> {
+auto SPI_Endpoint::read_until(size_t n) -> Result<std::vector<uint8_t>> {
     if (n == 0 || etl::heap::freeSize < n) {
         return Err(Error{-1, "No memory"});
     }
 
     std::vector<uint8_t> buffer(n);
-    if (auto res = HAL_SPI_Receive(handler, buffer.data(), buffer.size(), tout); res != HAL_OK)
+    if (auto res = HAL_SPI_Receive(handler, buffer.data(), buffer.size(), timeout); res != HAL_OK)
         return Err(Error{static_cast<int>(res), "hal error"});
 
     return Ok(std::move(buffer));
 }
 
-auto file_descriptor_spi_t::write(uint32_t tout, std::string_view data) -> Result<void> {
-    if (auto res = HAL_SPI_Transmit(handler, (uint8_t*)data.data(), data.size(), tout); res != HAL_OK) 
+auto SPI_Endpoint::read_as_stream(size_t n) -> Stream {
+    Stream s;
+
+    s << [this, total=n, buffer=std::vector<uint8_t>{}](Stream& s) mutable -> std::string_view {
+        buffer = {};
+        size_t n = std::min(total, (size_t)128);
+        auto data = this->read_until(n);
+
+        if (data.is_ok()) {
+            buffer = std::move(data.unwrap());
+            total -= n;
+            s.again = total > 0;
+        }
+
+        return {reinterpret_cast<const char*>(buffer.data()), buffer.size()};
+    };
+
+    return s;
+}
+
+auto SPI_Endpoint::write(std::string_view data) -> Result<void> {
+    if (auto res = HAL_SPI_Transmit(handler, (uint8_t*)data.data(), data.size(), timeout); res != HAL_OK) 
         return Err(Error{static_cast<int>(res), "hal error"});
 
     return Ok();
 }
 
-auto file_descriptor_spi_t::wait_until_ready(uint32_t) -> Result<void> {
-    return Ok();
+
+static Result<Endpoint> EndpointFactorySPI(const char*, int, const URL& uri) {
+    SPI_Endpoint_Args args = {};
+
+    #ifdef DELAMETA_STM32_USE_HAL_SPI1
+    extern SPI_HandleTypeDef hspi1;
+    if (uri.host == "/spi1") args.handler = &hspi1;
+    #endif
+    #ifdef DELAMETA_STM32_USE_HAL_SPI2
+    extern SPI_HandleTypeDef hspi2;
+    if (uri.host == "/spi2") args.handler = &hspi2;
+    #endif
+    #ifdef DELAMETA_STM32_USE_HAL_SPI3
+    extern SPI_HandleTypeDef hspi3;
+    if (uri.host == "/spi3") args.handler = &hspi3;
+    #endif
+    #ifdef DELAMETA_STM32_USE_HAL_SPI4
+    extern SPI_HandleTypeDef hspi4;
+    if (uri.host == "/spi4") args.handler = &hspi4;
+    #endif
+    #ifdef DELAMETA_STM32_USE_HAL_SPI5
+    extern SPI_HandleTypeDef hspi5;
+    if (uri.host == "/spi5") args.handler = &hspi5;
+    #endif
+    #ifdef DELAMETA_STM32_USE_HAL_SPI6
+    extern SPI_HandleTypeDef hspi6;
+    if (uri.host == "/spi6") args.handler = &hspi6;
+    #endif
+
+    if (args.handler == nullptr) 
+        return Err(Error{-1, "Invalid host"});
+
+    auto it = uri.queries.find("timeout");
+    if (it != uri.queries.end()) {
+        auto res = string_num_into<uint32_t>(it->second);
+        if (res.is_err())
+            return Err(Error{-1, res.unwrap_err()});
+        args.timeout = res.unwrap();
+    } 
+
+    return Ok(new SPI_Endpoint(args));
+}
+
+extern std::unordered_map<std::string_view, EndpointFactoryFunction> delameta_endpoints_map;
+
+void delameta_spi_init() {
+    delameta_endpoints_map["spi"] = &EndpointFactorySPI;
 }
 
 #endif

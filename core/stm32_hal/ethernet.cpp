@@ -191,8 +191,8 @@ extern "C" void delameta_stm32_hal_wizchip_init() {
         }
 
         check_phy_link();
-        delameta_stm32_hal_wizchip_set_net_info(nullptr, nullptr, nullptr, nullptr, nullptr);
         delameta_wizchip_is_setup = true;
+        delameta_stm32_hal_wizchip_set_net_info(nullptr, nullptr, nullptr, nullptr, nullptr);
     });
 }
 

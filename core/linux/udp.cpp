@@ -19,10 +19,10 @@ using etl::Err;
 using etl::Ok;
 using etl::defer;
 
-static auto udp_open(const char* file, int line, const UDP::Args& args, bool for_binding) -> Result<std::pair<int, ::addrinfo*>> {
+auto UDP::Open(const char* file, int line, Args args) -> Result<UDP> {
     LogError log_error {file, line};
 
-    auto [resolve, resolve_err] = delameta_detail_resolve_domain(args.host, SOCK_DGRAM, for_binding);
+    auto [resolve, resolve_err] = delameta_detail_resolve_domain(args.host, SOCK_DGRAM, args.as_server);
     if (resolve_err) return Err(log_error(*resolve_err, ::gai_strerror));
 
     auto [sock, sock_err] = delameta_detail_create_socket(*resolve, log_error);
@@ -31,25 +31,15 @@ static auto udp_open(const char* file, int line, const UDP::Args& args, bool for
     auto socket = *sock;
     auto hint = *resolve;
 
-    if (for_binding) {
-        if (::bind(socket, hint->ai_addr, hint->ai_addrlen) < 0) {
-            ::close(socket);
-            ::freeaddrinfo(hint);
-            return Err(log_error(errno, ::strerror));
-        }
-        info(file, line, "Created UDP socket: " + std::to_string(socket));
-    } else {
-        info(file, line, "Created UDP session socket: " + std::to_string(socket));
+    if (args.as_server && ::bind(socket, hint->ai_addr, hint->ai_addrlen) < 0) {
+        ::close(socket);
+        ::freeaddrinfo(hint);
+        return Err(log_error(errno, ::strerror));
     }
 
-    return Ok(std::pair(socket, hint));
-}
+    info(file, line, "Created UDP socket: " + std::to_string(socket));
 
-auto UDP::Open(const char* file, int line, Args args) -> Result<UDP> {
-    auto [res, err] = udp_open(file, line, args, false);
-    if (err) return Err(std::move(*err));
-
-    return Ok(UDP(file, line, res->first, args.timeout, res->second));
+    return Ok(UDP(file, line, socket, args.timeout, hint));
 }
 
 UDP::UDP(const char* file, int line, int socket, int timeout, void* peer)
@@ -98,13 +88,8 @@ auto UDP::write(std::string_view data) -> Result<void> {
 }
 
 auto Server<UDP>::start(const char* file, int line, UDP::Args args) -> Result<void> {
-    auto [res, err] = udp_open(file, line, args, true);
+    auto [udp, err] = UDP::Open(file, line, {args.host, true, args.timeout});
     if (err) return Err(std::move(*err));
-
-    auto [socket, hint] = *res;
-    ::freeaddrinfo(hint);
-
-    auto udp = UDP(file, line, socket, args.timeout, nullptr);
 
     std::list<std::thread> threads;
     std::mutex mtx;
@@ -119,7 +104,7 @@ auto Server<UDP>::start(const char* file, int line, UDP::Args args) -> Result<vo
         on_stop = {};
     };
 
-    while (is_running and delameta_detail_is_socket_alive(udp.socket)) {
+    while (is_running and delameta_detail_is_socket_alive(udp->socket)) {
         auto sa_in = new ::sockaddr_in();
         auto ai = new ::addrinfo();
         ::memset(sa_in, 0, sizeof(::sockaddr_in));
@@ -127,7 +112,7 @@ auto Server<UDP>::start(const char* file, int line, UDP::Args args) -> Result<vo
         ai->ai_addr = reinterpret_cast<::sockaddr*>(sa_in);
         ai->ai_addrlen = sizeof(sockaddr_in);
 
-        UDP session(file, line, udp.socket, udp.timeout, ai);
+        UDP session(file, line, udp->socket, udp->timeout, ai);
 
         auto read_result = session.read();
         if (read_result.is_err()) {
@@ -135,7 +120,9 @@ auto Server<UDP>::start(const char* file, int line, UDP::Args args) -> Result<vo
             delete ai;
             session.socket = -1; // prevent closing the socket
             session.peer = nullptr;
-            break;
+
+            if (read_result.unwrap_err().code == Error::TransferTimeout) continue;
+            else break;
         }
 
         std::lock_guard<std::mutex> lock(mtx);

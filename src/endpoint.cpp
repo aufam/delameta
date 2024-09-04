@@ -223,6 +223,11 @@ Result<Endpoint> EndpointFactoryUDP(const char* file, int line, const URL& uri) 
         args.timeout = std::stoi(it->second);
     } 
 
+    it = uri.queries.find("as-server");
+    if (it != uri.queries.end()) {
+        args.as_server = true;
+    } 
+
     args.host = uri.host;
 
     auto fd = UDP::Open(file, line, std::move(args));
