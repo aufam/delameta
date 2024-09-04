@@ -74,7 +74,7 @@ auto http::RequestWriter::dump() -> Stream {
         while (not headers.empty()) {
             auto it = headers.begin();
             buffer += std::move(it->first);
-            buffer += "";
+            buffer += ": ";
             buffer += std::move(it->second);
             buffer += "\r\n";
             headers.erase(it);
