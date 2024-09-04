@@ -186,12 +186,16 @@ HTTP_SETUP(app) {
     // example: redirect to the given path
     app.route("/redirect", {"GET", "POST", "PUT", "PATCH", "HEAD", "TRACE", "DELETE", "OPTIONS"}, 
         std::tuple{arg::request, arg::arg("url")}, 
-    [](Ref<const RequestReader> req, std::string url_str) -> Result<ResponseReader> {
+    [](Ref<const RequestReader> req, std::string url_str) -> Result<ResponseWriter> {
         URL url = url_str;
         auto session = TRY(TCP::Open(FL, {url.host}));
-        RequestWriter data = *req;
-        data.url = url;
-        return request(session, std::move(data));
+        RequestWriter req_w = *req;
+
+        req_w.url = url;
+        auto res = TRY(request(session, std::move(req_w)));
+
+        ResponseWriter res_w = std::move(res);
+        return Ok(std::move(res_w));
     });
 
     app.Delete("/delete_route", std::tuple{arg::arg("path")},

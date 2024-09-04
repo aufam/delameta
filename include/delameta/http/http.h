@@ -478,8 +478,8 @@ namespace Project::delameta::http::arg {
     extern ::Project::delameta::http::Http o; static auto& _http_server = o
 
 #define HTTP_DEFINE_OBJECT(o) \
-    ::Project::delameta::http::Http o __attribute__((init_priority(101))); \
-    HTTP_EXTERN_OBJECT(o)
+    extern ::Project::delameta::http::Http o; [[maybe_unused]] static auto& _http_server = o; \
+    ::Project::delameta::http::Http o __attribute__((init_priority(101)))
 
 #define HTTP_LATE_INIT __attribute__((init_priority(102)))
 
