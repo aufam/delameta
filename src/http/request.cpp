@@ -62,21 +62,24 @@ auto http::RequestWriter::dump() -> Stream {
     first_line += "\r\n";
 
     Stream s;
-    s << std::move(first_line);
-    s << [buffer=std::string(), headers=std::move(headers)](Stream& s) mutable -> std::string_view {
-        s.again = !headers.empty();
-        if (!s.again) {
-            return "\r\n";
+    s << [buffer=std::string(), first_line=std::move(first_line), headers=std::move(headers)](Stream&) mutable -> std::string_view {
+        size_t total = first_line.size();
+        for (const auto &[key, value]: headers) {
+            total += key.size() + 2 + value.size() + 2;
         }
+        total += 2;
 
-        auto it = headers.begin();
-        buffer.clear();
-        buffer.reserve(it->first.size() + 2 + it->second.size() + 2);
-        buffer += it->first;
-        buffer += ": ";
-        buffer += it->second;
+        buffer.reserve(total);
+        buffer += std::move(first_line);
+        while (not headers.empty()) {
+            auto it = headers.begin();
+            buffer += std::move(it->first);
+            buffer += "";
+            buffer += std::move(it->second);
+            buffer += "\r\n";
+            headers.erase(it);
+        }
         buffer += "\r\n";
-        headers.erase(it);
         return buffer;
     };
 
