@@ -66,7 +66,7 @@ namespace Project::delameta::http {
 
         template <typename... Args, typename F> 
         auto Trace(std::string path, std::tuple<Args...> args, F&& handler) {
-            return route(std::move(path), {"Trace"}, std::move(args), std::forward<F>(handler));
+            return route(std::move(path), {"TRACE"}, std::move(args), std::forward<F>(handler));
         }
 
         template <typename... Args, typename F> 
