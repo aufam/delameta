@@ -130,7 +130,7 @@ OPTS_MAIN(
         }
         res.status = 200;
         it->function(req, res);
-        res.status_string = http::status_to_string(res.status);
+        if (res.status_string.empty()) res.status_string = http::status_to_string(res.status);
     }
 
     // output the response
