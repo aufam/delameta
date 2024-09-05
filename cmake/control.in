@@ -1,0 +1,9 @@
+Package: @PACKAGE_NAME@
+Version: @PACKAGE_VERSION@
+Architecture: any
+Maintainer: @PACKAGE_MAINTAINER@
+Section: base
+Priority: optional
+Depends: libc6 (>= 2.29)
+Description: Delameta CLI Tool
+    Unified CLI tool for socket and serial programming

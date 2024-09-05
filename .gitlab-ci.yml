@@ -3,6 +3,7 @@ image: gcc
 stages:
   - build
   - test
+  - release
 
 build:
   stage: build
@@ -16,9 +17,18 @@ build:
     paths:
       - build/app/main
       - build/test/test_all
-      - build/libdelameta.a
+      - build/control
+      - build/delameta
 
 test:
   stage: test
   script:
     - ./build/test/test_all
+
+release:
+  stage: release
+  script:
+    - make build-deb -C build
+  artifacts:
+    paths:
+      - build/delameta-1.0.0.deb
