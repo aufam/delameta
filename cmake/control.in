@@ -1,6 +1,6 @@
 Package: @PACKAGE_NAME@
 Version: @PACKAGE_VERSION@
-Architecture: any
+Architecture: amd64
 Maintainer: @PACKAGE_MAINTAINER@
 Section: base
 Priority: optional
