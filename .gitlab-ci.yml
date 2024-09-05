@@ -14,9 +14,7 @@ build:
     - cmake --build build -j10 -t build-deb
   artifacts:
     paths:
-      - build/app/main
       - build/test/test_all
-      - build/control
       - build/delameta-1.0.0.deb
 
 test:
