@@ -21,7 +21,7 @@ namespace Project::delameta::http {
     template <typename F>
     struct ArgDepends { F depends; };
 
-    struct ArgPercentEncodingItem { const char* key; };
+    struct ArgFormItem { const char* key; };
 
     struct ArgRequest {};
     struct ArgResponse {};

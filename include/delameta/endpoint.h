@@ -24,6 +24,13 @@ namespace Project::delameta {
         Result<void> write(std::string_view data) override;
         using Descriptor::write;
 
+        Endpoint& operator<<(std::string_view data);
+        Endpoint& operator<<(const std::vector<uint8_t>& data);
+        Endpoint& operator<<(Stream& s);
+
+        Endpoint& operator>>(std::string& out);
+        Endpoint& operator>>(std::vector<uint8_t>& out);
+
     protected:
         Descriptor* desc;
     };

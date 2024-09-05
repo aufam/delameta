@@ -97,14 +97,14 @@ namespace Project::delameta::http {
         struct Context {
             std::string_view content_type;
             etl::Json json;
-            std::unordered_map<std::string, std::string> percent_encoding;
+            std::unordered_map<std::string, std::string> form;
 
-            enum Type { Any, JSON, PercentEncoding };
+            enum Type { Any, JSON, Form };
             Type type = Any;
 
             Context(const RequestReader& req);
             bool content_type_starts_with(std::string_view prefix) const;
-            Result<std::string_view> percent_encoding_at(const char* key) const;
+            Result<std::string_view> form_at(const char* key) const;
         };
 
         template <typename... RouterArgs, typename R, typename ...HandlerArgs>
@@ -351,9 +351,9 @@ namespace Project::delameta::http {
         }
 
         template <typename T> static Result<T>
-        process_arg(const ArgPercentEncodingItem& arg, const RequestReader&, ResponseWriter&, Context& ctx) {
-            if (ctx.type == Context::PercentEncoding)
-                return ctx.percent_encoding_at(arg.key).and_then(convert_string_into<T>);
+        process_arg(const ArgFormItem& arg, const RequestReader&, ResponseWriter&, Context& ctx) {
+            if (ctx.type == Context::Form)
+                return ctx.form_at(arg.key).and_then(convert_string_into<T>);
             else
                 return etl::Err(Error{StatusBadRequest, "Content-Type is not url-encoded"});
         }
@@ -424,7 +424,7 @@ namespace Project::delameta::http {
 namespace Project::delameta::http::arg {
     inline Arg arg(const char* name) { return {name}; }
     inline ArgJsonItem json_item(const char* key) { return {key}; }
-    inline ArgPercentEncodingItem percent_encoding(const char* key) { return {key}; }
+    inline ArgFormItem form(const char* key) { return {key}; }
 
     template <typename F>
     auto depends(F&& depends_function) {

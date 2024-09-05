@@ -11,6 +11,8 @@ using namespace delameta;
 using etl::Err;
 using etl::Ok;
 
+bool Opts::verbose = false;
+
 auto Opts::collect_arg_values(
     const char* name, 
     const char* description,
@@ -18,8 +20,6 @@ auto Opts::collect_arg_values(
     std::initializer_list<OptionFlags>&& flags
 ) -> std::unordered_map<char, std::string> {
     std::vector<struct option> long_options;
-    std::unordered_map<int, std::function<void(const char*)>> map_functions;
-
     std::string short_opts;
 
     std::string help = name;
@@ -35,7 +35,13 @@ auto Opts::collect_arg_values(
         help += flag.short_;
         help += ", --";
         help += flag.long_;
-        help += "  ";
+
+        auto flag_long_size = std::string_view(flag.long_).size();
+        for (size_t i = flag_long_size; i < 16; ++i) {
+            help += ' ';
+        }
+        
+        help += ' ';
         help += flag.description;
 
         short_opts += flag.short_;
@@ -43,14 +49,18 @@ auto Opts::collect_arg_values(
             short_opts += ':';
         } else if (flag.kind == optional_argument) {
             short_opts += "::";
-            help += ". Default: ";
-            help += flag.default_str;
+
+            if (std::string_view(flag.default_str).size() > 0) {
+                help += ". Default: '";
+                help += flag.default_str;
+                help += '\'';
+            }
         }
         help += '\n';
         long_options.push_back({flag.long_, flag.kind, nullptr, flag.short_});
     }
     short_opts += 'h';
-    help += "-h, --help  print help\n";
+    help += "-h, --help             Print help\n";
 
     long_options.push_back({"help", no_argument, nullptr, 'h'});
     long_options.push_back({nullptr, 0, nullptr, 0});
@@ -85,6 +95,6 @@ void Opts::print_result(const char* ptr, int len) {
         std::cout << "Ok: " << std::string_view(ptr, len) << '\n';
     else if (ptr)
         std::cout << "Ok: " << ptr << '\n';
-    else 
+    else if (verbose)
         std::cout << "Ok\n";
 }

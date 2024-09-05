@@ -19,6 +19,7 @@ namespace Project::delameta::http {
     };
 
     struct ResponseReader {
+        ResponseReader() = default;
         ResponseReader(Descriptor& desc, const std::vector<uint8_t>& data);
         ResponseReader(Descriptor& desc, std::vector<uint8_t>&& data);
         operator ResponseWriter() const;
@@ -34,6 +35,8 @@ namespace Project::delameta::http {
         std::vector<uint8_t> data;
         void parse(Descriptor& desc, const std::vector<uint8_t>& data);
     };
+
+    auto status_to_string(int status) -> std::string;
 
     enum Status {
         StatusContinue           = 100, // RFC 9110, 15.2.1

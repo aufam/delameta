@@ -27,6 +27,8 @@ namespace Project::delameta {
         ) {
             return execute_(argc, argv, app_name, app_description, std::move(args), std::function(std::forward<F>(handler)));
         }
+
+        static bool verbose;
     
     protected:
         template <typename R, typename ...Ts> static
@@ -191,7 +193,9 @@ namespace Project::delameta {
 
 #define OPTS_MAIN_I(name, desc, args, ret)\
     OPTS_HELPER_DEFINE_FN(name, args, ret); \
+    [[maybe_unused]] int __argc; [[maybe_unused]] char** __argv; \
     int main(int argc, char** argv) { \
+        __argc = argc; __argv = argv; \
         return ::Project::delameta::Opts::execute(argc, argv, BOOST_PP_STRINGIZE(name), desc, \
         std::tuple {\
             BOOST_PP_SEQ_FOR_EACH(OPTS_HELPER_DEFINE_OPT_ARG, ~, args) \

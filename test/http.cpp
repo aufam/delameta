@@ -207,10 +207,8 @@ TEST(Http, form) {
     };
 
     Http handler;
-    handler.route("/form", {"POST"}, std::tuple{
-        arg::percent_encoding("num"), 
-        arg::percent_encoding("text")
-    }, [](int num, std::string text) {
+    handler.route("/form", {"POST"}, std::tuple{arg::form("num"), arg::form("text")}, 
+    [](int num, std::string text) {
         EXPECT_EQ(num, 42);
         EXPECT_EQ(text, "test 123/456-789");
     });

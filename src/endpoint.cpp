@@ -17,7 +17,7 @@ Result<Endpoint> EndpointFactoryTCP(const char* file, int line, const URL& uri);
 Result<Endpoint> EndpointFactoryUDP(const char* file, int line, const URL& uri);
 
 std::unordered_map<std::string_view, EndpointFactoryFunction> delameta_endpoints_map {
-    {"stdinout", &EndpointFactoryStdInOut},
+    {"stdio",    &EndpointFactoryStdInOut},
     {"file",     &EndpointFactoryFile},
     {"serial",   &EndpointFactorySerial},
     {"tcp",      &EndpointFactoryTCP},
@@ -66,6 +66,30 @@ auto Endpoint::read_as_stream(size_t n) -> Stream {
 auto Endpoint::write(std::string_view data) -> Result<void> {
     if (desc == nullptr) return Err(Error{-1, "Null descriptor"});
     return desc->write(data);
+}
+
+auto Endpoint::operator<<(std::string_view data) -> Endpoint& {
+    return (write(data), *this);
+}
+
+auto Endpoint::operator<<(const std::vector<uint8_t>& data) -> Endpoint& {
+    return (write(data), *this);
+}
+
+auto Endpoint::operator<<(Stream& s) -> Endpoint& {
+    return (s >> *this, *this);
+}
+
+auto Endpoint::operator>>(std::string& data) -> Endpoint& {
+    auto res = read_until(data.size());
+    if (res.is_ok()) data.assign(res.unwrap().begin(), res.unwrap().end());
+    return *this;
+}
+
+auto Endpoint::operator>>(std::vector<uint8_t>& data) -> Endpoint& {
+    auto res = read_until(data.size());
+    if (res.is_ok()) data = std::move(res.unwrap());
+    return *this;
 }
 
 #if defined(USE_HAL_DRIVER)

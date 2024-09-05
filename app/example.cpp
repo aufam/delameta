@@ -191,7 +191,7 @@ HTTP_SETUP(app) {
         auto session = TRY(TCP::Open(FL, {url.host}));
         RequestWriter req_w = *req;
 
-        req_w.url = url;
+        req_w.url = std::move(url);
         auto res = TRY(request(session, std::move(req_w)));
 
         ResponseWriter res_w = std::move(res);
