@@ -11,6 +11,7 @@ build:
   script:
     - mkdir -p build
     - cmake -B build -DDELAMETA_BUILD_APP=ON -DDELAMETA_BUILD_TEST=ON -DCMAKE_BUILD_TYPE=Debug
+    - cmake --build build -j10 -t test_all
     - cmake --build build -j10 -t build-deb
   artifacts:
     paths:
