@@ -92,6 +92,20 @@ auto Endpoint::operator>>(std::vector<uint8_t>& data) -> Endpoint& {
     return *this;
 }
 
+auto Endpoint::operator>>(Stream& s) -> Endpoint& {
+    s << [buffer=std::vector<uint8_t>(), desc=desc](Stream&) mutable -> std::string_view {
+        auto res = desc->read();
+        if (res.is_ok()) {
+            buffer = std::move(res.unwrap());
+        }
+
+        delete desc;
+        return {reinterpret_cast<const char*>(buffer.data()), buffer.size()};
+    };
+
+    return (desc = nullptr, *this);
+}
+
 #if defined(USE_HAL_DRIVER)
 __attribute__((weak))
 Result<Endpoint> EndpointFactoryStdInOut(const char*, int, const URL&) {

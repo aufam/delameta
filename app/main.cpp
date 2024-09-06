@@ -49,7 +49,8 @@ OPTS_MAIN(
     (std::string, method , 'm'   , "method" , "Sub command's HTTP method"      , ""              )
 
     // data modifier
-    (std::string, file   , 'f'   , "file"   , "Set input file"                 , ""              )
+    (std::string, input  , 'i'   , "input"  , "Specify input endpoint"         , ""              )
+    (std::string, file   , 'f'   , "file"   , "Specify input file"             , ""              )
     (bool       , is_json, 'j'   , "is-json", "Set data type to be json"                         )
     (bool       , is_text, 't'   , "is-text", "Set data type to be plain text"                   )
     (bool       , is_form, 'p'   , "is-form", "Set data type to be form-urlencoded"              )
@@ -86,10 +87,14 @@ OPTS_MAIN(
     req.url = std::move(uri);
 
     // setup body
-    if (file != "") {
-        if (not req.body.empty()) {
-            return Err(Error{-1, "multiple data source"});
-        }
+    if ((not req.body.empty()) + (not input.empty()) + (not file.empty()) > 1) {
+        return Err(Error{-1, "multiple data source"});
+    }
+
+    if (input != "") {
+        auto ep_in = TRY(Endpoint::Open(FL, input));
+        ep_in >> req.body_stream;
+    } else if (file != "") {
         auto f = TRY(File::Open(FL, {file}));
         f >> req.body_stream;
         req.headers["Content-Type"] = get_content_type_from_file(file);

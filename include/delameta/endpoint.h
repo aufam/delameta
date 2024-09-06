@@ -30,6 +30,7 @@ namespace Project::delameta {
 
         Endpoint& operator>>(std::string& out);
         Endpoint& operator>>(std::vector<uint8_t>& out);
+        Endpoint& operator>>(Stream& s);
 
     protected:
         Descriptor* desc;
