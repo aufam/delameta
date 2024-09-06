@@ -17,7 +17,11 @@ static HTTP_ROUTE(
     (home), (Ref<http::ResponseWriter>, res, http::arg::response),
     (http::Result<void>)
 ) {
-    auto file = TRY(File::Open(FL, {DELAMETA_HOME_DIRECTORY "/app/README.html"}));
+    auto file = TRY(
+        File::Open(FL, {DELAMETA_HOME_DIRECTORY "/app/README.html"}).or_except([](auto) {
+            return File::Open(FL, {"/usr/share/delameta/assets/index.html"});
+        })
+    );
 
     res->headers["Content-Length"] = std::to_string(file.file_size());
     res->headers["Content-Type"] = "text/html";
@@ -31,7 +35,11 @@ static HTTP_ROUTE(
     (readme), (Ref<http::ResponseWriter>, res, http::arg::response),
     (http::Result<void>)
 ) {
-    auto file = TRY(File::Open(FL, {DELAMETA_HOME_DIRECTORY "/app/README.md"}));
+    auto file = TRY(
+        File::Open(FL, {DELAMETA_HOME_DIRECTORY "/app/README.md"}).or_except([](auto) {
+            return File::Open(FL, {"/usr/share/delameta/assets/README.md"});
+        })
+    );
 
     res->headers["Content-Length"] = std::to_string(file.file_size());
     res->headers["Content-Type"] = "text/markdown";
