@@ -3,6 +3,7 @@
 #include <delameta/debug.h>
 #include <delameta/http/http.h>
 #include <delameta/tcp.h>
+#include <delameta/tls.h>
 #include <delameta/file.h>
 #include <delameta/opts.h>
 #include <delameta/endpoint.h>
@@ -17,6 +18,12 @@ using etl::Ok;
 HTTP_DEFINE_OBJECT(app);
 
 static void on_sigint(std::function<void()> fn);
+
+static auto format_time_now() {
+    auto now = std::chrono::system_clock::now();
+    std::time_t time_now = std::chrono::system_clock::to_time_t(now);
+    return fmt::localtime(time_now);
+}
 
 using Headers = std::unordered_map<std::string_view, std::string_view>;
 using Queries = std::unordered_map<std::string, std::string>;
@@ -34,7 +41,7 @@ auto Opts::convert_string_into(const std::string& str) -> Result<Queries> {
 }
 
 OPTS_MAIN(
-    (Delameta, "Delameta API")
+    (Delameta, "Delameta CLI Tools")
     ,
     /*   Type   |  Arg   | Short |   Long   |              Help                |      Default   */
     (URL        , uri    , 'H'   , "host"   , "Specify host and port"          , "localhost:5000")
@@ -50,54 +57,84 @@ OPTS_MAIN(
 
     // data modifier
     (std::string, input  , 'i'   , "input"  , "Specify input endpoint"         , ""              )
-    (std::string, file   , 'f'   , "file"   , "Specify input file"             , ""              )
+    (std::string, file   , 'F'   , "file"   , "Specify input file"             , ""              )
     (bool       , is_json, 'j'   , "is-json", "Set data type to be json"                         )
     (bool       , is_text, 't'   , "is-text", "Set data type to be plain text"                   )
-    (bool       , is_form, 'p'   , "is-form", "Set data type to be form-urlencoded"              )
+    (bool       , is_form, 'f'   , "is-form", "Set data type to be form-urlencoded"              )
+
+    // output
+    (std::string, output , 'o'   , "output" , "Specify output endpoint"        , "stdio://"      )
+    (std::string, log    , 'l'   , "log"    , "Set log file"                   , ""              )
 
     // utils
-    (std::string, output , 'o'   , "output" , "Specify output endpoint"        , "stdio://"      )
+    (bool       , is_ver , 'V'   , "version", "Print version"                                    )
     (bool       , verbose, 'v'   , "verbose", "Set verbosity"                                    )
+    (bool       , isn_lf , 'L'   , "disable-lf", "disable line feed"                             )
+    (std::string, cert   , 'C'   , "cert"   , "Set TLS certificate file"       , ""              )
+    (std::string, key    , 'K'   , "key"    , "Set TLS key file"               , ""              )
     ,
     (Result<void>)
 ) {
+    if (is_ver) {
+        fmt::println(DELAMETA_VERSION);
+        return Ok();
+    }
+
     Opts::verbose = verbose;
 
     // launch http server if cmd and url are not specified
     if (cmd == "" and url_str == "") {
-        Server<TCP> tcp_server;
+        if (cert == "" and key == "") {
+            Server<TCP> tcp_server;
 
-        app.bind(tcp_server, {.is_tcp_server=true});
-        on_sigint([&]() { tcp_server.stop(); });
+            app.bind(tcp_server, {.is_tcp_server=true});
+            on_sigint([&]() { tcp_server.stop(); });
 
-        fmt::println("Server is starting on {}", uri.host);
-        return tcp_server.start(FL, {.host=uri.host, .max_socket=n_sock});
+            fmt::println("Server is starting on {}", uri.host);
+            return tcp_server.start(FL, {.host=uri.host, .max_socket=n_sock});
+        } else if (cert != "" and key != "") {
+            Server<TLS> tls;
+
+            app.bind(tls, {.is_tcp_server=true});
+            on_sigint([&]() { tls.stop(); });
+
+            fmt::println("Server is starting on {}", uri.host);
+            return tls.start(FL, {.host=uri.host, .cert_file=cert, .key_file=key, .max_socket=n_sock});
+        } else if (cert == "") {
+            return Err(Error{-1, "TLS certificate file is not provided"});
+        } else if (key == "") {
+            return Err(Error{-1, "TLS key file is not provided"});
+        }
     }
 
-    // create request
+    // setup request/response
     http::RequestReader req;
-    http::ResponseWriter res;
+    std::string content_length;
 
     req.version = "HTTP/1.1";
     req.headers = std::move(args);
-    req.body = std::move(data);
 
     uri.path = std::move(cmd);
     uri.queries = std::move(queries);
     req.url = std::move(uri);
 
     // setup body
-    if ((not req.body.empty()) + (not input.empty()) + (not file.empty()) > 1) {
+    if ((not data.empty()) + (not input.empty()) + (not file.empty()) > 1) {
         return Err(Error{-1, "multiple data source"});
     }
-
-    if (input != "") {
+    if (data != "") {
+        req.headers["Content-Length"] = content_length = std::to_string(data.size());
+        req.body_stream << std::move(data);
+    } else if (input != "") {
         auto ep_in = TRY(Endpoint::Open(FL, input));
-        ep_in >> req.body_stream;
+        auto read_data = TRY(ep_in.read());
+        req.headers["Content-Length"] = content_length = std::to_string(read_data.size());
+        req.body_stream << std::move(read_data);
     } else if (file != "") {
         auto f = TRY(File::Open(FL, {file}));
-        f >> req.body_stream;
+        req.headers["Content-Length"] = content_length = std::to_string(f.file_size());
         req.headers["Content-Type"] = get_content_type_from_file(file);
+        f >> req.body_stream;
     }
     if (is_json) {
         req.headers["Content-Type"] = "application/json";
@@ -110,19 +147,18 @@ OPTS_MAIN(
     }
 
     if (method == "") {
-        req.method = req.body.empty() and req.body_stream.rules.empty() ? "GET" : "POST";
+        req.method = req.body_stream.rules.empty() ? "GET" : "POST";
     } else {
         req.method = std::move(method);
     }
 
     // create response using http request
+    http::ResponseWriter res;
     if (not url_str.empty()) {
         http::RequestWriter req_w = std::move(req);
         req_w.url = URL(std::move(url_str));
 
-        auto session = TRY(TCP::Open(FL, {req_w.url.host}));
-        auto res_r = TRY(http::request(session, std::move(req_w)));
-
+        auto res_r = TRY(http::request(std::move(req_w)));
         res = std::move(res_r);
     }
     // create response using cmd from router path
@@ -136,20 +172,43 @@ OPTS_MAIN(
         res.status = 200;
         it->function(req, res);
         if (res.status_string.empty()) res.status_string = http::status_to_string(res.status);
-    }
 
-    // output the response
-    auto ep_out = TRY(Endpoint::Open(FL, output));
-    ep_out << res.body << res.body_stream;
-
-    if (output.starts_with("stdio://")) {
-        fmt::println("");
+        if (!res.body.empty()) 
+            res.body_stream.rules.push_front([body=std::move(res.body)](Stream&) -> std::string_view {
+                return body;
+            });
     }
 
     // return ok or error
     if (res.status < 300) {
+        // output the response
+        auto ep_out = TRY(Endpoint::Open(FL, output));
+        File* p_log_out = nullptr;
+        if (log != "") {
+            auto log_out = TRY(File::Open(FL, {.filename=log, .mode="wa"}));
+            TRY(log_out.write(fmt::format("{:%Y-%m-%d %H:%M:%S}: ", format_time_now())));
+            
+            p_log_out = new File(std::move(log_out));
+        }
+
+        res.body_stream.out_with_prefix(ep_out, [p_log_out](std::string_view sv) -> Result<void> {
+            if (p_log_out) TRY(p_log_out->write(sv));
+            return Ok();
+        });
+
+        if (output.starts_with("stdio://") and not isn_lf) {
+            fmt::println("");
+        }
+
+        if (p_log_out and not isn_lf) p_log_out->write("\n");
+        delete p_log_out;
+        
         return Ok();
     } else {
+        auto ep_out = TRY(Endpoint::Open(FL, "stdio://"));
+        ep_out << res.body << res.body_stream;
+        fmt::println("");
+
         return Err(Error{res.status, res.status_string});
     }
 }
@@ -161,12 +220,6 @@ static void on_sigint(std::function<void()> fn) {
     std::signal(SIGINT, sig);
     std::signal(SIGTERM, sig);
     std::signal(SIGQUIT, sig);
-}
-
-static auto format_time_now() {
-    auto now = std::chrono::system_clock::now();
-    std::time_t time_now = std::chrono::system_clock::to_time_t(now);
-    return fmt::localtime(time_now);
 }
 
 namespace Project::delameta {

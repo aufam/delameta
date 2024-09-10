@@ -78,6 +78,10 @@ if (DELAMETA_TARGET_LINUX)
 	set_target_properties(delameta PROPERTIES COMPILE_OPTIONS "-pthread")
 	target_link_libraries(delameta PUBLIC ${CMAKE_THREAD_LIBS_INIT} stdc++fs)
 
+	# openssl dependency
+	find_package(OpenSSL REQUIRED)
+	target_link_libraries(delameta PUBLIC OpenSSL::SSL OpenSSL::Crypto)
+
 	# etl dependency
 	delameta_find_or_fetch_library(etl https://github.com/aufam/etl.git main)
 	target_link_libraries(delameta PUBLIC etl)

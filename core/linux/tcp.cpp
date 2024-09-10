@@ -29,6 +29,24 @@ auto TCP::Open(const char* file, int line, Args args) -> Result<TCP> {
     Error err{-1, "Unable to resolve hostname: " + args.host};
 
     for (auto p = hint; p != nullptr; p = p->ai_next) {
+        char ip_str[INET6_ADDRSTRLEN];
+        void* addr_ptr = nullptr;
+        void *addr;
+
+        // Check if the address is IPv4 or IPv6
+        if (p->ai_family == AF_INET) { // IPv4
+            struct sockaddr_in *ipv4 = (struct sockaddr_in *)p->ai_addr;
+            addr = &(ipv4->sin_addr);
+        } else { // IPv6
+            struct sockaddr_in6 *ipv6 = (struct sockaddr_in6 *)p->ai_addr;
+            addr = &(ipv6->sin6_addr);
+        }
+
+        inet_ntop(hint->ai_family, addr, ip_str, sizeof ip_str);
+        info(__FILE__, __LINE__, "resolved: " + std::string(ip_str));
+    }
+
+    for (auto p = hint; p != nullptr; p = p->ai_next) {
         auto [sock, sock_err] = delameta_detail_create_socket(p, log_error);
         if (sock_err) {
             err = std::move(*sock_err);
@@ -76,7 +94,7 @@ auto TCP::Open(const char* file, int line, Args args) -> Result<TCP> {
 
 TCP::TCP(const char* file, int line, int socket, int timeout)
     : Descriptor()
-    , StreamSessionClient(this)
+    , StreamSessionClient(static_cast<Descriptor&>(*this))
     , socket(socket)
     , keep_alive(true)
     , timeout(timeout)
@@ -86,7 +104,7 @@ TCP::TCP(const char* file, int line, int socket, int timeout)
 
 TCP::TCP(TCP&& other)
     : Descriptor()
-    , StreamSessionClient(this)
+    , StreamSessionClient(static_cast<Descriptor&>(*this))
     , socket(std::exchange(other.socket, -1))
     , keep_alive(other.keep_alive)
     , timeout(other.timeout)
@@ -103,19 +121,19 @@ TCP::~TCP() {
 }
 
 auto TCP::read() -> Result<std::vector<uint8_t>> {
-    return delameta_detail_read(file, line, socket, timeout, delameta_detail_is_socket_alive);
+    return delameta_detail_read(file, line, socket, nullptr, timeout, delameta_detail_is_socket_alive);
 }
 
 auto TCP::read_until(size_t n) -> Result<std::vector<uint8_t>> {
-    return delameta_detail_read_until(file, line, socket, timeout, delameta_detail_is_socket_alive, n);
+    return delameta_detail_read_until(file, line, socket, nullptr, timeout, delameta_detail_is_socket_alive, n);
 }
 
 auto TCP::read_as_stream(size_t n) -> Stream {
-    return delameta_detail_read_as_stream(file, line, socket, timeout, this, n);
+    return delameta_detail_read_as_stream(file, line, timeout, this, n);
 }
 
 auto TCP::write(std::string_view data) -> Result<void> {
-    return delameta_detail_write(file, line, socket, timeout, delameta_detail_is_socket_alive, data);
+    return delameta_detail_write(file, line, socket, nullptr, timeout, delameta_detail_is_socket_alive, data);
 }
 
 auto Server<TCP>::start(const char* file, int line, Args args) -> Result<void> {
@@ -124,19 +142,19 @@ auto Server<TCP>::start(const char* file, int line, Args args) -> Result<void> {
     if (resolve_err) return Err(log_error(*resolve_err, ::gai_strerror));
 
     auto hint = *resolve;
-    auto se = defer | [hint]() { ::freeaddrinfo(hint); };
+    auto defer_hint = defer | [hint]() { ::freeaddrinfo(hint); };
 
     auto [sock, sock_err] = delameta_detail_create_socket(hint, log_error);
     if (sock_err) return Err(std::move(*sock_err));
 
     auto socket = *sock;
+    auto defer_socket = defer | [socket]() { ::close(socket); };
+
     if (::bind(socket, hint->ai_addr, hint->ai_addrlen) < 0) {
-        ::close(socket);
         return Err(log_error(errno, ::strerror));
     }
 
     if (::listen(socket, args.max_socket) < 0) {
-        ::close(socket);
         return Err(log_error(errno, ::strerror));
     }
 
@@ -179,6 +197,7 @@ auto Server<TCP>::start(const char* file, int line, Args args) -> Result<void> {
                     else break;
                 }
 
+                DBG(info, std::string(received_result.unwrap().begin(), received_result.unwrap().end()));
                 auto stream = this->execute_stream_session(session, delameta_detail_get_ip(session.socket), received_result.unwrap());
                 stream >> session;
 

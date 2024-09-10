@@ -160,7 +160,7 @@ static serial_descriptor_t serial_descriptors[] = {
 
 Serial::Serial(const char* file, int line, int fd, int timeout)
     : Descriptor()
-    , StreamSessionClient(this)
+    , StreamSessionClient(static_cast<Descriptor&>(*this))
     , fd(fd)
     , timeout(timeout)
     , file(file)
@@ -168,7 +168,7 @@ Serial::Serial(const char* file, int line, int fd, int timeout)
 
 Serial::Serial(Serial&& other) 
     : Descriptor()
-    , StreamSessionClient(this)
+    , StreamSessionClient(static_cast<Descriptor&>(*this))
     , fd(std::exchange(other.fd, -1))
     , timeout(other.timeout)
     , file(other.file)

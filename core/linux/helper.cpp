@@ -1,4 +1,6 @@
 #include <sys/socket.h>
+#include <openssl/ssl.h>
+#include <openssl/err.h>
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <netdb.h>
@@ -175,9 +177,10 @@ static auto log_sent_ok(const char* file, size_t line, int fd, size_t n) {
     return Ok();
 }
 
-auto delameta_detail_read(const char* file, int line, int fd, int timeout, bool(*is_alive)(int)) -> Result<std::vector<uint8_t>> {
+auto delameta_detail_read(const char* file, int line, int fd, void* ssl, int timeout, bool(*is_alive)(int)) -> Result<std::vector<uint8_t>> {
     auto start = std::chrono::high_resolution_clock::now();
     int bytes_available = 0;
+    auto ssl_ = reinterpret_cast<SSL*>(ssl);
 
     while (is_alive(fd)) {
         if (::ioctl(fd, FIONREAD, &bytes_available) == -1) {
@@ -193,7 +196,7 @@ auto delameta_detail_read(const char* file, int line, int fd, int timeout, bool(
         }
 
         std::vector<uint8_t> buffer(bytes_available);
-        auto size = ::read(fd, buffer.data(), bytes_available);
+        auto size = ssl ? SSL_read(ssl_, buffer.data(), bytes_available) : ::read(fd, buffer.data(), bytes_available);
         if (size < 0) {
             return log_err(file, line, fd, Error(errno, ::strerror(errno)));
         }
@@ -237,13 +240,14 @@ auto delameta_detail_recvfrom(const char* file, int line, int fd, int timeout, v
     return log_err(file, line, fd, Error::ConnectionClosed);
 }
 
-auto delameta_detail_read_until(const char* file, int line, int fd, int timeout, bool(*is_alive)(int), size_t n) -> Result<std::vector<uint8_t>> {
+auto delameta_detail_read_until(const char* file, int line, int fd, void* ssl, int timeout, bool(*is_alive)(int), size_t n) -> Result<std::vector<uint8_t>> {
     auto start = std::chrono::high_resolution_clock::now();
     std::vector<uint8_t> buffer(n);
 
     int remaining_size = n;
     int bytes_available = 0;
     auto ptr = buffer.data();
+    auto ssl_ = reinterpret_cast<SSL*>(ssl);
 
     while (is_alive(fd)) {
         if (::ioctl(fd, FIONREAD, &bytes_available) == -1) {
@@ -258,8 +262,15 @@ auto delameta_detail_read_until(const char* file, int line, int fd, int timeout,
             continue;
         }
 
-        auto size = ::read(fd, ptr, std::min(bytes_available, remaining_size));
+        auto size = ssl ? SSL_read(ssl_, ptr, std::min(bytes_available, remaining_size)) : ::read(fd, ptr, std::min(bytes_available, remaining_size));
         if (size < 0) {
+            if (ssl) {
+                char buf[128];
+                auto code = ERR_get_error();
+                ERR_error_string_n(code, buf, 128);
+                panic(__FILE__, __LINE__, buf);
+                return Err(Error{int(code), buf});
+            }
             return log_err(file, line, fd, Error(errno, ::strerror(errno)));
         }
 
@@ -313,7 +324,7 @@ auto delameta_detail_recvfrom_until(const char* file, int line, int fd, int time
     return log_err(file, line, fd, Error::ConnectionClosed);
 }
 
-auto delameta_detail_read_as_stream(const char* file, int line, int fd, int timeout, Descriptor* self, size_t n) -> Stream {
+auto delameta_detail_read_as_stream(const char* file, int line, int timeout, Descriptor* self, size_t n) -> Stream {
     Stream s;
 
     s << [self, file, line, total=n, buffer=std::vector<uint8_t>{}](Stream& s) mutable -> std::string_view {
@@ -335,7 +346,8 @@ auto delameta_detail_read_as_stream(const char* file, int line, int fd, int time
     return s;
 }
 
-auto delameta_detail_write(const char* file, int line, int fd, int timeout, bool(*is_alive)(int), std::string_view data) -> Result<void> {
+auto delameta_detail_write(const char* file, int line, int fd, void* ssl, int timeout, bool(*is_alive)(int), std::string_view data) -> Result<void> {
+    auto ssl_ = reinterpret_cast<SSL*>(ssl);
     size_t total = 0;
     for (size_t i = 0; i < data.size();) {
         if (!is_alive(fd)) {
@@ -343,11 +355,18 @@ auto delameta_detail_write(const char* file, int line, int fd, int timeout, bool
         }
 
         auto n = std::min<size_t>(MAX_HANDLE_SZ, data.size() - i);
-        auto sent = ::write(fd, &data[i], n);
+        auto sent = ssl ? SSL_write(ssl_, &data[i], n) : ::write(fd, &data[i], n);
         
         if (sent == 0) {
             return log_err(file, line, fd, Error::ConnectionClosed);
         } else if (sent < 0) {
+            if (ssl) {
+                char buf[128];
+                auto code = ERR_get_error();
+                ERR_error_string_n(code, buf, 128);
+                panic(__FILE__, __LINE__, buf);
+                return Err(Error{int(code), buf});
+            }
             int code = errno;
             std::string what = ::strerror(code);
             warning(file, line, what);

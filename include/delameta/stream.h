@@ -67,6 +67,8 @@ namespace Project::delameta {
 
         Stream& operator<<(Descriptor& des);
         Stream& operator>>(Descriptor& des);
+
+        Result<void> out_with_prefix(Descriptor& des, std::function<Result<void>(std::string_view)> prefix);
     };
 
     class StreamSessionServer : public Movable {
@@ -87,13 +89,16 @@ namespace Project::delameta {
     class StreamSessionClient : public Movable {
     public:
         StreamSessionClient(Descriptor* desc);
-        virtual ~StreamSessionClient() = default;
+        StreamSessionClient(Descriptor& desc);
+
+        virtual ~StreamSessionClient();
 
         StreamSessionClient(StreamSessionClient&& other);
-        StreamSessionClient& operator=(StreamSessionClient&& other);
+        StreamSessionClient& operator=(StreamSessionClient&& other) = delete;
 
         Result<std::vector<uint8_t>> request(Stream& in_stream);
         Descriptor* desc;
+        bool is_dyn;
     };
 
     template <typename T>

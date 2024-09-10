@@ -6,6 +6,8 @@ stages:
 
 build:
   stage: build
+  only:
+    - /^release\/.*/
   before_script:
     - apt update && apt -y install cmake
   script:
@@ -16,10 +18,12 @@ build:
   artifacts:
     paths:
       - build/test/test_all
-      - build/delameta-1.0.0.deb
+      - build/*.deb
 
 test:
   stage: test
+  only:
+    - /^release\/.*/
   script:
     - ./build/test/test_all
 

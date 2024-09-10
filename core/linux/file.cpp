@@ -64,24 +64,25 @@ File::File(File&& other)
 
 File::~File() {
     if (fd < 0) return;
+    info(file, line, "Closed FD: " + std::to_string(fd));
     ::close(fd);
     fd = -1;
 }
 
 auto File::read() -> Result<std::vector<uint8_t>> {
-    return delameta_detail_read(file, line, fd, -1, &delameta_detail_is_fd_alive);
+    return delameta_detail_read(file, line, fd, nullptr, -1, &delameta_detail_is_fd_alive);
 }
 
 auto File::read_until(size_t n) -> Result<std::vector<uint8_t>> {
-    return delameta_detail_read_until(file, line, fd, -1, &delameta_detail_is_fd_alive, n);
+    return delameta_detail_read_until(file, line, fd, nullptr, -1, &delameta_detail_is_fd_alive, n);
 }
 
 auto File::read_as_stream(size_t n) -> Stream {
-    return delameta_detail_read_as_stream(file, line, fd, -1, this, n);
+    return delameta_detail_read_as_stream(file, line, -1, this, n);
 }
 
 auto File::write(std::string_view data) -> Result<void> {
-    return delameta_detail_write(file, line, fd, -1, &delameta_detail_is_fd_alive, data);
+    return delameta_detail_write(file, line, fd, nullptr, -1, &delameta_detail_is_fd_alive, data);
 }
 
 auto File::file_size() -> size_t {

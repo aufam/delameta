@@ -18,7 +18,8 @@ auto delameta_detail_resolve_domain(
 
 auto delameta_detail_read(
     const char* file, int line, 
-    int fd, int timeout, 
+    int fd, void* ssl,
+    int timeout, 
     bool(*is_alive)(int)
 ) -> Project::delameta::Result<std::vector<uint8_t>>;
 
@@ -30,7 +31,8 @@ auto delameta_detail_recvfrom(
 
 auto delameta_detail_read_until(
     const char* file, int line, 
-    int fd, int timeout, 
+    int fd, void* ssl,
+    int timeout, 
     bool(*is_alive)(int), size_t n
 ) -> Project::delameta::Result<std::vector<uint8_t>>;
 
@@ -42,13 +44,14 @@ auto delameta_detail_recvfrom_until(
 
 auto delameta_detail_read_as_stream(
     const char* file, int line, 
-    int fd, int timeout, 
+    int timeout, 
     Project::delameta::Descriptor* self, size_t n
 ) -> Project::delameta::Stream;
 
 auto delameta_detail_write(
     const char* file, int line, 
-    int fd, int timeout, 
+    int fd, void* ssl,
+    int timeout, 
     bool(*is_alive)(int), std::string_view data
 ) -> Project::delameta::Result<void>;
 

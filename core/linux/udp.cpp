@@ -44,7 +44,7 @@ auto UDP::Open(const char* file, int line, Args args) -> Result<UDP> {
 
 UDP::UDP(const char* file, int line, int socket, int timeout, void* peer)
     : Descriptor()
-    , StreamSessionClient(this)
+    , StreamSessionClient(static_cast<Descriptor&>(*this))
     , socket(socket)
     , timeout(timeout)
     , peer(peer)
@@ -53,7 +53,7 @@ UDP::UDP(const char* file, int line, int socket, int timeout, void* peer)
 
 UDP::UDP(UDP&& other)
     : Descriptor()
-    , StreamSessionClient(this)
+    , StreamSessionClient(static_cast<Descriptor&>(*this))
     , socket(std::exchange(other.socket, -1))
     , timeout(other.timeout)
     , peer(std::exchange(other.peer, nullptr))
@@ -80,7 +80,7 @@ auto UDP::read_until(size_t n) -> Result<std::vector<uint8_t>> {
 }
 
 auto UDP::read_as_stream(size_t n) -> Stream {
-    return delameta_detail_read_as_stream(file, line, socket, timeout, this, n);
+    return delameta_detail_read_as_stream(file, line, timeout, this, n);
 }
 
 auto UDP::write(std::string_view data) -> Result<void> {

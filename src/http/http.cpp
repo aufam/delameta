@@ -1,5 +1,6 @@
 #include "delameta/http/http.h"
 #include "delameta/tcp.h"
+#include "delameta/tls.h"
 #include <algorithm>
 #include "../time_helper.ipp"
 
@@ -18,6 +19,11 @@ auto http::request(StreamSessionClient& session, RequestWriter req) -> delameta:
     ) {
         req.headers["User-Agent"] = "delameta/" DELAMETA_VERSION;
     }
+    if (req.headers.find("Host") == req.headers.end() && 
+        req.headers.find("host") == req.headers.end()
+    ) {
+        req.headers["Host"] = req.url.host;
+    }
     if (not req.body.empty() && 
         req.body_stream.rules.empty() &&
         req.headers.find("Content-Length") == req.headers.end() && 
@@ -31,6 +37,57 @@ auto http::request(StreamSessionClient& session, RequestWriter req) -> delameta:
     return session.request(s).then([&session](std::vector<uint8_t> data) {
         return http::ResponseReader(*session.desc, std::move(data));
     });
+}
+
+auto http::request(StreamSessionClient&& session, RequestWriter req) -> delameta::Result<ResponseReader> {
+    if (req.headers.find("User-Agent") == req.headers.end() && 
+        req.headers.find("user-agent") == req.headers.end()
+    ) {
+        req.headers["User-Agent"] = "delameta/" DELAMETA_VERSION;
+    }
+    if (req.headers.find("Host") == req.headers.end() && 
+        req.headers.find("host") == req.headers.end()
+    ) {
+        req.headers["Host"] = req.url.host;
+    }
+    if (req.headers.find("Connection") == req.headers.end() && 
+        req.headers.find("connection") == req.headers.end()
+    ) {
+        req.headers["Connection"] = "close";
+    }
+
+    if (not req.body.empty() && 
+        req.body_stream.rules.empty() &&
+        req.headers.find("Content-Length") == req.headers.end() && 
+        req.headers.find("content-length") == req.headers.end()
+    ) {
+        req.headers["Content-Length"] = std::to_string(req.body.size());
+    }
+    if (req.body.empty() && req.body_stream.rules.empty()) req.headers["Content-Length"] = "0";
+
+    auto session_ptr = new StreamSessionClient(std::move(session));
+
+    Stream s = req.dump();
+    return session_ptr->request(s).then([session_ptr](std::vector<uint8_t> data) {
+        auto res = http::ResponseReader(*session_ptr->desc, std::move(data));
+        res.body_stream.at_destructor = [session_ptr]() { delete session_ptr; };
+        return res;
+    }).except([session_ptr](auto e) {
+        delete session_ptr;
+        return e;
+    });
+}
+
+auto http::request(RequestWriter req) -> delameta::Result<ResponseReader> {
+    if (req.url.url.substr(0, 8) == "https://") {
+        auto [session, err] = TLS::Open(__FILE__, __LINE__, TLS::Args{.host=req.url.url});
+        if (err) return Err(std::move(*err));
+        return request(StreamSessionClient(new TLS(std::move(*session))), std::move(req));
+    } else {
+        auto [session, err] = TCP::Open(__FILE__, __LINE__, TCP::Args{.host=req.url.url});
+        if (err) return Err(std::move(*err));
+        return request(StreamSessionClient(new TCP(std::move(*session))), std::move(req));
+    }
 }
 
 auto http::Http::reroute(std::string path, etl::Ref<const RequestReader> req, etl::Ref<ResponseWriter> res) -> Result<void> {

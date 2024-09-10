@@ -8,42 +8,57 @@ using namespace std::literals;
 namespace http = delameta::http;
 using etl::Ok;
 using etl::Err;
+using delameta::Stream;
 using delameta::UDP;
+using delameta::Server;
 
 HTTP_EXTERN_OBJECT(app);
 
 static HTTP_ROUTE(
-    ("/test/udp", ("POST")),
+    ("/udp", ("POST")),
     (test_udp),
-        (std::string_view, body, http::arg::body                  )
-        (std::string     , host, http::arg::arg("host")           )
-        (int             , tout, http::arg::default_val("tout", 5)),
-    (http::Result<std::string>)
+        (Stream     , body, http::arg::body                  )
+        (std::string, host, http::arg::arg("host")           )
+        (int        , tout, http::arg::default_val("timeout", 5)),
+    (http::Result<std::vector<uint8_t>>)
 ) {
-    auto udp = TRY(UDP::Open(FL, {.host=host, .timeout=tout}));
-    
-    TRY(udp.write(body));
-
-    auto res = TRY(udp.read());
-
-    return Ok(std::string(res.begin(), res.end()));
+    auto udp = TRY(UDP::Open(FL, {.host=host, .as_server=false, .timeout=tout}));
+    return udp.request(body);
 }
+
+static std::function<void()> server_stopper;
 
 static HTTP_ROUTE(
     ("/test/udp/listen", ("GET")),
     (test_udp_listen),
-        (std::string     , host, http::arg::arg("host")           )
-        (int             , tout, http::arg::default_val("tout", 5)),
-    (http::Result<std::string>)
+        (std::string, host, http::arg::arg("host")              )
+        (int        , tout, http::arg::default_val("timeout", 5)),
+    (http::Result<void>)
 ) {
-    delameta::Server<UDP> svr;
-    svr.handler = [](delameta::Descriptor&, const std::string& peer, const std::vector<uint8_t>& data) -> delameta::Stream {
-        delameta::Stream s;
+    Server<UDP> svr;
+    svr.handler = [](delameta::Descriptor&, const std::string& peer, const std::vector<uint8_t>& data) -> Stream {
+        Stream s;
+        s << "UDP response: ";
         s << data;
         DBG(delameta::info, "peer = " + peer);
         return s;
     };
 
+    server_stopper = [&]() { 
+        server_stopper = {};
+        return svr.stop(); 
+    };
+
     TRY(svr.start(FL, {host, tout}));
-    return Ok("Ok");
+
+    server_stopper = {};
+    return Ok();
+}
+
+static HTTP_ROUTE(
+    ("/test/udp/stop", ("GET")),
+    (test_udp_stop),,
+    (void)
+) {
+    if (server_stopper) server_stopper();
 }

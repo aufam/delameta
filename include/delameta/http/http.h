@@ -10,6 +10,8 @@
 namespace Project::delameta::http {
 
     delameta::Result<ResponseReader> request(StreamSessionClient& session, RequestWriter req);
+    delameta::Result<ResponseReader> request(StreamSessionClient&& session, RequestWriter req);
+    delameta::Result<ResponseReader> request(RequestWriter req);
 
     template <typename R, typename... Args>
     using Handler = std::function<R(Args..., const RequestReader&, ResponseWriter&)>;
@@ -382,6 +384,9 @@ namespace Project::delameta::http {
             } else if constexpr (std::is_arithmetic_v<T>) {
                 res.body = etl::json::serialize(result);
                 if (ct == res.headers.end()) res.headers["Content-Type"] = "text/plain";
+            } else if constexpr (std::is_same_v<T, std::vector<uint8_t>>) {
+                res.body_stream << std::move(result);
+                if (ct == res.headers.end()) res.headers["Content-Type"] = "application/octet-stream";
             } else if constexpr (std::is_same_v<T, ResponseWriter>) {
                 res = std::move(result);
             } else if constexpr (std::is_same_v<T, ResponseReader>) {

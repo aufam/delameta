@@ -15,22 +15,12 @@ HTTP_EXTERN_OBJECT(app);
 HTTP_ROUTE(
     ("/serial", ("POST")), 
     (serial_handler),
-        (std::string              , port   , http::arg::default_val("port", std::string("auto")))
-        (int                      , baud   , http::arg::default_val("baud", 9600)               )
-        (int                      , timeout, http::arg::default_val("timeout", 5)               )
-        (std::string_view         , data   , http::arg::body                                    )
-        (Ref<http::ResponseWriter>, res    , http::arg::response                                ),
-    (http::Result<void>)
+        (std::string, port   , http::arg::default_val("port", std::string("auto")))
+        (int        , baud   , http::arg::default_val("baud", 9600)               )
+        (int        , timeout, http::arg::default_val("timeout", 5)               )
+        (Stream     , data   , http::arg::body                                    ),
+    (http::Result<std::vector<uint8_t>>)
 ) {
     auto cli = TRY(Serial::Open(FL, {port, baud, timeout}));
-
-    Stream s;
-    s << data;
-    auto response = TRY(cli.request(s));
-
-    res->headers["Content-Type"] = "application/octet-stream";
-    res->headers["Content-Length"] = std::to_string(response.size());
-    res->body_stream << std::move(response);
-
-    return Ok();
+    return cli.request(data);
 }

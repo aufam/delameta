@@ -45,9 +45,9 @@ add_custom_target(build-deb
     COMMAND cp ${CMAKE_BINARY_DIR}/control ${PACKAGE_DEBIAN_DIR}/DEBIAN
 
     # copy the assets
-    COMMAND mkdir -p ${PACKAGE_DEBIAN_DIR}/assets
-    COMMAND cp ${CMAKE_SOURCE_DIR}/app/README.html -T ${PACKAGE_DEBIAN_DIR}/assets/index.html
-    COMMAND cp ${CMAKE_SOURCE_DIR}/app/README.md ${PACKAGE_DEBIAN_DIR}/assets
+    COMMAND mkdir -p ${PACKAGE_DEBIAN_DIR}/usr/share/${PACKAGE_NAME}/assets
+    COMMAND cp ${CMAKE_SOURCE_DIR}/app/README.html -T ${PACKAGE_DEBIAN_DIR}/usr/share/${PACKAGE_NAME}/assets/index.html
+    COMMAND cp ${CMAKE_SOURCE_DIR}/app/README.md ${PACKAGE_DEBIAN_DIR}/usr/share/${PACKAGE_NAME}/assets
     
     # build the package
     COMMAND dpkg-deb --build ${PACKAGE_NAME} ${PACKAGE_NAME}-${PACKAGE_VERSION}.deb

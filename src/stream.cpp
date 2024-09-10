@@ -6,6 +6,7 @@ using namespace Project;
 using namespace delameta;
 
 using etl::Err;
+using etl::Ok;
 
 Stream::~Stream() {
     if (at_destructor) at_destructor();
@@ -83,21 +84,44 @@ Stream& Stream::operator>>(Descriptor& des) {
     return *this;
 }
 
+Result<void> Stream::out_with_prefix(Descriptor& des, std::function<Result<void>(std::string_view)> prefix) {
+    while (!rules.empty()) {
+        again = false;
+        auto data = rules.front()(*this);
+        
+        auto [_, err] = prefix(data);
+        if (err) return Err(std::move(*err));
+
+        auto [__, err_w] = des.write(data);
+        if (err_w) return Err(std::move(*err_w));
+
+        if (!again) rules.pop_front();
+    }
+    return Ok();
+}
+
 StreamSessionServer::StreamSessionServer(StreamSessionHandler handler) : handler(std::move(handler)) {}
 
 Stream StreamSessionServer::execute_stream_session(Descriptor& desc, const std::string& name, const std::vector<uint8_t>& data) {
     return handler ? handler(desc, name, data) : Stream{};
 }
 
-StreamSessionClient::StreamSessionClient(Descriptor* desc) : desc(desc) {}
+StreamSessionClient::StreamSessionClient(Descriptor* desc) 
+    : desc(desc) 
+    , is_dyn(true) {}
 
-StreamSessionClient::StreamSessionClient(StreamSessionClient&& other) : desc(std::exchange(other.desc, nullptr)) {}
+StreamSessionClient::StreamSessionClient(Descriptor& desc) 
+    : desc(&desc) 
+    , is_dyn(false) {}
 
-StreamSessionClient& StreamSessionClient::operator=(StreamSessionClient&& other) {
-    if (this == &other) return *this;
-    delete desc;
-    desc = std::exchange(other.desc, nullptr);
-    return *this;
+StreamSessionClient::StreamSessionClient(StreamSessionClient&& other) 
+    : desc(std::exchange(other.desc, nullptr)) 
+    , is_dyn(other.is_dyn) {}
+
+StreamSessionClient::~StreamSessionClient() {
+    if (desc && is_dyn) {
+        delete desc;
+    }
 }
 
 auto StreamSessionClient::request(Stream& in_stream) -> Result<std::vector<uint8_t>> {

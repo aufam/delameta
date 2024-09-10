@@ -131,7 +131,7 @@ auto Serial::Open(const char* file, int line, Args args) -> Result<Serial> {
 
 Serial::Serial(const char* file, int line, int fd, int timeout) 
     : Descriptor()
-    , StreamSessionClient(this)
+    , StreamSessionClient(static_cast<Descriptor&>(*this))
     , fd(fd)
     , timeout(timeout)
     , file(file)
@@ -139,7 +139,7 @@ Serial::Serial(const char* file, int line, int fd, int timeout)
 
 Serial::Serial(Serial&& other) 
     : Descriptor()
-    , StreamSessionClient(this)
+    , StreamSessionClient(static_cast<Descriptor&>(*this))
     , fd(std::exchange(other.fd, -1))
     , timeout(other.timeout)
     , file(other.file)
@@ -147,24 +147,25 @@ Serial::Serial(Serial&& other)
 
 Serial::~Serial() {
     if (fd < 0) return;
+    info(file, line, "Closed FD: " + std::to_string(fd));
     ::close(fd);
     fd = -1;
 }
 
 auto Serial::read() -> Result<std::vector<uint8_t>> {
-    return delameta_detail_read(file, line, fd, timeout, &delameta_detail_is_fd_alive);
+    return delameta_detail_read(file, line, fd, nullptr, timeout, &delameta_detail_is_fd_alive);
 }
 
 auto Serial::read_until(size_t n) -> Result<std::vector<uint8_t>> {
-    return delameta_detail_read_until(file, line, fd, timeout, &delameta_detail_is_fd_alive, n);
+    return delameta_detail_read_until(file, line, fd, nullptr, timeout, &delameta_detail_is_fd_alive, n);
 }
 
 auto Serial::read_as_stream(size_t n) -> Stream {
-    return delameta_detail_read_as_stream(file, line, fd, timeout, this, n);
+    return delameta_detail_read_as_stream(file, line, timeout, this, n);
 }
 
 auto Serial::write(std::string_view data) -> Result<void> {
-    return delameta_detail_write(file, line, fd, timeout, &delameta_detail_is_fd_alive, data);
+    return delameta_detail_write(file, line, fd, nullptr, timeout, &delameta_detail_is_fd_alive, data);
 }
 
 auto Serial::wait_until_ready() -> Result<void> {

@@ -5,5 +5,5 @@ Maintainer: @PACKAGE_MAINTAINER@
 Section: base
 Priority: optional
 Depends: libc6 (>= 2.29)
-Description: Delameta CLI Tool
+Description: Delameta CLI Tools
     Unified CLI tool for socket and serial programming

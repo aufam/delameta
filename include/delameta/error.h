@@ -41,17 +41,17 @@ namespace Project::delameta::detail {
 // try to unwrap the result of an expression, or return the error to the scope.
 // you may need to disable the `-pedantic` flag
 #define TRY(expr) ({ \
-    auto res = (expr); \
-    if (res.is_err()) return ::Project::etl::Err(std::move(res.unwrap_err())); \
-    ::Project::delameta::detail::unwrap(res); \
+    auto try_res = (expr); \
+    if (try_res.is_err()) return ::Project::etl::Err(std::move(try_res.unwrap_err())); \
+    ::Project::delameta::detail::unwrap(try_res); \
 })
 
 // try to unwrap the result of an expression, or do expr2.
 // you may need to disable the `-pedantic` flag
 #define TRY_OR(expr, expr2) ({ \
-    auto res = (expr); \
-    if (res.is_err()) expr2; \
-    ::Project::delameta::detail::unwrap(res); \
+    auto try_res = (expr); \
+    if (try_res.is_err()) expr2; \
+    ::Project::delameta::detail::unwrap(try_res); \
 })
 
 #ifdef FMT_FORMAT_H_

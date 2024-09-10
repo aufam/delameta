@@ -60,6 +60,12 @@ set(DELAMETA_TARGET_LINUX OFF CACHE BOOL "Disable target for Linux" FORCE)
 set(DELAMETA_TARGET_STM32 ON CACHE BOOL "Enable target for STM32" FORCE)
 ```
 
+### Linux requirements
+* libssl
+  ```bash
+  sudo apt install libssl-dev
+  ```
+
 ### STM32 Requirements
 Typically, you would setup your STM32 configuration using STM32CubeMX or STM32CubeIDE. Here are the requirements:
 * Enable HAL driver
@@ -310,5 +316,58 @@ Example usage:
   )
   ```
 
-  ### And more
-  Feel free to head over to [app](app/) and [test](test/) for some more examples
+### Stream
+Stream is basically a list of `Stream::Rule` which is an `std::function<std::string_view(Stream&)>`. 
+You can add a rule using `operator<<`.
+```c++
+#include <boost/preprocessor.hpp>
+#include <delameta/stream.h>
+#include <fstream>
+
+using namespace Project;
+using delameta::Stream;
+using delameta::Result;
+using delameta::Error;
+using etl::Err;
+using etl::Ok;
+
+auto example_stream() -> Result<Stream> {
+  auto file = new std::ifstream("some_long_text.txt");
+  if (!file->is_open()) {
+    delete file;
+    return Err(Error{-1, "Error: Could not open the file!"});
+  }
+
+  Stream s;
+  s << [file, buffer=std::string()](Stream& s) mutable -> std::string_view {
+    // indicates that this rule may be used again
+    s.again = bool(std::getline(*file, buffer));
+    return s.again ? buffer : "";
+  };
+
+  s.at_destructor = [file]() {
+    file->close();
+    delete file;
+  };
+
+  return Ok(std::move(s));
+}
+```
+
+You can output the data using `operator>>` which takes an `std::function<void(std::string_view)>`
+as the argument.
+```c++
+auto example_stream_out() -> Result<void> {
+  Stream s = TRY(example_stream());
+
+  // print out each line
+  s >> [](std::string_view sv) {
+    std::cout << sv;
+  };
+
+  return Ok();
+}
+```
+
+### And more
+Feel free to head over to [app](app/) and [test](test/) for some more examples
