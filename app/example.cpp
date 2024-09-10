@@ -82,7 +82,7 @@ static auto get_token(const RequestReader& req, ResponseWriter&) -> Result<std::
     }
 }
 
-HTTP_SETUP(app) {
+HTTP_SETUP(example, app) {
     // show response time in the response header
     app.show_response_time = true;
 

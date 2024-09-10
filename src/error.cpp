@@ -12,3 +12,5 @@ Error::Error(Code code) : code(code) {
 }
 
 Error::Error(int code, std::string what) : code(code), what(std::move(what)) {}
+
+Error::Error(const char* what) : code(-1), what(what) {}

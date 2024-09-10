@@ -15,6 +15,7 @@ namespace Project::delameta {
 
         Error(Code code);
         Error(int code, std::string what);
+        Error(const char* what);
         virtual ~Error() = default;
     
         int code;

@@ -488,12 +488,12 @@ namespace Project::delameta::http::arg {
 
 #define HTTP_LATE_INIT __attribute__((init_priority(102)))
 
-#define HTTP_SETUP(o) \
+#define HTTP_SETUP(name, o) \
     HTTP_EXTERN_OBJECT(o); \
-    static void _http_setup(); \
-    struct _http_setup_t { _http_setup_t() { _http_setup(); } }; \
-    static _http_setup_t _http_setup_instance HTTP_LATE_INIT; \
-    static void _http_setup()
+    static void _##name##_http_setup(); \
+    struct _http_setup_##name##t { _http_setup_##name##t() { _##name##_http_setup(); } }; \
+    static _http_setup_##name##t _##name##_http_setup_instance HTTP_LATE_INIT; \
+    static void _##name##_http_setup()
 
 #define HTTP_HELPER_VARIADIC(...) __VA_ARGS__
 #define HTTP_HELPER_MAKE_METHODS(...) std::vector<const char*>{__VA_ARGS__}
