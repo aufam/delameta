@@ -104,7 +104,7 @@ static auto mbus_write_multiple(std::string_view addr, std::string host, int tim
 
 HTTP_SETUP(modbus_tcp, app) {
     static const auto http_args = std::tuple{
-        http::arg::arg("address"),
+        http::arg::default_val("address", "0xff"),
         http::arg::arg("host"), 
         http::arg::default_val("timeout", 5),
         http::arg::arg("reg"),
@@ -112,7 +112,7 @@ HTTP_SETUP(modbus_tcp, app) {
     };
 
     static const auto http_args_write_single = std::tuple{
-        http::arg::arg("address"),
+        http::arg::default_val("address", "0xff"),
         http::arg::arg("host"), 
         http::arg::default_val("timeout", 5),
         http::arg::arg("reg"),
@@ -120,7 +120,7 @@ HTTP_SETUP(modbus_tcp, app) {
     };
 
     static const auto http_args_write_multiple = std::tuple{
-        http::arg::arg("address"),
+        http::arg::default_val("address", "0xff"),
         http::arg::arg("host"), 
         http::arg::default_val("timeout", 5),
         http::arg::arg("reg"),
