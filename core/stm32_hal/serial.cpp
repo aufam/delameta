@@ -291,6 +291,7 @@ void Server<Serial>::stop() {
 
 __weak void delameta_i2c_init() {}
 __weak void delameta_spi_init() {}
+__weak void delameta_can_init() {}
 
 // peripheral init
 extern "C" void delameta_stm32_hal_init() {
@@ -300,4 +301,5 @@ extern "C" void delameta_stm32_hal_init() {
 
     delameta_i2c_init();
     delameta_spi_init();
+    delameta_can_init();
 }

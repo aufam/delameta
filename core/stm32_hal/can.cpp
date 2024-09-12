@@ -2,7 +2,8 @@
 #include "cmsis_os2.h"
 #include "FreeRTOS.h"
 #include "delameta/debug.h"
-#include "delameta/stream.h"
+#include "delameta/endpoint.h"
+#include "delameta/utils.h"
 #include "etl/heap.h"
 #include "etl/time.h"
 #include <cstring>
@@ -19,18 +20,17 @@ using etl::Ok;
 #endif
 
 #ifdef DELAMETA_STM32_HAS_CAN
-struct file_descriptor_can_t {
-    CAN_HandleTypeDef* handler;
-    const char* __file;
-    int __oflag;
-    const uint8_t* received_data;
-    size_t received_data_len;
+class CAN_Endpoint : public Descriptor {
+public:
+    int timeout;
 
-    void init();
-    Result<std::vector<uint8_t>> read(uint32_t tout);
-    Result<std::vector<uint8_t>> read_until(uint32_t tout, size_t n);
-    Result<void> write(uint32_t tout, std::string_view data);
-    Result<void> wait_until_ready(uint32_t tout);
+    CAN_Endpoint(int timeout) : timeout(timeout) {}
+
+    Result<std::vector<uint8_t>> read() override;
+    Stream read_as_stream(size_t n) override;
+    Result<std::vector<uint8_t>> read_until(size_t n) override;
+
+    Result<void> write(std::string_view data) override;
 };
 
 #if defined DELAMETA_STM32_USE_HAL_CAN
@@ -47,16 +47,14 @@ extern CAN_HandleTypeDef hcan3;
 static CAN_HandleTypeDef* can_handler = &hcan3;
 #endif
 
-file_descriptor_can_t file_descriptor_can_instance {can_handler, "/can", 0, nullptr, 0};
+static volatile osThreadId_t can_read_thd;
 
-static osThreadId_t can_read_thd;
-static osSemaphoreId_t can_read_sem;
-static StaticSemaphore_t can_read_sem_cb; 
 static uint8_t can_rx_buffer[8];
+static CAN_TxHeaderTypeDef can_tx_header;
+static CAN_RxHeaderTypeDef can_rx_header;
 
-CAN_FilterTypeDef delameta_stm32_hal_can_filter = {}; 
-CAN_TxHeaderTypeDef delameta_stm32_hal_can_tx_header = {};
-uint32_t delameta_stm32_hal_can_tx_mailbox = 0;
+static uint32_t can_mailbox = 0;
+static CAN_FilterTypeDef can_filter;
 
 #ifdef DELAMETA_STM32_HAL_CAN_USE_FIFO0
 static const uint32_t _CAN_RX_FIFO = CAN_RX_FIFO0;
@@ -70,36 +68,55 @@ static const uint32_t _CANIT_RX_FIFO = CAN_IT_RX_FIFO1_MSG_PENDING;
 static const uint32_t _CANFILTER_FIFO = CAN_FILTER_FIFO1;
 extern "C" void HAL_CAN_RxFifo1MsgPendingCallback(CAN_HandleTypeDef *hcan_) {
 #endif
-    if (hcan_->Instance == file_descriptor_can_instance.handler->Instance) {
-        CAN_RxHeaderTypeDef msg = {};
-        HAL_CAN_GetRxMessage(can_handler, _CAN_RX_FIFO, &msg, can_rx_buffer);
-        file_descriptor_can_instance.received_data = can_rx_buffer;
-        file_descriptor_can_instance.received_data_len = msg.DLC;
+    if (hcan_->Instance == can_handler->Instance) {
+        HAL_CAN_GetRxMessage(can_handler, _CAN_RX_FIFO, &can_rx_header, can_rx_buffer);
         osThreadFlagsSet(can_read_thd, 0b1);
     }
 }
 
-void file_descriptor_can_t::init() {
-    osSemaphoreAttr_t attr = {};
-    attr.cb_mem = &can_read_sem_cb;
-    attr.cb_size = sizeof(can_read_sem_cb);
-    can_read_sem = osSemaphoreNew(1, 1, &attr);
-
-    delameta_stm32_hal_can_tx_header.RTR = CAN_RTR_DATA;
-    delameta_stm32_hal_can_tx_header.TransmitGlobalTime = DISABLE;
-    HAL_CAN_Start(can_handler);
-    HAL_CAN_ActivateNotification(can_handler, _CAN_IT_RX_FIFO);
+uint32_t delameta_can_get_rx_id() {
+    return can_rx_header.IDE == CAN_ID_EXT ? can_rx_header.ExtId : can_rx_header.StdId;
 }
 
-auto file_descriptor_can_t::read(uint32_t tout) -> Result<std::vector<uint8_t>> {
+void delameta_can_set_tx_id(uint32_t id) {
+    can_tx_header.IDE == CAN_ID_EXT ? (can_tx_header.ExtId = id) : (can_tx_header.ExtId = id);
+}
+
+void delameta_can_set_filter(uint32_t filter) {
+    if (can_tx_header.IDE == CAN_ID_STD) {
+        // 11 bits, left padding, high half-word
+        can_filter.FilterIdLow      = 0;
+        can_filter.FilterIdHigh     = (filter << (16 - 11)) & 0xFFFFu;
+    } else {
+        // 18 bits, 3 bits offset, low half-word
+        can_filter.FilterIdLow      = (filter << (16 - 13)) & 0xFFFFu;  // 13 bits to low half-word
+        can_filter.FilterIdHigh     = (filter >> 13) & 0b11111u;        // 5 bits to high half-word
+    }
+    HAL_CAN_ConfigFilter(can_handler, &can_filter);
+}
+
+void delameta_can_set_mask(uint32_t mask) {
+    if (can_tx_header.IDE == CAN_ID_STD) {
+        // 11 bits, left padding, high half-word
+        can_filter.FilterMaskIdLow      = 0;
+        can_filter.FilterMaskIdHigh     = (mask << (16 - 11)) & 0xFFFFu;
+    } else {
+        // 18 bits, 3 bits offset, low half-word
+        can_filter.FilterMaskIdLow      = (mask << 3) & 0xFFFFu;          // 13 bits to low half-word
+        can_filter.FilterMaskIdHigh     = (mask >> 13) & 0b11111u;        // 5 bits to high half-word
+    }
+    HAL_CAN_ConfigFilter(can_handler, &can_filter);
+}
+
+auto CAN_Endpoint::read() -> Result<std::vector<uint8_t>> {
     osThreadFlagsSet(can_read_thd, 0b10); // cancel the awaiting thread
     can_read_thd = osThreadGetId();
 
     // read until available
+    uint32_t tout = timeout < 0 ? osWaitForever : (uint32_t)timeout * 1000;
     auto flag = osThreadFlagsWait(0b11, osFlagsWaitAny, tout);
     if (flag & osFlagsError) {
         can_read_thd = nullptr;
-        osSemaphoreRelease(can_read_sem);
         return Err(Error::TransferTimeout);
     }
     if (flag & 0b10) {
@@ -107,15 +124,14 @@ auto file_descriptor_can_t::read(uint32_t tout) -> Result<std::vector<uint8_t>> 
     }
 
     can_read_thd = nullptr;
-    osSemaphoreRelease(can_read_sem);
 
-    if (etl::heap::freeSize < received_data_len)
+    if (etl::heap::freeSize < can_rx_header.DLC)
         return Err(Error{-1, "No memory"});
 
-    return Ok(std::vector<uint8_t>(received_data, received_data + received_data_len));
+    return Ok(std::vector<uint8_t>(can_rx_buffer, can_rx_buffer + can_rx_header.DLC));
 }
 
-auto file_descriptor_can_t::read_until(uint32_t tout, size_t n) -> Result<std::vector<uint8_t>> {
+auto CAN_Endpoint::read_until(size_t n) -> Result<std::vector<uint8_t>> {
     if (n == 0 || etl::heap::freeSize < n) {
         return Err(Error{-1, "No memory"});
     }
@@ -128,62 +144,98 @@ auto file_descriptor_can_t::read_until(uint32_t tout, size_t n) -> Result<std::v
     size_t remaining_size = n;
     auto ptr = buffer.data();
 
+    uint32_t tout = timeout < 0 ? osWaitForever : (uint32_t)timeout * 1000;
+
     while (etl::time::elapsed(start).tick < tout) {
         auto flag = osThreadFlagsWait(0b11, osFlagsWaitAny, tout);
         if (flag & osFlagsError) {
             can_read_thd = nullptr;
-            osSemaphoreRelease(can_read_sem);
             return Err(Error::TransferTimeout);
         }
         if (flag & 0b10) {
             return Err(Error{static_cast<int>(flag), "canceled"});
         }
 
-        auto size = std::min(remaining_size, received_data_len);
-        ::memcpy(ptr, received_data, size);
+        auto size = std::min((uint32_t)remaining_size, can_rx_header.DLC);
+        ::memcpy(ptr, can_rx_buffer, size);
 
         ptr += size;
         remaining_size -= size;
 
         if (remaining_size == 0) {
             can_read_thd = nullptr;
-            osSemaphoreRelease(can_read_sem);
             return Ok(std::move(buffer));
         }
     }
 
     can_read_thd = nullptr;
-    osSemaphoreRelease(can_read_sem);
     return Err(Error::TransferTimeout);
 }
 
-auto file_descriptor_can_t::write(uint32_t, std::string_view data) -> Result<void> {
+auto CAN_Endpoint::read_as_stream(size_t n) -> Stream {
+    Stream s;
+
+    s << [this, total=n, buffer=std::vector<uint8_t>{}](Stream& s) mutable -> std::string_view {
+        buffer = {};
+        size_t n = std::min(total, (size_t)128);
+        auto data = this->read_until(n);
+
+        if (data.is_ok()) {
+            buffer = std::move(data.unwrap());
+            total -= n;
+            s.again = total > 0;
+        }
+
+        return {reinterpret_cast<const char*>(buffer.data()), buffer.size()};
+    };
+
+    return s;
+}
+
+auto CAN_Endpoint::write(std::string_view data) -> Result<void> {
     if (data.size() > 8) 
         return Err(Error{-1, "CAN DLC"});
     
-    uint8_t id_type = (__oflag >> 24) & 0xff;
-    uint8_t id_val = (__oflag >> 0) & 0xffffff;
-    delameta_stm32_hal_can_tx_header.DLC = data.size();
-    delameta_stm32_hal_can_tx_header.IDE = id_type;
+    can_tx_header.DLC = data.size();
     
-    if (id_type == CAN_ID_EXT)
-        delameta_stm32_hal_can_tx_header.ExtId = id_val;
-    else if (id_type == CAN_ID_STD)
-        delameta_stm32_hal_can_tx_header.StdId = id_val;
-    else 
-        return Err(Error{-1, "CAN ID"});
-    
-    if (auto res = HAL_CAN_AddTxMessage(handler, &delameta_stm32_hal_can_tx_header, (uint8_t*)data.data(), &delameta_stm32_hal_can_tx_mailbox); res != HAL_OK)
+    if (auto res = HAL_CAN_AddTxMessage(can_handler, &can_tx_header, (uint8_t*)data.data(), &can_mailbox); res != HAL_OK)
         return Err(Error{static_cast<int>(res), "hal error"});
     
     return Ok();
 }
 
-auto file_descriptor_can_t::wait_until_ready(uint32_t tout) -> Result<void> {
-    if (osSemaphoreAcquire(can_read_sem, tout) != osOK) {
-        return Err(Error::TransferTimeout);
-    }
-    return Ok();
+static Result<Endpoint> EndpointFactoryCAN(const char*, int, const URL& uri) {
+    uint32_t timeout = -1;
+
+    auto it = uri.queries.find("timeout");
+    if (it != uri.queries.end()) {
+        auto res = string_num_into<uint32_t>(it->second);
+        if (res.is_err())
+            return Err(Error{-1, res.unwrap_err()});
+        timeout = res.unwrap();
+    } 
+
+    return Ok(new CAN_Endpoint(timeout));
+}
+
+extern std::unordered_map<std::string_view, EndpointFactoryFunction> delameta_endpoints_map;
+
+void delameta_can_init() {
+    delameta_endpoints_map["can"] = &EndpointFactoryCAN;
+
+    can_filter.FilterActivation = CAN_FILTER_ENABLE;
+    can_filter.FilterFIFOAssignment = _CAN_FILTER_FIFO;
+    can_filter.FilterMode = CAN_FILTERMODE_IDMASK;
+    can_filter.FilterScale = CAN_FILTERSCALE_32BIT;
+    can_filter.FilterBank = 10;
+    can_filter.SlaveStartFilterBank = 0;
+    HAL_CAN_ConfigFilter(can_handler, &can_filter);
+
+    can_tx_header.RTR = CAN_RTR_DATA;
+    can_tx_header.TransmitGlobalTime = DISABLE;
+    can_tx_header.IDE = CAN_ID_EXT;
+    HAL_CAN_Start(can_handler);
+    HAL_CAN_ActivateNotification(can_handler, _CAN_IT_RX_FIFO);
 }
 
 #endif
