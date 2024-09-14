@@ -5,8 +5,8 @@ file(READ version.txt DELAMETA_VERSION)
 project(delameta VERSION ${DELAMETA_VERSION})
 
 # some options
-option(DELAMETA_BUILD_APP 	 "Build the main app" ON)
-option(DELAMETA_BUILD_TEST 	 "Build the test" ON)
+option(DELAMETA_BUILD_APP 	 "Build the main app" OFF)
+option(DELAMETA_BUILD_TEST 	 "Build the test" OFF)
 option(DELAMETA_TARGET_LINUX "Build for Linux" ON)
 option(DELAMETA_TARGET_STM32 "Build for STM32" OFF)
 
