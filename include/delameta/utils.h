@@ -44,7 +44,7 @@ namespace Project::delameta {
         for (size_t i = sv.length(); i > 0; --i) {
             int num = char_hex_into_int(sv[i - 1]);
             if (num < 0)
-                return etl::Err("invalid dec string");
+                return etl::Err("invalid hex string");
 
             res |= static_cast<T>(num << bit_shift);
             bit_shift += 4;
@@ -79,6 +79,23 @@ namespace Project::delameta {
         } else {
             return string_dec_into<T>(sv);
         }
+    }
+
+    inline std::string num_to_hex_string(int number, bool capital = true) {
+        const char hex_digits_capital[] = "0123456789ABCDEF";
+        const char hex_digits[] = "0123456789abcdef";
+        const char* digits = capital ? hex_digits_capital : hex_digits;
+
+        if (number == 0) return "0";
+
+        std::string res;
+        while (number > 0) {
+            int remainder = number % 16;
+            res = digits[remainder] + res;
+            number /= 16;
+        }
+
+        return res;
     }
 
     inline std::string_view get_content_type_from_file(std::string_view file) {

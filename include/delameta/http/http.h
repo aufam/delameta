@@ -22,8 +22,7 @@ namespace Project::delameta::http {
         Handler<void> function;
     };
 
-    template <typename T> struct is_handler : is_handler<decltype(std::function(std::declval<T>()))> {};
-    template <typename T> struct is_handler<std::function<T(const RequestReader&, ResponseWriter&)>> : std::true_type {};
+    template <typename T> struct is_handler : std::is_convertible<T, std::function<void(const RequestReader&, ResponseWriter&)>> {};
     template <typename T> static constexpr bool is_handler_v = is_handler<T>::value;
     
     class Http : public Movable {
@@ -109,6 +108,21 @@ namespace Project::delameta::http {
             Result<std::string_view> form_at(const char* key) const;
         };
 
+
+        template <typename R>
+        void process_result_non_void(R& result, const RequestReader& req, ResponseWriter& res) {
+            if constexpr (is_server_result_v<R>) {
+                if (result.is_err()) {
+                    return error_handler(std::move(result.unwrap_err()), req, res);
+                }
+                if constexpr (!std::is_void_v<etl::result_value_t<R>>) {
+                    process_result(result.unwrap(), req, res);
+                }
+            } else {
+                process_result(result, req, res);
+            }
+        }
+
         template <typename... RouterArgs, typename R, typename ...HandlerArgs>
         auto route_(
             std::string path, 
@@ -123,40 +137,40 @@ namespace Project::delameta::http {
                     auto [_, err] = fn(req, res);
                     if (err) return error_handler(std::move(*err), req, res);
                 }
-
                 Context ctx(req);
 
-                // process each args
-                std::tuple<Result<HandlerArgs>...> arg_values = std::apply([&](const auto&... items) {
-                    return std::tuple { process_arg<HandlerArgs>(items, req, res, ctx)... };
-                }, args);
-
-                // check for err
-                Error* err = nullptr;
-                auto check_err = [&](auto& item) {
-                    if (err == nullptr && item.is_err()) {
-                        err = &item.unwrap_err();
-                    }
-                };
-                std::apply([&](auto&... args) { ((check_err(args)), ...); }, arg_values);
-                if (err) return error_handler(std::move(*err), req, res);
-               
-                // apply handler
-                if constexpr (std::is_void_v<R>) {
-                    std::apply([&](auto&... args) { handler(std::move(args.unwrap())...); }, arg_values);
-                } else {
-                    R result = std::apply([&](auto&... args) { return handler(std::move(args.unwrap())...); }, arg_values);
-                    if constexpr (is_server_result_v<R>) {
-                        if (result.is_err()) {
-                            return error_handler(std::move(result.unwrap_err()), req, res);
-                        }
-                        if constexpr (!std::is_void_v<etl::result_value_t<R>>) {
-                            process_result(result.unwrap(), req, res);
-                        }
+                if constexpr (is_handler_v<std::function<R(HandlerArgs...)>>) {
+                    // apply handler
+                    if constexpr (std::is_void_v<R>) {
+                        handler(req, res);
                     } else {
-                        process_result(result, req, res);
-                    }
-                } 
+                        R result = handler(req, res);
+                        process_result_non_void(result, req, res);
+                    } 
+                } else {
+                    // process each args
+                    std::tuple<Result<HandlerArgs>...> arg_values = std::apply([&](const auto&... items) {
+                            return std::tuple { process_arg<HandlerArgs>(items, req, res, ctx)... };
+                        }, args);
+
+                    // check for err
+                    Error* err = nullptr;
+                    auto check_err = [&](auto& item) {
+                        if (err == nullptr && item.is_err()) {
+                            err = &item.unwrap_err();
+                        }
+                    };
+                    std::apply([&](auto&... args) { ((check_err(args)), ...); }, arg_values);
+                    if (err) return error_handler(std::move(*err), req, res);
+
+                    // apply handler
+                    if constexpr (std::is_void_v<R>) {
+                        std::apply([&](auto&... args) { handler(std::move(args.unwrap())...); }, arg_values);
+                    } else {
+                        R result = std::apply([&](auto&... args) { return handler(std::move(args.unwrap())...); }, arg_values);
+                        process_result_non_void(result, req, res);
+                    } 
+                }
             };
 
             routers.push_back(Router{std::move(path), std::move(methods), std::move(function)});

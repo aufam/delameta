@@ -158,7 +158,7 @@ void delameta_detail_http_request_response_reader_parse_headers_body(
         headers[std::string_view(key.data(), key.len())] = std::string_view(value.data(), value.len());
     }
 
-    body_stream.rules.push_front([body=std::string(sv.data() + body_start, body_length)](Stream&) -> std::string_view {
+    body_stream.rules.push_front([body=std::string_view(sv.data() + body_start, body_length)](Stream&) -> std::string_view {
         return body;
     });
 }

@@ -69,6 +69,7 @@ namespace Project::delameta {
         Stream& operator>>(Descriptor& des);
 
         Result<void> out_with_prefix(Descriptor& des, std::function<Result<void>(std::string_view)> prefix);
+        std::vector<uint8_t> pop_once();
     };
 
     class StreamSessionServer : public Movable {

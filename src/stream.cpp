@@ -100,6 +100,18 @@ Result<void> Stream::out_with_prefix(Descriptor& des, std::function<Result<void>
     return Ok();
 }
 
+std::vector<uint8_t> Stream::pop_once() {
+    if (rules.empty()) return {};
+
+    again = false;
+    auto data = rules.front()(*this);
+
+    std::vector<uint8_t> res {data.begin(), data.end()};
+    if (!again) rules.pop_front();
+
+    return res;
+};
+
 StreamSessionServer::StreamSessionServer(StreamSessionHandler handler) : handler(std::move(handler)) {}
 
 Stream StreamSessionServer::execute_stream_session(Descriptor& desc, const std::string& name, const std::vector<uint8_t>& data) {
