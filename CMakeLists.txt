@@ -34,12 +34,6 @@ if (DELAMETA_TARGET_LINUX)
 	file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS src/*.* core/linux/*.*)
 	add_library(delameta ${SOURCES})
 	
-	set_target_properties(delameta PROPERTIES
-		CXX_STANDARD ${DELAMETA_CXX_STANDARD}
-		CXX_STANDARD_REQUIRED ON
-		CXX_EXTENSIONS OFF
-	)
-	
 	target_compile_options(delameta PRIVATE
 		-Wall
 		-Wextra
@@ -134,12 +128,6 @@ if (DELAMETA_TARGET_STM32)
 	# build library
 	file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS src/*.* core/stm32_hal/*.*)
 	add_library(delameta ${SOURCES})
-	
-	set_target_properties(delameta PROPERTIES
-		CXX_STANDARD ${DELAMETA_CXX_STANDARD}
-		CXX_STANDARD_REQUIRED ON
-		CXX_EXTENSIONS OFF
-	)
 
 	target_compile_options(delameta PRIVATE
 		-Wall
