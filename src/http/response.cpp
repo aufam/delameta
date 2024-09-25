@@ -1,12 +1,15 @@
 #include "delameta/http/response.h"
+#include "delameta/utils.h"
 #include "etl/string_view.h"
+#include <string_view>
 
 using namespace Project;
 using namespace Project::delameta;
 
 void delameta_detail_http_request_response_reader_parse_headers_body(
-    etl::StringView sv, 
+    std::string_view sv, 
     std::unordered_map<std::string_view, std::string_view>& headers, 
+    std::string_view& host_value,
     Descriptor& desc,
     Stream& body_stream
 );
@@ -59,28 +62,25 @@ http::ResponseReader::ResponseReader(Descriptor& desc, const std::vector<uint8_t
 http::ResponseReader::ResponseReader(Descriptor& desc, std::vector<uint8_t>&& data) : data(std::move(data)) { parse(desc, this->data); }
 
 void http::ResponseReader::parse(Descriptor& desc, const std::vector<uint8_t>& data) {
-    auto sv = etl::string_view(data.data(), data.size());
+    auto sv = std::string_view(reinterpret_cast<const char*>(data.data()), data.size());
+    auto first_line = string_view_consume_line(sv);
 
-    auto [version, status] = sv.split<2>(" ");
-    if (not status) {
-        return;
-    }
+    auto version_end = first_line.find(' ');
+    auto version = first_line.substr(0, version_end);
+    first_line = version_end == std::string::npos ? "" : first_line.substr(version_end + 1);
 
-    auto consumed = (status.end() - sv.begin()) + 1; 
-    sv = sv.substr(consumed, sv.len() - consumed);
-    auto status_string = sv.split<1>("\n")[0];
-    
-    auto sv_begin = status_string.end() + 1;
-    size_t sv_len = sv.end() > sv_begin && status_string.end() != nullptr ? sv.end() - sv_begin : 0;
-    sv = etl::StringView{sv_begin, sv_len};
+    auto status_end = first_line.find(' ');
+    auto status = first_line.substr(0, status_end);
+    first_line = version_end == std::string::npos ? "" : first_line.substr(status_end + 1);
 
-    if (status_string and status_string.back() == '\r')
-        status_string = status_string.substr(0, status_string.len() - 1);
-    
-    this->version = std::string_view(version.data(), version.len());
-    this->status = status.to_int();
-    this->status_string = std::string_view(status_string.data(), status_string.len());
-    delameta_detail_http_request_response_reader_parse_headers_body(sv, this->headers, desc, this->body_stream);
+    auto status_string = first_line;
+
+    this->version = version;
+    this->status = string_num_into<int>(status).unwrap_or(-1);
+    this->status_string = status_string;
+
+    std::string_view dummy_host = "";
+    delameta_detail_http_request_response_reader_parse_headers_body(sv, this->headers, dummy_host, desc, this->body_stream);
 }
 
 http::ResponseReader::operator ResponseWriter() const {

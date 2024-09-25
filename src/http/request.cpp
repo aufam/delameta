@@ -1,12 +1,15 @@
 #include "delameta/http/request.h"
+#include "delameta/http/chunked.h"
+#include "delameta/utils.h"
 #include <etl/string_view.h>
 
 using namespace Project;
 using namespace Project::delameta;
 
 void delameta_detail_http_request_response_reader_parse_headers_body(
-    etl::StringView sv, 
+    std::string_view sv, 
     std::unordered_map<std::string_view, std::string_view>& headers, 
+    std::string_view& host_value,
     Descriptor& desc,
     Stream& body_stream
 );
@@ -15,38 +18,19 @@ http::RequestReader::RequestReader(Descriptor& desc, const std::vector<uint8_t>&
 http::RequestReader::RequestReader(Descriptor& desc, std::vector<uint8_t>&& data) : data(std::move(data)) { parse(desc, this->data); }
 
 void http::RequestReader::parse(Descriptor& desc, const std::vector<uint8_t>& data) {
-    auto sv = etl::string_view(data.data(), data.size());
+    auto sv = std::string_view(reinterpret_cast<const char*>(data.data()), data.size());
 
-    auto [method, path] = sv.split<2>(" ");
-    if (not path) {
-        return;
-    }
-    
-    auto consumed = (path.end() - sv.begin()) + 1; 
-    sv = sv.substr(consumed, sv.len() - consumed);
-    auto version = sv.split<1>("\n")[0];
-    
-    auto sv_begin = version.end() + 1;
-    size_t sv_len = sv.end() > sv_begin && version.end() != nullptr ? sv.end() - sv_begin : 0;
-    sv = etl::StringView{sv_begin, sv_len};
+    auto first_line = string_view_consume_line(sv);
+    auto [method, path, version] = etl::string_view(first_line.data(), first_line.size()).split<3>(" ");
 
-    if (version and version.back() == '\r')
-        version = version.substr(0, version.len() - 1);
-    
     this->method = std::string_view(method.data(), method.len());
     this->url = std::string(path.data(), path.len());
     this->version = std::string_view(version.data(), version.len());
-    delameta_detail_http_request_response_reader_parse_headers_body(sv, this->headers, desc, this->body_stream);
 
     std::string_view host = "";
-    auto it = this->headers.find("Host");
-    if (it == this->headers.end()) {
-        it = this->headers.find("host");
-    }
-    if (it != this->headers.end()) {
-        host = it->second;
-    }
-    if (!host.empty()) {
+    delameta_detail_http_request_response_reader_parse_headers_body(sv, this->headers, host, desc, this->body_stream);
+
+    if (not host.empty()) {
         this->url.host = host;
     }
 }
@@ -110,55 +94,76 @@ http::RequestReader::operator RequestWriter() const {
 }
 
 void delameta_detail_http_request_response_reader_parse_headers_body(
-    etl::StringView sv, 
-    std::unordered_map<std::string_view, std::string_view>& headers, 
+    std::string_view sv,
+    std::unordered_map<std::string_view, std::string_view>& headers,
+    std::string_view& host_value,
     Descriptor& desc,
     Stream& body_stream
 ) {
-    auto head_end = sv.find("\r\n\r\n");
-    auto body_start = head_end + 4;
-    if (head_end >= sv.len()) {
-        head_end = sv.find("\n\n");
-        body_start -= 2;
-        if (head_end >= sv.len()) {
-            body_start -= 2;
+    std::string_view content_length_value;
+    std::string_view transfer_encoding_value;
+
+    for (;;) {
+        auto line = string_view_consume_line(sv);
+        if (line.empty()) break;
+
+        std::string_view key, value;
+        auto key_end = line.find(':');
+
+        key = line.substr(0, key_end);
+        if (key_end != std::string::npos) {
+            value = line.substr(key_end + 1);
+        } else {
+            key = line;
         }
+
+        while (!key.empty() && key.back() == ' ') {
+            key = key.substr(0, key.size() - 1);
+        }
+
+        while (!value.empty() && value.front() == ' ') {
+            value = value.substr(1);
+        }
+
+        if (content_length_value.empty() and (key == "Content-Length" or key == "content-length")) {
+            content_length_value = value;
+        }
+
+        if (transfer_encoding_value.empty() and (key == "Transfer-Encoding" or key == "transfer-encoding")) {
+            transfer_encoding_value = value;
+        }
+
+        if (host_value.empty() and (key == "Host" or key == "host")) {
+            host_value = value;
+        }
+
+        headers[key] = value;
     }
 
-    auto hsv = sv.substr(0, head_end);
-    auto body_length = sv.len() - body_start;
+    // the remaining payload data is body
+    auto body = sv;
 
-    bool content_length_found = false;
-
-    for (auto line : hsv.split<32>("\n")) {
-        auto key = line.split<1>(":")[0];
-        auto value = etl::StringView{};
-        if (key.end() != line.end()) {
-            value = {key.end() + 1, line.len() - key.len() - 1};
+    // prioritize transfer encoding
+    if (transfer_encoding_value == "chunked") {
+        if (not body.empty()) {
+            // create string view descriptor, decode it, and push to body stream
+            auto svd = new StringViewDescriptor(body);
+            body_stream << http::chunked_decode(*svd);
+            body_stream.at_destructor = [svd]() { delete svd; };
         }
 
-        if (value and value.back() == '\r')
-            value = value.substr(0, value.len() - 1);
-        
-        while (value and value.front() == ' ') 
-            value = value.substr(1, value.len() - 1);
-
-        // handle content length
-        if (not content_length_found and (key == "Content-Length" or key == "content-length")) {
-            content_length_found = true;
-            int cl = value.to_int();
-            if (cl > int(body_length))  {
-                body_stream << desc.read_as_stream(cl - body_length); // read the rest as stream
-            } else if (cl >= 0 && cl < int(body_length)) {
-                body_length = cl; // body length somehow exceeds content-length
-            }
-        }
-
-        // store the header
-        headers[std::string_view(key.data(), key.len())] = std::string_view(value.data(), value.len());
+        body_stream << http::chunked_decode(desc);
+        return;
     }
 
-    body_stream.rules.push_front([body=std::string_view(sv.data() + body_start, body_length)](Stream&) -> std::string_view {
-        return body;
-    });
+    // put the already read body in front of the body stream rules
+    if (not body.empty()) body_stream << body;
+
+    if (not content_length_value.empty()) {
+        size_t content_length = string_num_into<size_t>(content_length_value).unwrap_or(0);
+        if (content_length > body.size()) {
+            // let the descriptor read again later as stream rules
+            body_stream << desc.read_as_stream(content_length - body.size());
+        }
+    }
 }

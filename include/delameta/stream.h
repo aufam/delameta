@@ -44,8 +44,8 @@ namespace Project::delameta {
         Stream() = default;
         virtual ~Stream();
 
-        Stream(Stream&&) noexcept = default;
-        Stream& operator=(Stream&&) noexcept = default;
+        Stream(Stream&&);
+        Stream& operator=(Stream&&);
 
         using Rule = std::function<std::string_view(Stream&)>;
         std::list<Rule> rules = {};
@@ -104,6 +104,21 @@ namespace Project::delameta {
 
     template <typename T>
     class Server {};
+
+    class StringViewDescriptor : public delameta::Descriptor {
+    public:
+        explicit StringViewDescriptor(std::string_view sv);
+        ~StringViewDescriptor() = default;
+
+        delameta::Result<std::vector<uint8_t>> read() override;
+        delameta::Result<std::vector<uint8_t>> read_until(size_t n) override;
+        Stream read_as_stream(size_t) override;
+        delameta::Result<void> write(std::string_view) override;
+
+        std::string_view read_line();
+
+        std::string_view sv;
+    };
 }
 
 #ifdef FMT_FORMAT_H_

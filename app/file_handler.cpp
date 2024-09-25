@@ -54,7 +54,6 @@ static HTTP_ROUTE(
     (http::Result<void>)
 ) {
     return File::Open(FL, {filename}).then([&](File file) {
-        res->headers["Content-Length"] = std::to_string(file.file_size());
         res->headers["Content-Type"] = delameta::get_content_type_from_file(filename);
         file >> res->body_stream;
     });

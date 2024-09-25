@@ -1,4 +1,5 @@
 #include "delameta/http/http.h"
+#include "delameta/http/chunked.h"
 #include "delameta/tcp.h"
 #include "delameta/tls.h"
 #include <algorithm>
@@ -24,14 +25,34 @@ auto http::request(StreamSessionClient& session, RequestWriter req) -> delameta:
     ) {
         req.headers["Host"] = req.url.host;
     }
-    if (not req.body.empty() && 
-        req.body_stream.rules.empty() &&
-        req.headers.find("Content-Length") == req.headers.end() && 
-        req.headers.find("content-length") == req.headers.end()
-    ) {
-        req.headers["Content-Length"] = std::to_string(req.body.size());
+
+    if (!req.body.empty() && !req.body_stream.rules.empty()) {
+        return Err("Multiple body source");
     }
-    if (req.body.empty() && req.body_stream.rules.empty()) req.headers["Content-Length"] = "0";
+
+    auto content_length_it = req.headers.find("Content-Length");
+    if (content_length_it == req.headers.end()) content_length_it = req.headers.find("content-length");
+    bool content_length_found = content_length_it != req.headers.end();
+
+    auto set_content_length = [&](size_t n, bool force) {
+        if (force) {
+            if (content_length_found) content_length_it->second = std::to_string(n);
+            else req.headers["Content-Length"] = std::to_string(n);
+        }
+        else if (!content_length_found) req.headers["Content-Length"] = std::to_string(n);
+    };
+
+    if (!req.body.empty() && !req.body_stream.rules.empty()) {
+    } else if (!req.body.empty()) {
+        set_content_length(req.body.size(), false);
+    } else if (!req.body_stream.rules.empty()) {
+        if (!content_length_found) {
+            req.body_stream = chunked_encode(req.body_stream);
+            req.headers["Transfer-Encoding"] = "chunked";
+        }
+    } else {
+        set_content_length(0, true);
+    }
 
     Stream s = req.dump();
     return session.request(s).then([&session](std::vector<uint8_t> data) {
@@ -56,14 +77,33 @@ auto http::request(StreamSessionClient&& session, RequestWriter req) -> delameta
         req.headers["Connection"] = "close";
     }
 
-    if (not req.body.empty() && 
-        req.body_stream.rules.empty() &&
-        req.headers.find("Content-Length") == req.headers.end() && 
-        req.headers.find("content-length") == req.headers.end()
-    ) {
-        req.headers["Content-Length"] = std::to_string(req.body.size());
+    if (!req.body.empty() && !req.body_stream.rules.empty()) {
+        return Err("Multiple body source");
     }
-    if (req.body.empty() && req.body_stream.rules.empty()) req.headers["Content-Length"] = "0";
+
+    auto content_length_it = req.headers.find("Content-Length");
+    if (content_length_it == req.headers.end()) content_length_it = req.headers.find("content-length");
+    bool content_length_found = content_length_it != req.headers.end();
+
+    auto set_content_length = [&](size_t n, bool force) {
+        if (force) {
+            if (content_length_found) content_length_it->second = std::to_string(n);
+            else req.headers["Content-Length"] = std::to_string(n);
+        }
+        else if (!content_length_found) req.headers["Content-Length"] = std::to_string(n);
+    };
+
+    if (!req.body.empty() && !req.body_stream.rules.empty()) {
+    } else if (!req.body.empty()) {
+        set_content_length(req.body.size(), false);
+    } else if (!req.body_stream.rules.empty()) {
+        if (!content_length_found) {
+            req.body_stream = chunked_encode(req.body_stream);
+            req.headers["Transfer-Encoding"] = "chunked";
+        }
+    } else {
+        set_content_length(0, true);
+    }
 
     auto session_ptr = new StreamSessionClient(std::move(session));
 
@@ -150,7 +190,7 @@ auto http::Http::execute(Descriptor& desc, const std::vector<uint8_t>& data) con
     auto start = delameta_detail_get_time_stamp();
     auto req = http::RequestReader(desc, data);
     auto res = http::ResponseWriter{};
-    
+
     // TODO: version handling
     res.version = req.version;
 
@@ -169,26 +209,48 @@ auto http::Http::execute(Descriptor& desc, const std::vector<uint8_t>& data) con
         }
     }
 
-    if (not handled) res.status = StatusNotFound;
-    if (res.status_string.empty()) res.status_string = status_to_string(res.status);
-    if (res.headers.find("Server") == res.headers.end() && 
-        res.headers.find("server") == res.headers.end()
-    ) {
-        res.headers["Server"] = "delameta/" DELAMETA_VERSION;
+    if (not handled) error_handler(Error(StatusNotFound), req, res);
+
+    if (!res.body.empty() && !res.body_stream.rules.empty()) {
+        error_handler(Error{StatusInternalServerError, "Multiple body sources"}, req, res);
     }
-    if (not res.body.empty() && 
-        res.body_stream.rules.empty() &&
-        res.headers.find("Content-Length") == res.headers.end() && 
-        res.headers.find("content-length") == res.headers.end()
-    ) {
-        res.headers["Content-Length"] = std::to_string(res.body.size());
+
+    auto content_length_it = res.headers.find("Content-Length");
+    if (content_length_it == res.headers.end()) content_length_it = res.headers.find("content-length");
+    bool content_length_found = content_length_it != res.headers.end();
+
+    auto set_content_length = [&](size_t n, bool force) {
+        if (force) {
+            if (content_length_found) content_length_it->second = std::to_string(n);
+            else res.headers["Content-Length"] = std::to_string(n);
+        }
+        else if (!content_length_found) res.headers["Content-Length"] = std::to_string(n);
+    };
+
+    if (!res.body.empty() && !res.body_stream.rules.empty()) {
+    } else if (!res.body.empty()) {
+        set_content_length(res.body.size(), false);
+    } else if (!res.body_stream.rules.empty()) {
+        if (!content_length_found) {
+            res.body_stream = chunked_encode(res.body_stream);
+            res.headers["Transfer-Encoding"] = "chunked";
+        }
+    } else {
+        set_content_length(0, true);
     }
-    if (res.body.empty() && res.body_stream.rules.empty()) res.headers["Content-Length"] = "0";
 
     for (auto &[key, fn] : global_headers) {
         auto value = fn(req, res);
         if (not value.empty()) res.headers[key] = std::move(value);
     }
+
+    if (res.headers.find("Server") == res.headers.end() && 
+        res.headers.find("server") == res.headers.end()
+    ) {
+        res.headers["Server"] = "delameta/" DELAMETA_VERSION;
+    }
+
+    if (res.status_string.empty()) res.status_string = status_to_string(res.status);
 
     auto elapsed_ms = delameta_detail_count_ms(start);
     if (show_response_time) res.headers["X-Response-Time"] = std::to_string(elapsed_ms) + "ms";

@@ -4,10 +4,11 @@
 using namespace Project;
 using namespace delameta;
 
-Stream http::chunked_encode(Stream& input) {
+Stream http::chunked_encode(Stream& inp) {
     Stream s;
 
-    s << [input=new Stream(std::move(input)), buffer=std::string()](Stream& s) mutable -> std::string_view {
+    auto input = new Stream(std::move(inp));
+    s << [input, buffer=std::string()](Stream& s) mutable -> std::string_view {
         auto data = input->pop_once();
         buffer.clear();
         buffer.reserve(6 + data.size() + 2);
@@ -18,12 +19,10 @@ Stream http::chunked_encode(Stream& input) {
 
         s.again = !data.empty();
 
-        if (!s.again) {
-            delete input;
-        }
-
         return buffer;
     };
+
+    s.at_destructor = [input]() { delete input; };
 
     return s;
 }
@@ -46,7 +45,7 @@ Stream http::chunked_decode(Descriptor& input) {
         }
 
         if (buffer.back() == '\r') buffer.pop_back(); 
-        auto size = string_hex_into<int>(buffer);
+        auto size = string_hex_into<size_t>(buffer);
         if (size.is_err())
             return "";
 
@@ -62,17 +61,18 @@ Stream http::chunked_decode(Descriptor& input) {
 
             buffer.insert(buffer.end(), read_result.unwrap().begin(), read_result.unwrap().end());
 
-            for (;;) {
-                auto read_result = input.read_until(1);
-                if (read_result.is_err())
-                    return "";
+            s.again = true;
+        }
 
-                char ch = (char)read_result.unwrap()[0];
-                if (ch == '\n') 
-                    break;
-            }
-        } 
-        s.again = !buffer.empty();
+        for (;;) {
+            auto read_result = input.read_until(1);
+            if (read_result.is_err())
+                return "";
+
+            char ch = (char)read_result.unwrap()[0];
+            if (ch == '\n') 
+                break;
+        }
 
         return buffer;
     };

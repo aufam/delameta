@@ -1,10 +1,6 @@
 #include <delameta/http/http.h>
 #include <delameta/http/chunked.h>
-#include <delameta/file.h>
 #include <gtest/gtest.h>
-#include <iterator>
-#include <string_view>
-#include <vector>
 
 using namespace Project;
 using namespace delameta::http;
@@ -66,7 +62,7 @@ TEST(Http, response) {
         "Content-Type: text/html\r\n"
         "Content-Length: 187\r\n"
         "\r\n";
-    
+
     std::string body =
         "<!DOCTYPE html>\r\n"
         "<html>\r\n"
@@ -78,7 +74,7 @@ TEST(Http, response) {
         "    <p>The requested URL was not found on this server.</p>\r\n"
         "</body>\r\n"
         "</html>\r\n";
-    
+
     payload += body;
 
     ResponseReader res(desc, std::vector<uint8_t>(payload.begin(), payload.end()));
@@ -94,7 +90,7 @@ TEST(Http, response) {
 
 TEST(Http, handler) {
     Http handler;
-    
+
     handler.route("/test", {"POST", "PUT"}, std::tuple{arg::method, arg::body, arg::default_val("id", 0)},
     [](std::string_view method, std::string body, int id) {
         auto res = std::string(method) + ": " + body;
@@ -225,39 +221,12 @@ TEST(Http, form) {
         "POST /form HTTP/1.1\r\n"
         "Content-Type: application/x-www-form-urlencoded; charset=utf-8\r\n"
         "Content-Length: " + std::to_string(body.size()) + "\r\n\r\n";
-    
+
     Chunked desc;
     const auto header_vec = std::vector<uint8_t>(header.begin(), header.end());
     auto [req, res] = handler.execute(desc, header_vec);
     EXPECT_EQ(res.status, StatusOK);
 }
-
-class StringDescriptor : public delameta::Descriptor {
-public:
-    explicit StringDescriptor(std::string_view sv) : sv(sv) {}
-
-    delameta::Result<std::vector<uint8_t>> read() override {
-        std::vector<uint8_t> res(sv.begin(), sv.end());
-        sv = "";
-        return Ok(std::move(res));
-    }
-    delameta::Result<std::vector<uint8_t>> read_until(size_t n) override {
-        std::vector<uint8_t> res(sv.begin(), sv.begin() + n);
-        sv = sv.substr(n);
-        return Ok(std::move(res));
-    }
-    Stream read_as_stream(size_t) override {
-        Stream s;
-        s << sv;
-        sv = "";
-        return s;
-    }
-    delameta::Result<void> write(std::string_view) override {
-        return Err(delameta::Error(-1, "Not implemented"));
-    }
-
-    std::string_view sv;
-};
 
 TEST(Http, chunked) {
     Stream s = json::serialize_as_stream(json::Map{
@@ -284,7 +253,7 @@ TEST(Http, chunked) {
         ++idx;
     };
 
-    StringDescriptor sd(buffer);
+    delameta::StringViewDescriptor sd(buffer);
     Stream ss = chunked_decode(sd);
     idx = 0;
 

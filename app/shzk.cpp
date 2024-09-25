@@ -59,7 +59,7 @@ static HTTP_ROUTE(
     );
 
     Client cli(address, session);
-    SHZK shzk;
+    SHZK shzk {};
 
     auto buf = TRY(cli.ReadHoldingRegisters(0x1001, 6));
     shzk.frequencyRunning  = buf[0];

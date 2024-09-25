@@ -9,6 +9,7 @@ option(DELAMETA_BUILD_APP 	 "Build the main app" OFF)
 option(DELAMETA_BUILD_TEST 	 "Build the test" OFF)
 option(DELAMETA_TARGET_LINUX "Build for Linux" ON)
 option(DELAMETA_TARGET_STM32 "Build for STM32" OFF)
+set(DELAMETA_CXX_STANDARD 23)
 
 # Ensure that only one target is selected
 if (DELAMETA_TARGET_LINUX AND DELAMETA_TARGET_STM32)
@@ -23,6 +24,7 @@ message(STATUS "DELAMETA_BUILD_APP    : ${DELAMETA_BUILD_APP}")
 message(STATUS "DELAMETA_BUILD_TEST   : ${DELAMETA_BUILD_TEST}")
 message(STATUS "DELAMETA_TARGET_LINUX : ${DELAMETA_TARGET_LINUX}")
 message(STATUS "DELAMETA_TARGET_STM32 : ${DELAMETA_TARGET_STM32}")
+message(STATUS "DELAMETA_CXX_STANDARD : ${DELAMETA_CXX_STANDARD}")
 
 # cpm cmake
 include(cmake/CPM.cmake)
@@ -31,6 +33,13 @@ if (DELAMETA_TARGET_LINUX)
 	# build library
 	file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS src/*.* core/linux/*.*)
 	add_library(delameta ${SOURCES})
+	
+	set_target_properties(delameta PROPERTIES
+		CXX_STANDARD ${DELAMETA_CXX_STANDARD}
+		CXX_STANDARD_REQUIRED ON
+		CXX_EXTENSIONS OFF
+	)
+	
 	target_compile_options(delameta PRIVATE
 		-Wall
 		-Wextra
@@ -51,12 +60,16 @@ if (DELAMETA_TARGET_LINUX)
 		-DDELAMETA_HOME_DIRECTORY="${CMAKE_SOURCE_DIR}"
 	)
 
+	# static linking
+	set(CMAKE_EXE_LINKER_FLAGS "-static-libstdc++ -static")
+
 	# thread dependency
 	find_package(Threads REQUIRED)
 	set_target_properties(delameta PROPERTIES COMPILE_OPTIONS "-pthread")
 	target_link_libraries(delameta PUBLIC ${CMAKE_THREAD_LIBS_INIT} stdc++fs)
 
 	# openssl dependency
+	set(OPENSSL_USE_STATIC_LIBS TRUE)
 	find_package(OpenSSL REQUIRED)
 	target_link_libraries(delameta PUBLIC OpenSSL::SSL OpenSSL::Crypto)
 
@@ -121,6 +134,13 @@ if (DELAMETA_TARGET_STM32)
 	# build library
 	file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS src/*.* core/stm32_hal/*.*)
 	add_library(delameta ${SOURCES})
+	
+	set_target_properties(delameta PROPERTIES
+		CXX_STANDARD ${DELAMETA_CXX_STANDARD}
+		CXX_STANDARD_REQUIRED ON
+		CXX_EXTENSIONS OFF
+	)
+
 	target_compile_options(delameta PRIVATE
 		-Wall
 		-Wextra

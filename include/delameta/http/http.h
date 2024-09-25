@@ -399,6 +399,7 @@ namespace Project::delameta::http {
                 res.body = etl::json::serialize(result);
                 if (ct == res.headers.end()) res.headers["Content-Type"] = "text/plain";
             } else if constexpr (std::is_same_v<T, std::vector<uint8_t>>) {
+                res.headers["Content-Length"] = std::to_string(result.size());
                 res.body_stream << std::move(result);
                 if (ct == res.headers.end()) res.headers["Content-Type"] = "application/octet-stream";
             } else if constexpr (std::is_same_v<T, ResponseWriter>) {

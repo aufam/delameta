@@ -10,10 +10,25 @@ build-amd64:
   image:
     - debian:bullseye-slim
   before_script:
-    - apt update && apt -y install cmake ninja-build
+    - apt-get update && \
+      apt-get install -y --no-install-recommends \
+      g++ \
+      build-essential \
+      ninja-build \
+      cmake \
+      git \
+      ca-certificates \
+      libssl-dev \
+      && apt-get clean \
+      && rm -rf /var/lib/apt/lists/*
   script:
     - mkdir -p build
-    - cmake -B build -G Ninja -DDELAMETA_BUILD_APP=ON -DDELAMETA_BUILD_TEST=ON -DCMAKE_BUILD_TYPE=Release
+    - cmake -B build \
+      -G Ninja \
+      -DDELAMETA_BUILD_APP=ON \
+      -DDELAMETA_BUILD_TEST=ON \
+      -DDELAMETA_CXX_STANDARD=20 \
+      -DCMAKE_BUILD_TYPE=Release
     - cmake --build build
     - ctest --test-dir build --output-on-failure
     - cmake --build build -t build-deb
@@ -28,10 +43,25 @@ build-arm64:
   image:
     - arm64v8/debian:bullseye-slim
   before_script:
-    - apt update && apt -y install cmake ninja-build
+    - apt-get update && \
+      apt-get install -y --no-install-recommends \
+      g++ \
+      build-essential \
+      ninja-build \
+      cmake \
+      git \
+      ca-certificates \
+      libssl-dev \
+      && apt-get clean \
+      && rm -rf /var/lib/apt/lists/*
   script:
     - mkdir -p build
-    - cmake -B build -G Ninja -DDELAMETA_BUILD_APP=ON -DDELAMETA_BUILD_TEST=ON -DCMAKE_BUILD_TYPE=Release
+    - cmake -B build \
+      -G Ninja \
+      -DDELAMETA_BUILD_APP=ON \
+      -DDELAMETA_BUILD_TEST=ON \
+      -DDELAMETA_CXX_STANDARD=20 \
+      -DCMAKE_BUILD_TYPE=Release
     - cmake --build build
     - ctest --test-dir build --output-on-failure
     - cmake --build build -t build-deb
@@ -46,10 +76,25 @@ build-arm32:
   image:
     - arm32v8/debian:bullseye-slim
   before_script:
-    - apt update && apt -y install cmake ninja-build
+    - apt-get update && \
+      apt-get install -y --no-install-recommends \
+      g++ \
+      build-essential \
+      ninja-build \
+      cmake \
+      git \
+      ca-certificates \
+      libssl-dev \
+      && apt-get clean \
+      && rm -rf /var/lib/apt/lists/*
   script:
     - mkdir -p build
-    - cmake -B build -G Ninja -DDELAMETA_BUILD_APP=ON -DDELAMETA_BUILD_TEST=ON -DCMAKE_BUILD_TYPE=Release
+    - cmake -B build \
+      -G Ninja \
+      -DDELAMETA_BUILD_APP=ON \
+      -DDELAMETA_BUILD_TEST=ON \
+      -DDELAMETA_CXX_STANDARD=20 \
+      -DCMAKE_BUILD_TYPE=Release
     - cmake --build build
     - ctest --test-dir build --output-on-failure
     - cmake --build build -t build-deb
