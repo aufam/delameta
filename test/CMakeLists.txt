@@ -1,20 +1,6 @@
-delameta_find_or_fetch_library(
-    boost_preprocessor
-    https://github.com/boostorg/preprocessor.git
-    master
-)
-
-delameta_find_or_fetch_library(
-    fmt
-    https://github.com/fmtlib/fmt.git
-    master
-)
-
-delameta_find_or_fetch_library(
-    GTest
-    https://github.com/google/googletest.git
-    main
-)
+CPMAddPackage("gh:google/googletest@1.15.2")
+CPMAddPackage("gh:boostorg/preprocessor#boost-1.86.0")
+CPMAddPackage("gh:fmtlib/fmt#11.0.2")
 
 file(GLOB_RECURSE TEST_SOURCES *.*)
 add_executable(test_all ${TEST_SOURCES})

@@ -1,5 +1,10 @@
 #include <delameta/http/http.h>
+#include <delameta/http/chunked.h>
+#include <delameta/file.h>
 #include <gtest/gtest.h>
+#include <iterator>
+#include <string_view>
+#include <vector>
 
 using namespace Project;
 using namespace delameta::http;
@@ -90,10 +95,13 @@ TEST(Http, response) {
 TEST(Http, handler) {
     Http handler;
     
-    handler.route("/test", {"GET"}, std::tuple{arg::body, arg::default_val("id", 0)},
-    [](std::string body, int id) {
-        if (id > 0) return body + " with id = " + std::to_string(id);
-        return body;
+    handler.route("/test", {"POST", "PUT"}, std::tuple{arg::method, arg::body, arg::default_val("id", 0)},
+    [](std::string_view method, std::string body, int id) {
+        auto res = std::string(method) + ": " + body;
+        if (id > 0) {
+            return res + " with id = " + std::to_string(id);
+        }
+        return res;
     });
 
     DummyDescriptor desc;
@@ -105,12 +113,12 @@ TEST(Http, handler) {
         EXPECT_EQ(req.method, "GET");
         EXPECT_EQ(req.url.full_path, "/test");
         EXPECT_EQ(req.version, "HTTP/1.1");
-        EXPECT_EQ(req.body, "this is body");
+        EXPECT_EQ(req.body, ""); // req.body is empty because the method constraint is not satisfied
 
-        EXPECT_EQ(res.status, delameta::http::StatusOK);
-        EXPECT_EQ(res.status_string, "OK");
+        EXPECT_EQ(res.status, delameta::http::StatusMethodNotAllowed);
+        EXPECT_EQ(res.status_string, "Method Not Allowed");
         EXPECT_EQ(res.version, "HTTP/1.1");
-        EXPECT_EQ(res.body, "this is body");
+        EXPECT_EQ(res.body, "");
     } {
         std::string payload = "POST /test HTTP/1.1\r\nContent-Length: 12\r\n\r\nthis is body";
         const auto payload_vec = std::vector<uint8_t>(payload.begin(), payload.end());
@@ -119,19 +127,19 @@ TEST(Http, handler) {
         EXPECT_EQ(req.method, "POST");
         EXPECT_EQ(req.url.full_path, "/test");
         EXPECT_EQ(req.version, "HTTP/1.1");
-        EXPECT_EQ(req.body, "");
+        EXPECT_EQ(req.body, "this is body");
 
-        EXPECT_EQ(res.status, delameta::http::StatusMethodNotAllowed);
-        EXPECT_EQ(res.status_string, "Method Not Allowed");
+        EXPECT_EQ(res.status, delameta::http::StatusOK);
+        EXPECT_EQ(res.status_string, "OK");
         EXPECT_EQ(res.version, "HTTP/1.1");
-        EXPECT_EQ(res.body, "");
+        EXPECT_EQ(res.body, "POST: this is body");
     } {
-        std::string payload = "GET /test123 HTTP/1.1\r\nContent-Length: 12\r\n\r\nthis is body";
+        std::string payload = "PUT /test/123 HTTP/1.1\r\nContent-Length: 12\r\n\r\nthis is body";
         const auto payload_vec = std::vector<uint8_t>(payload.begin(), payload.end());
         auto [req, res] = handler.execute(desc, payload_vec);
 
-        EXPECT_EQ(req.method, "GET");
-        EXPECT_EQ(req.url.full_path, "/test123");
+        EXPECT_EQ(req.method, "PUT");
+        EXPECT_EQ(req.url.full_path, "/test/123");
         EXPECT_EQ(req.version, "HTTP/1.1");
         EXPECT_EQ(req.body, "");
 
@@ -140,11 +148,11 @@ TEST(Http, handler) {
         EXPECT_EQ(res.version, "HTTP/1.1");
         EXPECT_EQ(res.body, "");
     } {
-        std::string payload = "GET /test?id=123 HTTP/1.1\r\nContent-Length: 12\r\n\r\nthis is body";
+        std::string payload = "PUT /test?id=123 HTTP/1.1\r\nContent-Length: 12\r\n\r\nthis is body";
         const auto payload_vec = std::vector<uint8_t>(payload.begin(), payload.end());
         auto [req, res] = handler.execute(desc, payload_vec);
 
-        EXPECT_EQ(req.method, "GET");
+        EXPECT_EQ(req.method, "PUT");
         EXPECT_EQ(req.url.full_path, "/test?id=123");
         EXPECT_EQ(req.version, "HTTP/1.1");
         EXPECT_EQ(req.body, "this is body");
@@ -152,7 +160,7 @@ TEST(Http, handler) {
         EXPECT_EQ(res.status, delameta::http::StatusOK);
         EXPECT_EQ(res.status_string, "OK");
         EXPECT_EQ(res.version, "HTTP/1.1");
-        EXPECT_EQ(res.body, "this is body with id = 123");
+        EXPECT_EQ(res.body, "PUT: this is body with id = 123");
     }
 }
 
@@ -222,4 +230,70 @@ TEST(Http, form) {
     const auto header_vec = std::vector<uint8_t>(header.begin(), header.end());
     auto [req, res] = handler.execute(desc, header_vec);
     EXPECT_EQ(res.status, StatusOK);
+}
+
+class StringDescriptor : public delameta::Descriptor {
+public:
+    explicit StringDescriptor(std::string_view sv) : sv(sv) {}
+
+    delameta::Result<std::vector<uint8_t>> read() override {
+        std::vector<uint8_t> res(sv.begin(), sv.end());
+        sv = "";
+        return Ok(std::move(res));
+    }
+    delameta::Result<std::vector<uint8_t>> read_until(size_t n) override {
+        std::vector<uint8_t> res(sv.begin(), sv.begin() + n);
+        sv = sv.substr(n);
+        return Ok(std::move(res));
+    }
+    Stream read_as_stream(size_t) override {
+        Stream s;
+        s << sv;
+        sv = "";
+        return s;
+    }
+    delameta::Result<void> write(std::string_view) override {
+        return Err(delameta::Error(-1, "Not implemented"));
+    }
+
+    std::string_view sv;
+};
+
+TEST(Http, chunked) {
+    Stream s = json::serialize_as_stream(json::Map{
+        {"name", std::string("Jupri")},
+        {"age", 19},
+        {"is_married", true},
+        {"salary", 9.1},
+        {"role", nullptr},
+    });
+
+    s = chunked_encode(s);
+
+    std::string buffer;
+    int idx = 0;
+
+    s >> [&](std::string_view sv) {
+        buffer += sv;
+        if (idx == 0) { EXPECT_EQ(sv, std::string_view("10\r\n{\"name\":\"Jupri\",\r\n")); }
+        if (idx == 1) { EXPECT_EQ(sv, std::string_view("9\r\n\"age\":19,\r\n")); }
+        if (idx == 2) { EXPECT_EQ(sv, std::string_view("12\r\n\"is_married\":true,\r\n")); }
+        if (idx == 3) { EXPECT_EQ(sv, std::string_view("F\r\n\"salary\":9.100,\r\n")); }
+        if (idx == 4) { EXPECT_EQ(sv, std::string_view("C\r\n\"role\":null}\r\n")); }
+        if (idx == 5) { EXPECT_EQ(sv, std::string_view("0\r\n\r\n")); }
+        ++idx;
+    };
+
+    StringDescriptor sd(buffer);
+    Stream ss = chunked_decode(sd);
+    idx = 0;
+
+    ss >> [&](std::string_view sv) {
+        if (idx == 0) { EXPECT_EQ(sv, std::string_view("{\"name\":\"Jupri\",")); }
+        if (idx == 1) { EXPECT_EQ(sv, std::string_view("\"age\":19,")); }
+        if (idx == 2) { EXPECT_EQ(sv, std::string_view("\"is_married\":true,")); }
+        if (idx == 3) { EXPECT_EQ(sv, std::string_view("\"salary\":9.100,")); }
+        if (idx == 4) { EXPECT_EQ(sv, std::string_view("\"role\":null}")); }
+        ++idx;
+    };
 }

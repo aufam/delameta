@@ -1,28 +1,13 @@
-delameta_find_or_fetch_library(
-    boost_preprocessor
-    https://github.com/boostorg/preprocessor.git
-    master
-)
-
-set(JWT_BUILD_EXAMPLES OFF CACHE BOOL "Disable build example" FORCE)
-delameta_find_or_fetch_library(
-    jwt-cpp
-    https://github.com/Thalhammer/jwt-cpp.git
-    master
-)
-
-delameta_find_or_fetch_library(
-    fmt
-    https://github.com/fmtlib/fmt.git
-    master
-)
+CPMAddPackage("gh:boostorg/preprocessor#boost-1.86.0")
+CPMAddPackage("gh:fmtlib/fmt#11.0.2")
+CPMAddPackage("gh:Thalhammer/jwt-cpp@0.7.0")
 
 # main app
 file(GLOB_RECURSE APP_MAIN_SOURCES *.*)
 add_executable(main ${APP_MAIN_SOURCES})
 
 target_compile_features(main PRIVATE cxx_std_23)
-target_link_libraries(main PRIVATE delameta jwt-cpp boost_preprocessor fmt)
+target_link_libraries(main PRIVATE delameta boost_preprocessor fmt jwt-cpp)
 target_compile_options(main PRIVATE -Wall -Wextra -Wno-literal-suffix -Wno-attributes)
 
 # Define package metadata
@@ -48,13 +33,13 @@ add_custom_target(build-deb
     COMMAND mkdir -p ${PACKAGE_DEBIAN_DIR}/usr/share/${PACKAGE_NAME}/assets
     COMMAND cp ${CMAKE_SOURCE_DIR}/app/README.html -T ${PACKAGE_DEBIAN_DIR}/usr/share/${PACKAGE_NAME}/assets/index.html
     COMMAND cp ${CMAKE_SOURCE_DIR}/app/README.md ${PACKAGE_DEBIAN_DIR}/usr/share/${PACKAGE_NAME}/assets
-    
+
     # build the package
     COMMAND dpkg-deb --build ${PACKAGE_NAME} ${PACKAGE_NAME}-${PACKAGE_VERSION}.deb
 
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
     COMMENT "Building Debian package"
-    
+
     DEPENDS delameta main
 )
 

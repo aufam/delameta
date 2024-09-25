@@ -32,7 +32,7 @@ auto get_jwt_username(const http::RequestReader& req, http::ResponseWriter&) -> 
     }
 
     token = token.substr(prefix.length());
-    
+
     try {
         auto decoded = jwt::decode(std::string(token));
         auto verifier = jwt::verify()
@@ -67,7 +67,7 @@ static HTTP_ROUTE(
         .set_audience("audience")
         .set_subject("user_id")
         .set_issued_at(std::chrono::system_clock::now())
-        .set_expires_in(std::chrono::seconds{3600})
+        .set_expires_at(std::chrono::system_clock::now() + std::chrono::seconds{3600})
         .set_payload_claim("username", jwt::claim(username))
         .sign(jwt::algorithm::hs256{SECRET});
 

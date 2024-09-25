@@ -1,29 +1,59 @@
-image: gcc
-
 stages:
-  - build
-  - test
+  - build-amd64
+  - build-arm64
+  - build-arm32
 
-build:
-  stage: build
+build-amd64:
+  stage: build-amd64
   only:
     - /^release\/.*/
+  image:
+    - debian:bullseye-slim
   before_script:
-    - apt update && apt -y install cmake
+    - apt update && apt -y install cmake ninja-build
   script:
     - mkdir -p build
-    - cmake -B build -DDELAMETA_BUILD_APP=ON -DDELAMETA_BUILD_TEST=ON -DCMAKE_BUILD_TYPE=Debug
-    - cmake --build build -j10 -t test_all
-    - cmake --build build -j10 -t build-deb
+    - cmake -B build -G Ninja -DDELAMETA_BUILD_APP=ON -DDELAMETA_BUILD_TEST=ON -DCMAKE_BUILD_TYPE=Release
+    - cmake --build build
+    - ctest --test-dir build --output-on-failure
+    - cmake --build build -t build-deb
   artifacts:
     paths:
-      - build/test/test_all
       - build/*.deb
 
-test:
-  stage: test
+build-arm64:
+  stage: build-arm64
   only:
     - /^release\/.*/
+  image:
+    - arm64v8/debian:bullseye-slim
+  before_script:
+    - apt update && apt -y install cmake ninja-build
   script:
-    - ./build/test/test_all
+    - mkdir -p build
+    - cmake -B build -G Ninja -DDELAMETA_BUILD_APP=ON -DDELAMETA_BUILD_TEST=ON -DCMAKE_BUILD_TYPE=Release
+    - cmake --build build
+    - ctest --test-dir build --output-on-failure
+    - cmake --build build -t build-deb
+  artifacts:
+    paths:
+      - build/*.deb
+
+build-arm32:
+  stage: build-arm32
+  only:
+    - /^release\/.*/
+  image:
+    - arm32v8/debian:bullseye-slim
+  before_script:
+    - apt update && apt -y install cmake ninja-build
+  script:
+    - mkdir -p build
+    - cmake -B build -G Ninja -DDELAMETA_BUILD_APP=ON -DDELAMETA_BUILD_TEST=ON -DCMAKE_BUILD_TYPE=Release
+    - cmake --build build
+    - ctest --test-dir build --output-on-failure
+    - cmake --build build -t build-deb
+  artifacts:
+    paths:
+      - build/*.deb
 

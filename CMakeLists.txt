@@ -18,36 +18,14 @@ elseif (NOT DELAMETA_TARGET_LINUX AND NOT DELAMETA_TARGET_STM32)
 endif()
 
 # some messages
-message("DELAMETA_VERSION      : ${PROJECT_VERSION}")
-message("DELAMETA_BUILD_APP    : ${DELAMETA_BUILD_APP}")
-message("DELAMETA_BUILD_TEST   : ${DELAMETA_BUILD_TEST}")
-message("DELAMETA_TARGET_LINUX : ${DELAMETA_TARGET_LINUX}")
-message("DELAMETA_TARGET_STM32 : ${DELAMETA_TARGET_STM32}")
+message(STATUS "DELAMETA_VERSION      : ${PROJECT_VERSION}")
+message(STATUS "DELAMETA_BUILD_APP    : ${DELAMETA_BUILD_APP}")
+message(STATUS "DELAMETA_BUILD_TEST   : ${DELAMETA_BUILD_TEST}")
+message(STATUS "DELAMETA_TARGET_LINUX : ${DELAMETA_TARGET_LINUX}")
+message(STATUS "DELAMETA_TARGET_STM32 : ${DELAMETA_TARGET_STM32}")
 
-# find or fetch
-include(FetchContent)
-function(delameta_find_or_fetch_library LIB_NAME GIT_REPOSITORY GIT_TAG)
-    # Check if the library is provided by the parent project
-    if(NOT TARGET ${LIB_NAME})
-        # Try to find the library installed system-wide
-        find_package(${LIB_NAME} QUIET)
-
-        # If not found, fetch it using FetchContent
-        if(NOT ${LIB_NAME}_FOUND)
-            message(STATUS "Fetching ${LIB_NAME} from ${GIT_REPOSITORY}...")
-            FetchContent_Declare(
-                ${LIB_NAME}
-                GIT_REPOSITORY ${GIT_REPOSITORY}
-                GIT_TAG ${GIT_TAG}
-            )
-            FetchContent_MakeAvailable(${LIB_NAME})
-        else()
-            message(STATUS "${LIB_NAME} ${${LIB_NAME}_VERSION} found system-wide.")
-        endif()
-    else()
-        message(STATUS "${LIB_NAME} ${${LIB_NAME}_VERSION} found in the parent project.")
-    endif()
-endfunction()
+# cpm cmake
+include(cmake/CPM.cmake)
 
 if (DELAMETA_TARGET_LINUX)
 	# build library
@@ -82,8 +60,13 @@ if (DELAMETA_TARGET_LINUX)
 	find_package(OpenSSL REQUIRED)
 	target_link_libraries(delameta PUBLIC OpenSSL::SSL OpenSSL::Crypto)
 
-	# etl dependency
-	delameta_find_or_fetch_library(etl https://github.com/aufam/etl.git main)
+	# etl dependency, find the package system wide or download using CPM
+	find_package(etl QUIET)
+	if (etl_FOUND)
+		message(STATUS "Found etl v${etl_VERSION} system wide")
+	else ()
+		CPMAddPackage("gh:aufam/etl#main")
+	endif ()
 	target_link_libraries(delameta PUBLIC etl)
 
 	# install target
@@ -157,8 +140,10 @@ if (DELAMETA_TARGET_STM32)
 		-DDELAMETA_HOME_DIRECTORY="${CMAKE_SOURCE_DIR}"
 	)
 
-	# etl dependency
-	delameta_find_or_fetch_library(etl https://github.com/aufam/etl.git FreeRTOS)
+	# etl dependency, must be provided by the parent CMakeLists or download using CPM
+	if (NOT TARGET etl)
+		CPMAddPackage("gh:aufam/etl#FreeRTOS")
+	endif ()
 	target_link_libraries(delameta PUBLIC etl)
 endif (DELAMETA_TARGET_STM32)
 

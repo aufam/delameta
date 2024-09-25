@@ -243,7 +243,11 @@ auto Server<TCP>::start(const char* file, int line, Args args) -> Result<void> {
                 auto read_result = session->read();
                 if (read_result.is_err()) {
                     warning(session->file, session->line, read_result.unwrap_err().what);
-                    break;
+                    if (read_result.unwrap_err().code == Error::TransferTimeout) {
+                        continue;
+                    } else {
+                        break;
+                    }
                 }
 
                 auto stream = self->execute_stream_session(*session, "TCP", read_result.unwrap());
@@ -254,7 +258,6 @@ auto Server<TCP>::start(const char* file, int line, Args args) -> Result<void> {
                         info(session->file, session->line, "Reached maximum receive: " + std::to_string(session->socket));
                     }
                     break;
-                    info(session->file, session->line, "not keep alive");
                 }
             }
 

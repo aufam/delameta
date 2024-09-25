@@ -3,6 +3,7 @@
 
 #include <string>
 #include <etl/result.h>
+#include <string_view>
 
 namespace Project::delameta {
     inline constexpr int char_bin_into_int(char ch) {
@@ -93,6 +94,28 @@ namespace Project::delameta {
             int remainder = number % 16;
             res = digits[remainder] + res;
             number /= 16;
+        }
+
+        return res;
+    }
+
+    inline std::string_view string_view_consume_line(std::string_view& sv) {
+        size_t pos = 0;
+        for (; pos < sv.size(); ++pos) {
+            if (sv[pos] == '\n') {
+                break;
+            }
+        }
+
+        auto res = sv.substr(0, pos);
+        sv = sv.substr(pos);
+
+        if (sv.size() > 0 && sv[0] == '\n') {
+            sv = sv.substr(1);  // Move past the newline character
+        }
+
+        if (res.size() > 0 && res.back() == '\r') {
+            res = res.substr(0, res.size() - 1);
         }
 
         return res;

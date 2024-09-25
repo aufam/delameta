@@ -17,8 +17,8 @@ HTTP_EXTERN_OBJECT(app);
 static HTTP_ROUTE(
     ("/udp", ("POST")),
     (test_udp),
-        (Stream     , body, http::arg::body                  )
-        (std::string, host, http::arg::arg("host")           )
+        (Stream     , body, http::arg::body                     )
+        (std::string, host, http::arg::arg("host")              )
         (int        , tout, http::arg::default_val("timeout", 5)),
     (http::Result<std::vector<uint8_t>>)
 ) {
