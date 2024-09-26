@@ -13,7 +13,7 @@ build-amd64:
     - apt install -y --no-install-recommends g++ build-essential ninja-build cmake git ca-certificates libssl-dev
   script:
     - mkdir -p build-amd64
-    - cmake -B build-amd64 -G Ninja -DDELAMETA_BUILD_APP=ON -DDELAMETA_BUILD_TEST=ON -DDELAMETA_CXX_STANDARD=20 -DCMAKE_BUILD_TYPE=Release
+    - cmake -B build-amd64 -G Ninja -DDELAMETA_BUILD_APP=ON -DDELAMETA_BUILD_TEST=ON -DCMAKE_CXX_STANDARD=20 -DCMAKE_BUILD_TYPE=Release
     - cmake --build build-amd64
     - ctest --test-dir build-amd64 --output-on-failure
     - cmake --build build-amd64 -t build-deb
@@ -31,7 +31,7 @@ build-arm64:
     - apt install -y --no-install-recommends g++ build-essential ninja-build cmake git ca-certificates libssl-dev
   script:
     - mkdir -p build-arm64
-    - cmake -B build-arm64 -G Ninja -DDELAMETA_BUILD_APP=ON -DDELAMETA_BUILD_TEST=ON -DDELAMETA_CXX_STANDARD=20 -DCMAKE_BUILD_TYPE=Release
+    - cmake -B build-amd64 -G Ninja -DDELAMETA_BUILD_APP=ON -DDELAMETA_BUILD_TEST=ON -DCMAKE_CXX_STANDARD=20 -DCMAKE_BUILD_TYPE=Release
     - cmake --build build-arm64
     - ctest --test-dir build-arm64 --output-on-failure
     - cmake --build build-arm64 -t build-deb
@@ -49,7 +49,7 @@ build-arm32:
     - apt install -y --no-install-recommends g++ build-essential ninja-build cmake git ca-certificates libssl-dev
   script:
     - mkdir -p build-arm32
-    - cmake -B build-arm32 -G Ninja -DDELAMETA_BUILD_APP=ON -DDELAMETA_BUILD_TEST=ON -DDELAMETA_CXX_STANDARD=20 -DCMAKE_BUILD_TYPE=Release
+    - cmake -B build-amd64 -G Ninja -DDELAMETA_BUILD_APP=ON -DDELAMETA_BUILD_TEST=ON -DCMAKE_CXX_STANDARD=20 -DCMAKE_BUILD_TYPE=Release
     - cmake --build build-arm32
     - ctest --test-dir build-arm32 --output-on-failure
     - cmake --build build-arm32 -t build-deb

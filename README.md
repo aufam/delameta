@@ -60,6 +60,9 @@ set(DELAMETA_TARGET_LINUX OFF CACHE BOOL "Disable target for Linux" FORCE)
 set(DELAMETA_TARGET_STM32 ON CACHE BOOL "Enable target for STM32" FORCE)
 ```
 
+### Requirements
+* c++17 minimum
+
 ### Linux requirements
 * libssl
   ```bash

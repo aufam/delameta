@@ -6,12 +6,6 @@ CPMAddPackage("gh:Thalhammer/jwt-cpp@0.7.0")
 file(GLOB_RECURSE APP_MAIN_SOURCES *.*)
 add_executable(main ${APP_MAIN_SOURCES})
 
-set_target_properties(main PROPERTIES
-    CXX_STANDARD ${DELAMETA_CXX_STANDARD}
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF
-)
-
 target_link_libraries(main PRIVATE delameta boost_preprocessor fmt jwt-cpp)
 target_compile_options(main PRIVATE -Wall -Wextra -Wno-literal-suffix -Wno-attributes)
 

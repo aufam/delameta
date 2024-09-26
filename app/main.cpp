@@ -196,7 +196,7 @@ OPTS_MAIN(
             return Ok();
         });
 
-        if (output.starts_with("stdio://") and not isn_lf) {
+        if (output.size() >= 8 && output.substr(0, 8) == "stdio://" and not isn_lf) {
             fmt::println("");
         }
 

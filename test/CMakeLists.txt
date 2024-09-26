@@ -5,12 +5,6 @@ CPMAddPackage("gh:fmtlib/fmt#11.0.2")
 file(GLOB_RECURSE TEST_SOURCES *.*)
 add_executable(test_all ${TEST_SOURCES})
 
-set_target_properties(test_all PROPERTIES
-	CXX_STANDARD ${DELAMETA_CXX_STANDARD}
-	CXX_STANDARD_REQUIRED ON
-	CXX_EXTENSIONS OFF
-)
-
 target_link_libraries(test_all PRIVATE delameta boost_preprocessor fmt gtest gtest_main)
 target_compile_options(test_all PRIVATE -Wall -Wextra -Wno-literal-suffix -Wno-attributes)
 
