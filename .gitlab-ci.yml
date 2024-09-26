@@ -7,9 +7,9 @@ build-amd64:
   stage: build-amd64
   only:
     - /^release\/.*/
-  image: debian@sha256:00558f781b91e90469812bad32002f311ab26ef241b4a1996f6600680ec82f5c
+  image: debian:bullseye-slim
   before_script:
-    - apt update && apt upgrade
+    - apt update && apt upgrade -y
     - apt install -y --no-install-recommends \
         g++ \
         build-essential \
@@ -39,7 +39,7 @@ build-arm64:
     - /^release\/.*/
   image: arm64v8/debian:bullseye-slim
   before_script:
-    - apt update && apt upgrade
+    - apt update && apt upgrade -y
     - apt install -y --no-install-recommends \
         g++ \
         build-essential \
@@ -69,7 +69,7 @@ build-arm32:
     - /^release\/.*/
   image: arm32v8/debian:bullseye-slim
   before_script:
-    - apt update && apt upgrade
+    - apt update && apt upgrade -y
     - apt install -y --no-install-recommends \
         g++ \
         build-essential \
