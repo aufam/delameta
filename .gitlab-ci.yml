@@ -1,15 +1,14 @@
 stages:
-  - build-amd64
-  - build-arm64
-  - build-arm32
+  - build-debian
+  - build-ubuntu
 
-build-amd64:
-  stage: build-amd64
+build-debian:
+  stage: build-debian
   only:
     - /^release\/.*/
   image: debian:bullseye-slim
   before_script:
-    - apt update && apt upgrade -y
+    - apt update
     - apt install -y --no-install-recommends g++ build-essential ninja-build cmake git ca-certificates libssl-dev
   script:
     - mkdir -p build-amd64
@@ -21,39 +20,21 @@ build-amd64:
     paths:
       - build-amd64/*.deb
 
-build-arm64:
-  stage: build-arm64
+build-ubuntu:
+  stage: build-ubuntu
   only:
     - /^release\/.*/
-  image: arm64v8/debian:bullseye-slim
+  image: ubuntu:jammy
   before_script:
-    - apt update && apt upgrade -y
+    - apt update
     - apt install -y --no-install-recommends g++ build-essential ninja-build cmake git ca-certificates libssl-dev
   script:
-    - mkdir -p build-arm64
-    - cmake -B build-amd64 -G Ninja -DDELAMETA_BUILD_APP=ON -DDELAMETA_BUILD_TEST=ON -DCMAKE_CXX_STANDARD=20 -DCMAKE_BUILD_TYPE=Release
-    - cmake --build build-arm64
-    - ctest --test-dir build-arm64 --output-on-failure
-    - cmake --build build-arm64 -t build-deb
+    - mkdir -p build
+    - cmake -B build -G Ninja -DDELAMETA_BUILD_APP=ON -DDELAMETA_BUILD_TEST=ON -DCMAKE_CXX_STANDARD=20 -DCMAKE_BUILD_TYPE=Release
+    - cmake --build build
+    - ctest --test-dir build --output-on-failure
+    - cmake --build build -t build-deb
   artifacts:
     paths:
-      - build-arm64/*.deb
-
-build-arm32:
-  stage: build-arm32
-  only:
-    - /^release\/.*/
-  image: arm32v8/debian:bullseye-slim
-  before_script:
-    - apt update && apt upgrade -y
-    - apt install -y --no-install-recommends g++ build-essential ninja-build cmake git ca-certificates libssl-dev
-  script:
-    - mkdir -p build-arm32
-    - cmake -B build-amd64 -G Ninja -DDELAMETA_BUILD_APP=ON -DDELAMETA_BUILD_TEST=ON -DCMAKE_CXX_STANDARD=20 -DCMAKE_BUILD_TYPE=Release
-    - cmake --build build-arm32
-    - ctest --test-dir build-arm32 --output-on-failure
-    - cmake --build build-arm32 -t build-deb
-  artifacts:
-    paths:
-      - build-arm32/*.deb
+      - build/*.deb
 
