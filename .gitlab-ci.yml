@@ -17,9 +17,7 @@ build-amd64:
       cmake \
       git \
       ca-certificates \
-      libssl-dev \
-      && apt-get clean \
-      && rm -rf /var/lib/apt/lists/*
+      libssl-dev
   script:
     - mkdir -p build
     - cmake -B build \
@@ -49,9 +47,7 @@ build-arm64:
       cmake \
       git \
       ca-certificates \
-      libssl-dev \
-      && apt-get clean \
-      && rm -rf /var/lib/apt/lists/*
+      libssl-dev
   script:
     - mkdir -p build
     - cmake -B build \
@@ -81,9 +77,7 @@ build-arm32:
       cmake \
       git \
       ca-certificates \
-      libssl-dev \
-      && apt-get clean \
-      && rm -rf /var/lib/apt/lists/*
+      libssl-dev
   script:
     - mkdir -p build
     - cmake -B build \
