@@ -9,8 +9,8 @@ build-amd64:
     - /^release\/.*/
   image: debian:bullseye
   before_script:
-    - apt-get update && \
-      apt-get install -y --no-install-recommends \
+    - apt update
+    - apt install -y --no-install-recommends \
       g++ \
       build-essential \
       ninja-build \
@@ -39,8 +39,8 @@ build-arm64:
     - /^release\/.*/
   image: arm64v8/debian:bullseye
   before_script:
-    - apt-get update && \
-      apt-get install -y --no-install-recommends \
+    - apt update
+    - apt install -y --no-install-recommends \
       g++ \
       build-essential \
       ninja-build \
@@ -69,8 +69,8 @@ build-arm32:
     - /^release\/.*/
   image: arm32v8/debian:bullseye
   before_script:
-    - apt-get update && \
-      apt-get install -y --no-install-recommends \
+    - apt update
+    - apt install -y --no-install-recommends \
       g++ \
       build-essential \
       ninja-build \
