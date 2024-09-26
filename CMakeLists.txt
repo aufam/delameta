@@ -9,7 +9,7 @@ option(DELAMETA_BUILD_APP 	 "Build the main app" OFF)
 option(DELAMETA_BUILD_TEST 	 "Build the test" OFF)
 option(DELAMETA_TARGET_LINUX "Build for Linux" ON)
 option(DELAMETA_TARGET_STM32 "Build for STM32" OFF)
-set(DELAMETA_CXX_STANDARD 23)
+set(DELAMETA_CXX_STANDARD 23 CACHE INTEGER "C++ standard for app and test")
 
 # Ensure that only one target is selected
 if (DELAMETA_TARGET_LINUX AND DELAMETA_TARGET_STM32)
