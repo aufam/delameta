@@ -11,11 +11,11 @@ build-debian:
     - apt update
     - apt install -y --no-install-recommends g++ build-essential ninja-build cmake git ca-certificates libssl-dev
   script:
-    - mkdir -p build-amd64
-    - cmake -B build-amd64 -G Ninja -DDELAMETA_BUILD_APP=ON -DDELAMETA_BUILD_TEST=ON -DCMAKE_CXX_STANDARD=20 -DCMAKE_BUILD_TYPE=Release
-    - cmake --build build-amd64
-    - ctest --test-dir build-amd64 --output-on-failure
-    - cmake --build build-amd64 -t build-deb
+    - mkdir -p build
+    - cmake -B build -G Ninja -DDELAMETA_BUILD_APP=ON -DDELAMETA_BUILD_TEST=ON -DCMAKE_CXX_STANDARD=20 -DCMAKE_BUILD_TYPE=Release
+    - cmake --build build
+    - ctest --test-dir build --output-on-failure
+    - cmake --build build -t build-deb
   artifacts:
     paths:
       - build-amd64/*.deb
