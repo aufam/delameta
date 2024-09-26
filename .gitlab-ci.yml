@@ -7,7 +7,7 @@ build-amd64:
   stage: build-amd64
   only:
     - /^release\/.*/
-  image: debian:bullseye
+  image: debian@sha256:00558f781b91e90469812bad32002f311ab26ef241b4a1996f6600680ec82f5c
   before_script:
     - apt update
     - apt install -y --no-install-recommends \
@@ -37,7 +37,7 @@ build-arm64:
   stage: build-arm64
   only:
     - /^release\/.*/
-  image: arm64v8/debian:bullseye
+  image: arm64v8/debian:bullseye-slim
   before_script:
     - apt update
     - apt install -y --no-install-recommends \
@@ -67,7 +67,7 @@ build-arm32:
   stage: build-arm32
   only:
     - /^release\/.*/
-  image: arm32v8/debian:bullseye
+  image: arm32v8/debian:bullseye-slim
   before_script:
     - apt update
     - apt install -y --no-install-recommends \
