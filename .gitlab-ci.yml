@@ -15,10 +15,10 @@ build-debian:
     - cmake -B build -G Ninja -DDELAMETA_BUILD_APP=ON -DDELAMETA_BUILD_TEST=ON -DCMAKE_CXX_STANDARD=20 -DCMAKE_BUILD_TYPE=Release
     - cmake --build build
     - ctest --test-dir build --output-on-failure
-    - cmake --build build -t build-deb
+    - cd build && cpack -G DEB
   artifacts:
     paths:
-      - build-amd64/*.deb
+      - build/*.deb
 
 build-ubuntu:
   stage: build-ubuntu
@@ -33,7 +33,7 @@ build-ubuntu:
     - cmake -B build -G Ninja -DDELAMETA_BUILD_APP=ON -DDELAMETA_BUILD_TEST=ON -DCMAKE_CXX_STANDARD=20 -DCMAKE_BUILD_TYPE=Release
     - cmake --build build
     - ctest --test-dir build --output-on-failure
-    - cmake --build build -t build-deb
+    - cd build && cpack -G DEB
   artifacts:
     paths:
       - build/*.deb
