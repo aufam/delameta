@@ -531,7 +531,15 @@ response.body_stream >> [&](std::string_view sv) {
 std::cout << response.status << '\n'; // 200
 std::cout << body << '\n'; // Hello world
 ```
-more example see [app/example.com](app/example.com)
+more example see [app/example.cpp](app/example.cpp)
 
 ## And more
-Feel free to head over to [app](app/) and [test](test/) for some more examples
+Feel free to head over to [app](app/) and [test](test/) for some more examples.
+Or you can visit my other github repository [todo](https://github.com/aufam/todo.git)
+that shows how to work with other modern c++ libraries like 
+[`cpm-cmake`](https://github.com/cpm-cmake/CPM.cmake),
+[`fmt`](https://github.com/fmtlib/fmt), 
+[`jwt-cpp`](https://github.com/Thalhammer/jwt-cpp),
+[`sqlpp11`](https://github.com/rbock/sqlpp11),
+[`Boost::preprocessor`](https://github.com/boostorg/preprocessor), and
+[`Catch2`](https://github.com/catchorg/Catch2)
