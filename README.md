@@ -172,9 +172,10 @@ For a more complete example of how to use this library with STM32, see my templa
 ## <a id="code_consideration"></a>Code Considerations and Structure
 
 ### Dependency
-The only dependency it has is [`etl`](https://github.com/aufam/etl.git).
-It uses [`etl::Result`](https://github.com/aufam/etl/blob/main/include/etl/result.h) to avoid exception.
-It also uses lightweight json parser [`etl::Json`](https://github.com/aufam/etl/blob/main/include/etl/json.h). 
+Since this library is also intended for embedded systems, it's strongly recommended to avoid exception.
+Therefore we use [`etl::Result`](https://github.com/aufam/etl/blob/main/include/etl/result.h) from
+[`etl`](https://github.com/aufam/etl.git) library that can provide return-error-by-value mechanism.
+It also has lightweight JSON parser [`etl::Json`](https://github.com/aufam/etl/blob/main/include/etl/json.h). 
 The cmake will check for the availability of `etl` target, if it's already available in your project configuration, 
 it will use it, otherwise it will fetch from the GitHub repository
 
@@ -332,9 +333,8 @@ Example usage:
 Stream is basically a list of `Stream::Rule` which is an `std::function<std::string_view(Stream&)>`. 
 You can add a rule using `operator<<`.
 ```c++
-#include <boost/preprocessor.hpp>
 #include <delameta/stream.h>
-#include <fstream>
+#include <fstream> // for demonstration
 
 using namespace Project;
 using delameta::Stream;
@@ -447,7 +447,7 @@ app.route("/person", {"PUT"}, std::tuple{http::arg::json},
 ```
 #### Arguments
 We don't support embedding arguments on the URL since it would be expensive in embedded systems.
-Instead you can expose query or header parameters using `http::arg::arg`
+Instead you can expose the query or header parameters using `http::arg::arg`
 ```c++
 app.route("/args", {"GET"}, std::tuple{http::arg::arg("id"), http::arg::arg("User-Agent")},
 [](int id, std::string user_agent) {
@@ -533,7 +533,52 @@ std::cout << body << '\n'; // Hello world
 ```
 more example see [app/example.cpp](app/example.cpp)
 
-## And more
+### Endpoints
+Endpoints are simply serial, file, or socket handlers. For example:
+```c++
+#include <delameta/endpoint.h>
+
+using namespace Project;
+using delameta::Endpoint;
+using delameta::Result;
+
+void example_endpoint() {
+  // stdio (only linux)
+  Result<Endpoint> stdio = Endpoint::Open("stdio://");
+
+  // serial (linux)
+  Result<Endpoint> serial1 = Endpoint::Open("serial:///dev/ttyACM0");
+  Result<Endpoint> serial2 = Endpoint::Open("serial:///dev/ttyUSB0?baud=9600");
+
+  // serial (STM32)
+  Result<Endpoint> serial3 = Endpoint::Open("serial:///usb"); // USB CDC
+  Result<Endpoint> serial4 = Endpoint::Open("serial:///uart1?baud=9600"); // UART1 handler
+  
+  // file (currently only linux)
+  Result<Endpoint> file1 = Endpoint::Open("file://some_relative_file.txt/?mode=rwa"); // example relative file with mode read write append
+  Result<Endpoint> file2 = Endpoint::Open("file:///home/user/some_absolute_file.txt?mode=r"); // example absolute file with mode read only
+
+  // TCP
+  Result<Endpoint> tcp_client = Endpoint::Open("tcp://localhost:5000"); // example TCP client
+
+  // UDP
+  Result<Endpoint> udp_client = Endpoint::Open("udp://localhost:12345"); // example UDP client
+  Result<Endpoint> udp_server = Endpoint::Open("udp://localhost:54321/?as-server"); // example UDP server
+}
+```
+Some endpoint operations:
+```c++
+// write
+Result<void> write_result = endpoint.write("some data"); // write with string
+Result<void> write_result = endpoint.write(std::vector<uint8_t>{0xaa, 0xbb, 0xcc}); // write with std::vector
+
+// read
+Result<std::vector<uint8_t>> read_result = endpoint.read(); // read until available
+Result<std::vector<uint8_t>> read_result = endpoint.read_until(64); // read until 64 bytes
+Stream read_stream = endpoint.read_as_stream(64); // read until 64 bytes as stream
+```
+
+### And more
 Feel free to head over to [app](app/) and [test](test/) for some more examples.
 Or you can visit my other github repository [todo](https://github.com/aufam/todo.git)
 that shows how to work with other modern c++ libraries like 
