@@ -11,10 +11,10 @@ COPY test/CMakeLists.txt test/
 COPY version.txt .
 
 RUN mkdir -p app/ && echo "" > app/dummy.cpp
+RUN mkdir -p src/ && echo "" > src/dummy.cpp
 RUN mkdir -p test/ && echo "" > test/dummy.cpp
-RUN mkdir -p core/linux/ && echo "" > core/linux/dummy.cpp
 
-RUN cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_STANDARD=20 -DDELAMETA_BUILD_APP=ON -DDELAMETA_BUILD_TEST=ON
+RUN cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_STANDARD=23 -DDELAMETA_BUILD_APP=ON -DDELAMETA_BUILD_TEST=ON -DDELAMETA_APP_STATIC_BUILD=ON
 
 COPY app/ app/
 COPY core/linux core/linux/
