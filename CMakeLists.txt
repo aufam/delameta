@@ -17,7 +17,6 @@ option(DELAMETA_BUILD_TEST 	 "Build the test"	   OFF)
 option(DELAMETA_TARGET_LINUX "Build for Linux"	   ON)
 option(DELAMETA_TARGET_STM32 "Build for STM32"	   OFF)
 option(DELAMETA_INSTALL_DEV  "Enable install dev"  OFF)
-option(DELAMETA_STATIC_BUILD "Enable static build" OFF)
 
 # some messages
 message(STATUS "DELAMETA_VERSION      : ${PROJECT_VERSION}")
@@ -26,7 +25,6 @@ message(STATUS "DELAMETA_BUILD_TEST   : ${DELAMETA_BUILD_TEST}")
 message(STATUS "DELAMETA_TARGET_LINUX : ${DELAMETA_TARGET_LINUX}")
 message(STATUS "DELAMETA_TARGET_STM32 : ${DELAMETA_TARGET_STM32}")
 message(STATUS "DELAMETA_INSTALL_DEV  : ${DELAMETA_INSTALL_DEV}")
-message(STATUS "DELAMETA_STATIC_BUILD : ${DELAMETA_STATIC_BUILD}")
 
 # ensure that only one target is selected
 if (DELAMETA_TARGET_LINUX AND DELAMETA_TARGET_STM32)
@@ -34,11 +32,6 @@ if (DELAMETA_TARGET_LINUX AND DELAMETA_TARGET_STM32)
 elseif (NOT DELAMETA_TARGET_LINUX AND NOT DELAMETA_TARGET_STM32)
     message(FATAL_ERROR "Please select a target: DELAMETA_TARGET_LINUX or DELAMETA_TARGET_STM32.")
 endif()
-
-# static build
-if (DELAMETA_STATIC_BUILD)
-	set(CMAKE_EXE_LINKER_FLAGS "-static")
-endif ()
 
 # cpm cmake
 include(cmake/CPM.cmake)
@@ -78,11 +71,8 @@ if (DELAMETA_TARGET_LINUX)
 	find_package(OpenSSL REQUIRED)
 	target_link_libraries(delameta PUBLIC OpenSSL::SSL OpenSSL::Crypto)
 
-	# etl dependency, find the package system wide or download using CPM
-	find_package(etl QUIET)
-	if (etl_FOUND)
-		message(STATUS "Found etl v${etl_VERSION} system wide")
-	else ()
+	# etl dependency
+	if (NOT TARGET etl)
 		CPMAddPackage("gh:aufam/etl#main")
 	endif ()
 	target_link_libraries(delameta PUBLIC etl)
@@ -111,7 +101,7 @@ if (DELAMETA_TARGET_STM32)
 		-DDELAMETA_HOME_DIRECTORY="${CMAKE_SOURCE_DIR}"
 	)
 
-	# etl dependency, must be provided by the parent CMakeLists or download using CPM
+	# etl dependency
 	if (NOT TARGET etl)
 		CPMAddPackage("gh:aufam/etl#FreeRTOS")
 	endif ()
