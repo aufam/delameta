@@ -188,7 +188,7 @@ auto delameta_detail_read(const char* file, int line, int fd, void* ssl, int tim
         }
 
         if (bytes_available == 0) {
-            if (timeout > 0 && std::chrono::high_resolution_clock::now() - start > std::chrono::seconds(timeout)) {
+            if (timeout >= 0 && std::chrono::high_resolution_clock::now() - start > std::chrono::seconds(timeout)) {
                 return log_err(file, line, fd, Error::TransferTimeout);
             }
             std::this_thread::sleep_for(10ms);
@@ -218,7 +218,7 @@ auto delameta_detail_recvfrom(const char* file, int line, int fd, int timeout, v
         }
 
         if (bytes_available == 0) {
-            if (timeout > 0 && std::chrono::high_resolution_clock::now() - start > std::chrono::seconds(timeout)) {
+            if (timeout >= 0 && std::chrono::high_resolution_clock::now() - start > std::chrono::seconds(timeout)) {
                 return log_err(file, line, fd, Error::TransferTimeout);
             }
             std::this_thread::sleep_for(10ms);
@@ -255,7 +255,7 @@ auto delameta_detail_read_until(const char* file, int line, int fd, void* ssl, i
         }
 
         if (bytes_available == 0) {
-            if (timeout > 0 && std::chrono::high_resolution_clock::now() - start > std::chrono::seconds(timeout)) {
+            if (timeout >= 0 && std::chrono::high_resolution_clock::now() - start > std::chrono::seconds(timeout)) {
                 return log_err(file, line, fd, Error::TransferTimeout);
             }
             std::this_thread::sleep_for(10ms);
@@ -299,7 +299,7 @@ auto delameta_detail_recvfrom_until(const char* file, int line, int fd, int time
         }
 
         if (bytes_available == 0) {
-            if (timeout > 0 && std::chrono::high_resolution_clock::now() - start > std::chrono::seconds(timeout)) {
+            if (timeout >= 0 && std::chrono::high_resolution_clock::now() - start > std::chrono::seconds(timeout)) {
                 return log_err(file, line, fd, Error::TransferTimeout);
             }
             std::this_thread::sleep_for(10ms);
