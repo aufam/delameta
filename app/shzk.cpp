@@ -1,3 +1,5 @@
+// SHZK inverter
+
 #include <boost/preprocessor.hpp>
 #include <fmt/ranges.h>
 #include <delameta/debug.h>
@@ -37,31 +39,24 @@ JSON_DECLARE(
 )
 
 static HTTP_ROUTE(
-    ("/shzk/test", ("GET")),
-    (shzk_test),,
-    (SHZK)
-) {
-    SHZK shzk {};
-    return shzk;
-}
-
-static HTTP_ROUTE(
     ("/shzk", ("GET")),
     (read_shzk),
         (int        , address, http::arg::default_val("address", 0x01)              )
         (std::string, port   , http::arg::default_val("port", std::string("auto"))  )
         (int        , baud   , http::arg::default_val("baud", 9600)                 )
-        (int        , tout   , http::arg::default_val("tout", 5)                    ),
+        (int        , tout   , http::arg::default_val("timeout", 1)                 )
+    ,
     (http::Result<SHZK>)
 ) {
     auto session = TRY(
         Serial::Open(FL, {.port=port, .baud=baud, .timeout=tout})
     );
 
-    Client cli(address, session);
+    Client c(address, session);
+    c.response_length_size_is_16bits = true;
     SHZK shzk {};
 
-    auto buf = TRY(cli.ReadHoldingRegisters(0x1001, 6));
+    auto buf = TRY(c.ReadHoldingRegisters(0x1001, 6));
     shzk.frequencyRunning  = buf[0];
     shzk.busVoltage        = buf[1] * .1f;
     shzk.outputVoltage     = buf[2];
@@ -71,7 +66,7 @@ static HTTP_ROUTE(
 
     std::this_thread::sleep_for(23ms);
 
-    buf = TRY(cli.ReadHoldingRegisters(0x100a, 6));
+    buf = TRY(c.ReadHoldingRegisters(0x100a, 6));
     shzk.analogInput1 = buf[0];
     shzk.analogInput2 = buf[1];
     shzk.analogInput3 = buf[2];
@@ -83,27 +78,28 @@ static HTTP_ROUTE(
 static HTTP_ROUTE(
     ("/shzk", ("POST")),
     (cmd_shzk),
-        (int             , address, http::arg::default_val("address", 0x01)              )
-        (std::string     , port   , http::arg::default_val("port", std::string("auto"))  )
-        (int             , baud   , http::arg::default_val("baud", 9600)                 )
-        (int             , tout   , http::arg::default_val("tout", 5)                    )
-        (std::string_view, cmd    , http::arg::arg("cmd")                                ),
+        (int             , address, http::arg::json_item_default_val("address", 0x01)            )
+        (std::string     , port   , http::arg::json_item_default_val("port", std::string("auto")))
+        (int             , baud   , http::arg::json_item_default_val("baud", 9600)               )
+        (int             , tout   , http::arg::json_item_default_val("timeout", 1)               )
+        (std::string_view, cmd    , http::arg::json_item("cmd")                                  ),
     (http::Result<void>)
 ) {
     auto session = TRY(
         Serial::Open(FL, {.port=port, .baud=baud, .timeout=tout})
     );
 
-    Client cli(address, session);
+    Client c(address, session);
+    c.response_length_size_is_16bits = true;
 
     const std::string_view cmds[] = {
-        "forward_running",
-        "reverse_running",
-        "forward_jog",
-        "reverse_jog",
-        "free_stop",
-        "decelerate_stop",
-        "fault_resetting",
+        "forwardRunning",
+        "reverseRunning",
+        "forwardJog",
+        "reverseJog",
+        "freeStop",
+        "decelerateStop",
+        "faultResetting",
     };
 
     uint16_t value = 0x0000;
@@ -113,8 +109,9 @@ static HTTP_ROUTE(
     });
 
     if (it != std::end(cmds)) {
-        return cli.WriteSingleRegister(0x2000, value);
+        return c.WriteSingleRegister(0x2000, value);
     }
+
     return Err(http::Error{
         http::StatusBadRequest, fmt::format("Commands not found. Available commands are: {}", cmds)
     });

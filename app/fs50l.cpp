@@ -1,3 +1,5 @@
+// FS50L inverter
+
 #include <boost/preprocessor.hpp>
 #include <fmt/ranges.h>
 #include <delameta/debug.h>
@@ -38,17 +40,18 @@ static HTTP_ROUTE(
         (int        , address, http::arg::default_val("address", 0x01)              )
         (std::string, port   , http::arg::default_val("port", std::string("auto"))  )
         (int        , baud   , http::arg::default_val("baud", 9600)                 )
-        (int        , tout   , http::arg::default_val("tout", 5)                    ),
+        (int        , tout   , http::arg::default_val("timeout", 1)                 ),
     (http::Result<FS50L>)
 ) {
     auto session = TRY(
         Serial::Open(FL, {.port=port, .baud=baud, .timeout=tout})
     );
 
-    Client cli(address, session);
+    Client c(address, session);
+    c.response_length_size_is_16bits = true;
     FS50L fs50l;
 
-    auto buf = TRY(cli.ReadHoldingRegisters(0x3001, 7));
+    auto buf = TRY(c.ReadHoldingRegisters(0x3001, 7));
     fs50l.frequencyRunning  = buf[0];
     fs50l.busVoltage        = buf[1] * .1f;
     fs50l.outputVoltage     = buf[2] * .1f;
@@ -59,7 +62,7 @@ static HTTP_ROUTE(
 
     std::this_thread::sleep_for(1ms);
 
-    buf = TRY(cli.ReadHoldingRegisters(0x8000, 1));
+    buf = TRY(c.ReadHoldingRegisters(0x8000, 1));
     fs50l.faultInfo = buf[0];
 
     return Ok(fs50l);
@@ -68,27 +71,28 @@ static HTTP_ROUTE(
 static HTTP_ROUTE(
     ("/fs50l", ("POST")),
     (cmd_fs50l),
-        (int             , address, http::arg::default_val("address", 0x01)              )
-        (std::string     , port   , http::arg::default_val("port", std::string("auto"))  )
-        (int             , baud   , http::arg::default_val("baud", 9600)                 )
-        (int             , tout   , http::arg::default_val("tout", 5)                    )
-        (std::string_view, cmd    , http::arg::arg("cmd")                                ),
+        (int             , address, http::arg::json_item_default_val("address", 0x01)            )
+        (std::string     , port   , http::arg::json_item_default_val("port", std::string("auto")))
+        (int             , baud   , http::arg::json_item_default_val("baud", 9600)               )
+        (int             , tout   , http::arg::json_item_default_val("timeout", 1)               )
+        (std::string_view, cmd    , http::arg::json_item("cmd")                                  ),
     (http::Result<void>)
 ) {
     auto session = TRY(
         Serial::Open(FL, {.port=port, .baud=baud, .timeout=tout})
     );
 
-    Client cli(address, session);
+    Client c(address, session);
+    c.response_length_size_is_16bits = true;
 
     const std::string_view cmds[] = {
-        "forward_running",
-        "reverse_running",
-        "forward_jog",
-        "reverse_jog",
-        "free_stop",
-        "decelerate_stop",
-        "fault_resetting",
+        "forwardRunning",
+        "reverseRunning",
+        "forwardJog",
+        "reverseJog",
+        "freeStop",
+        "decelerateStop",
+        "faultResetting",
     };
 
     uint16_t value = 0x0000;
@@ -97,10 +101,12 @@ static HTTP_ROUTE(
         return cmd == sv;
     });
 
-    if (it != std::end(cmds)) {
-        return cli.WriteSingleRegister(0x1000, value);
+    if (it == std::end(cmds)) {
+        return Err(http::Error{
+            http::StatusBadRequest,
+            fmt::format("Commands not found. Available commands are: {}", cmds)
+        });
     }
-    return Err(http::Error{
-        http::StatusBadRequest, fmt::format("Commands not found. Available commands are: {}", cmds)
-    });
+
+    return c.WriteSingleRegister(0x1000, value);
 }

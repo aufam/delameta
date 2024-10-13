@@ -37,7 +37,6 @@ auto modbus::Client::request(std::vector<uint8_t> data) -> Result<std::vector<ui
     }).and_then([this, addr, code](std::vector<uint8_t> res) -> Result<std::vector<uint8_t>> {
         if (!is_valid(res)) return Err(Error::InvalidCRC);
         if (res[0] != addr) return Err(Error::InvalidAddress);
-        if (res[1] == (code | 0x80)) Err(Error::UnknownFunctionCode);
         if (res[1] != code) return Err(Error::UnknownFunctionCode);
         return Ok(std::move(res));
     }).except([this](modbus::Error err) {
@@ -63,16 +62,21 @@ static auto read_request_helper(modbus::Client* self, uint8_t code, uint16_t reg
     req.push_back((n >> 0) & 0xff);
     modbus::add_checksum(req);
 
-    return self->request(std::move(req)).and_then([n](std::vector<uint8_t> res) -> modbus::Result<std::vector<T>> {
+    return self->request(std::move(req)).and_then([self, n](std::vector<uint8_t> res) -> modbus::Result<std::vector<T>> {
         if (res.size() < 6) return Err(modbus::Error::InvalidDataFrame);
 
-        const uint8_t length = res[2];
-        if ((int)res.size() != 3 + length + 2) return Err(modbus::Error::InvalidDataFrame);
+        size_t length = res[2];
+        if (self->response_length_size_is_16bits) {
+            length = length << 8 | res[3];
+        }
 
-        if constexpr (is_bool) {if ((n + 7) / 8 != length) return Err(modbus::Error::InvalidDataFrame);}
-        else if (n * 2 != length) return Err(modbus::Error::InvalidDataFrame);
+        if (res.size() != (self->response_length_size_is_16bits ? 4u : 3u) + length + 2u) 
+            return Err(modbus::Error::InvalidDataFrame);
+
+        if constexpr (is_bool) { if ((n + 7u) / 8u != length) return Err(modbus::Error::InvalidDataFrame); }
+        else { if (n * 2 != length) return Err(modbus::Error::InvalidDataFrame); }
         
-        auto ptr = &res[3];
+        auto ptr = self->response_length_size_is_16bits ? &res[4] : &res[3];
         auto result = std::vector<T>(n);
         if constexpr (is_bool) {
             int bit_index = 0;

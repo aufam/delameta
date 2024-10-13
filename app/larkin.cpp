@@ -1,3 +1,5 @@
+// https://www.larkin-elektrik.com/web/?pcx=detail_produk&id=136
+
 #include <boost/preprocessor.hpp>
 #include <delameta/debug.h>
 #include <delameta/http/http.h>
@@ -119,15 +121,15 @@ static HTTP_ROUTE(
         (int        , address, http::arg::arg("address")                            )
         (std::string, port   , http::arg::default_val("port", std::string("auto"))  )
         (int        , baud   , http::arg::default_val("baud", 9600)                 )
-        (int        , tout   , http::arg::default_val("tout", 5)                    ),
+        (int        , tout   , http::arg::default_val("timeout", 1)                 ),
     (http::Result<Larkin>)
 ) {
     auto session = TRY(Serial::Open(FL, {port, baud, tout}));
-    Client cli(address, session);
+    Client c(address, session);
 
-    auto chunk1 = TRY(cli.ReadHoldingRegisters(RegisterAddress, RegisterSize / 2));
+    auto chunk1 = TRY(c.ReadHoldingRegisters(RegisterAddress, RegisterSize / 2));
     std::this_thread::sleep_for(32ms);
-    auto chunk2 = TRY(cli.ReadHoldingRegisters(RegisterAddress + RegisterSize / 2, RegisterSize / 2));
+    auto chunk2 = TRY(c.ReadHoldingRegisters(RegisterAddress + RegisterSize / 2, RegisterSize / 2));
 
     std::vector<uint16_t> res (chunk1.begin(), chunk1.end());
     res.insert(res.end(), chunk2.begin(), chunk2.end());

@@ -187,17 +187,15 @@ auto Server<TCP>::start(const char* file, int line, Args args) -> Result<void> {
                 continue;
             }
 
-            TCP session(file, line, sock_client, 1);
+            TCP session(file, line, sock_client, args.timeout);
             session.keep_alive = args.keep_alive;
-        
+
             for (int cnt = 1; is_running and delameta_detail_is_socket_alive(sock_client); ++cnt) {
-                auto received_result = session.read(); // TODO: read() doesn't check for is_running
+                auto received_result = session.read(); // TODO: read() doesn't check for `is_running`
                 if (received_result.is_err()) {
-                    if (received_result.unwrap_err().code == Error::TransferTimeout) continue;
-                    else break;
+                    break;
                 }
 
-                DBG(info, std::string(received_result.unwrap().begin(), received_result.unwrap().end()));
                 auto stream = this->execute_stream_session(session, delameta_detail_get_ip(session.socket), received_result.unwrap());
                 stream >> session;
 

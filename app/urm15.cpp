@@ -1,3 +1,5 @@
+// https://wiki.dfrobot.com/SKU_SEN0519_URM15_RS485_Ultrasonic_Sensor
+
 #include <boost/preprocessor.hpp>
 #include <delameta/debug.h>
 #include <delameta/http/http.h>
@@ -29,7 +31,7 @@ static HTTP_ROUTE(
         (int        , address, http::arg::default_val("address", 0x0f)              )
         (std::string, port   , http::arg::default_val("port", std::string("auto"))  )
         (int        , baud   , http::arg::default_val("baud", 9600)                 )
-        (int        , tout   , http::arg::default_val("tout", 5)                    ),
+        (int        , tout   , http::arg::default_val("timeout", 1)                 ),
     (http::Result<URM15>)
 ) {
     auto session = TRY(
@@ -37,7 +39,7 @@ static HTTP_ROUTE(
     );
 
     Client cli(address, session);
-    
+
     cli.WriteSingleRegister(0x0008, 0b1101); // send trigger
     std::this_thread::sleep_for(65ms);
 
@@ -49,12 +51,12 @@ static HTTP_ROUTE(
 }
 
 static HTTP_ROUTE(
-    ("/urm15/setup", ("GET")),
+    ("/urm15/setup", ("POST")),
     (urm15_setup),
-        (int        , address, http::arg::default_val("address", 0x0f)              )
-        (std::string, port   , http::arg::default_val("port", std::string("auto"))  )
-        (int        , baud   , http::arg::default_val("baud", 19200)                )
-        (int        , tout   , http::arg::default_val("tout", 5)                    ),
+        (int        , address, http::arg::json_item_default_val("address", 0x0f)              )
+        (std::string, port   , http::arg::json_item_default_val("port", std::string("auto"))  )
+        (int        , baud   , http::arg::json_item_default_val("baud", 19200)                )
+        (int        , tout   , http::arg::json_item_default_val("timeout", 1)                 ),
     (http::Result<std::string>)
 ) {
     auto session = TRY(

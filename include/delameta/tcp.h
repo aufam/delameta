@@ -46,6 +46,7 @@ namespace Project::delameta {
             std::string host;
             int max_socket = 4;
             bool keep_alive = true;
+            int timeout = 1;
         };
 
         Result<void> start(const char* file, int line, Args args);

@@ -30,6 +30,7 @@ namespace Project::delameta::modbus {
 
         uint8_t server_address;
         StreamSessionClient& session;
+        bool response_length_size_is_16bits = false;
     };
 }
 

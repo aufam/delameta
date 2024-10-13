@@ -1,16 +1,15 @@
+// https://github.com/vortigont/pzem-edl/blob/main/docs/PZEM-004T-V3.0-Datasheet-User-Manual.pdf
+
 #include <boost/preprocessor.hpp>
+#include <fmt/ranges.h>
 #include <delameta/debug.h>
 #include <delameta/http/http.h>
 #include <delameta/modbus/client.h>
 #include <delameta/serial.h>
-#include <chrono>
-#include <thread>
 
 using namespace Project;
-using namespace std::literals;
 namespace http = delameta::http;
 using delameta::Serial;
-using delameta::Stream;
 using delameta::modbus::Client;
 using etl::Ok;
 using etl::Err;
@@ -36,17 +35,18 @@ static HTTP_ROUTE(
         (int        , address, http::arg::default_val("address", 0xf8)              )
         (std::string, port   , http::arg::default_val("port", std::string("auto"))  )
         (int        , baud   , http::arg::default_val("baud", 9600)                 )
-        (int        , tout   , http::arg::default_val("tout", 5)                    ),
+        (int        , tout   , http::arg::default_val("timeout", 1)                 )
+    ,
     (http::Result<PZEM>)
 ) {
     auto session = TRY(
         Serial::Open(FL, {.port=port, .baud=baud, .timeout=tout})
     );
 
-    Client cli(address, session);
+    Client c(address, session);
     PZEM pzem;
 
-    auto buf = TRY(cli.ReadInputRegisters(0x0000, 10));
+    auto buf = TRY(c.ReadInputRegisters(0x0000, 10));
     pzem.voltage     = buf[0] * .1f;
     pzem.current     = (buf[1] | buf[2] << 16) * .001f;
     pzem.power       = (buf[3] | buf[4] << 16) * .1f;
@@ -56,7 +56,7 @@ static HTTP_ROUTE(
     pzem.powerFactor = buf[8] * .01f;
     pzem.alarm       = buf[9] == 0xffff;
 
-    buf = TRY(cli.ReadHoldingRegisters(0x0001, 1));
+    buf = TRY(c.ReadHoldingRegisters(0x0001, 1));
     pzem.alarmThreshold = buf[0];
 
     return Ok(pzem);
@@ -68,7 +68,8 @@ static HTTP_ROUTE(
         (int        , address, http::arg::default_val("address", 0xf8)              )
         (std::string, port   , http::arg::default_val("port", std::string("auto"))  )
         (int        , baud   , http::arg::default_val("baud", 9600)                 )
-        (int        , tout   , http::arg::default_val("tout", 5)                    ),
+        (int        , tout   , http::arg::default_val("timeout", 5)                 )
+    ,
     (http::Result<void>)
 ) {
     auto session = TRY(
@@ -78,20 +79,41 @@ static HTTP_ROUTE(
     std::vector<uint8_t> buf { uint8_t(address), 0x41, 0x37, 0x21 };
     delameta::modbus::add_checksum(buf);
 
-    Stream s;
-    s << std::move(buf);
-    TRY(session.request(s));
+    TRY(session.write(buf));
+    auto received_data = TRY(session.read());
+
+    if (not delameta::modbus::is_valid(received_data)) {
+        return Err(http::Error{
+            http::StatusInternalServerError,
+            fmt::format("Invalid checksum. received_data = {}", received_data)
+        });
+    }
+
+    if (received_data[1] == 0xc1) {
+        return Err(http::Error{
+            http::StatusInternalServerError,
+            fmt::format("Abnormal code: {}", received_data[2])
+        });
+    }
+
+    if (received_data[1] != 0x41 && received_data[2] != 0x37 && received_data[3] != 0x21) {
+        return Err(http::Error{
+            http::StatusInternalServerError,
+            fmt::format("Invalid reply: {}", received_data)
+        });
+    }
 
     return Ok();
 }
 
 static HTTP_ROUTE(
-    ("/pzem/reset_energy", ("GET")),
+    ("/pzem/reset-energy", ("GET")),
     (pzem_reset_energy),
         (int        , address, http::arg::default_val("address", 0xf8)              )
         (std::string, port   , http::arg::default_val("port", std::string("auto"))  )
         (int        , baud   , http::arg::default_val("baud", 9600)                 )
-        (int        , tout   , http::arg::default_val("tout", 5)                    ),
+        (int        , tout   , http::arg::default_val("timeout", 1)                 )
+    ,
     (http::Result<void>)
 ) {
     auto session = TRY(
@@ -101,9 +123,29 @@ static HTTP_ROUTE(
     std::vector<uint8_t> buf { uint8_t(address), 0x42 };
     delameta::modbus::add_checksum(buf);
 
-    Stream s;
-    s << std::move(buf);
-    TRY(session.request(s));
+    TRY(session.write(buf));
+    auto received_data = TRY(session.read());
+
+    if (not delameta::modbus::is_valid(received_data)) {
+        return Err(http::Error{
+            http::StatusInternalServerError,
+            fmt::format("Invalid checksum. received_data = {}", received_data)
+        });
+    }
+
+    if (received_data[1] == 0xc2) {
+        return Err(http::Error{
+            http::StatusInternalServerError,
+            fmt::format("Abnormal code: {}", received_data[2])
+        });
+    }
+
+    if (received_data[1] != 0x41 && received_data[2] != 0x37 && received_data[3] != 0x21) {
+        return Err(http::Error{
+            http::StatusInternalServerError,
+            fmt::format("Invalid reply: {}", received_data)
+        });
+    }
 
     return Ok();
 }

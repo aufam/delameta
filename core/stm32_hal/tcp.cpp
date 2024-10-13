@@ -243,11 +243,7 @@ auto Server<TCP>::start(const char* file, int line, Args args) -> Result<void> {
                 auto read_result = session->read();
                 if (read_result.is_err()) {
                     warning(session->file, session->line, read_result.unwrap_err().what);
-                    if (read_result.unwrap_err().code == Error::TransferTimeout) {
-                        continue;
-                    } else {
-                        break;
-                    }
+                    break;
                 }
 
                 auto stream = self->execute_stream_session(*session, "TCP", read_result.unwrap());
