@@ -168,7 +168,6 @@ TLS::~TLS() {
 }
 
 auto TLS::read() -> Result<std::vector<uint8_t>> {
-    info(__FILE__, __LINE__, "reading...");
     return delameta_detail_read(file, line, socket, ssl, timeout, delameta_detail_is_socket_alive);
 }
 
@@ -181,7 +180,6 @@ auto TLS::read_as_stream(size_t n) -> Stream {
 }
 
 auto TLS::write(std::string_view data) -> Result<void> {
-    info(__FILE__, __LINE__, "writing...");
     return delameta_detail_write(file, line, socket, ssl, timeout, delameta_detail_is_socket_alive, data);
 }
 
