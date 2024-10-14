@@ -7,10 +7,12 @@
 #include <netdb.h>
 #include <fcntl.h>
 #include <sys/ioctl.h>
+#include <sys/epoll.h>
 #include <cstring>
 #include <thread>
 #include <mutex>
 #include <atomic>
+#include <condition_variable>
 #include <algorithm>
 
 using namespace Project;
@@ -49,6 +51,7 @@ static auto ssl_init() -> Result<void> {
         ssl_context_server = SSL_CTX_new(method_server);
 
         if (!ssl_context_server) {
+            SSL_CTX_free(ssl_context_client);
             return Err(ssl_get_error());
         }
     }
@@ -94,22 +97,30 @@ static auto ssl_handshake(int socket, bool as_server) -> Result<SSL*> {
 
         std::this_thread::sleep_for(100ms);
     }
-    
 
-    if (res <= 0) return Err(ssl_get_error());
+    if (res <= 0) {
+        --ssl_counter;
+        return Err(ssl_get_error());
+    }
 
     return Ok(ssl);
 }
 
-static auto ssl_context_server_configure(const std::string& cert_file, const std::string& key_file) -> Result<void> {
+static auto ssl_context_configure(bool is_server, const std::string& cert_file, const std::string& key_file) -> Result<void> {
     auto [_, err] = ssl_init();
     if (err) return Err(std::move(*err));
 
-    if (SSL_CTX_use_certificate_file(ssl_context_server, cert_file.c_str(), SSL_FILETYPE_PEM) <= 0) {
+    auto ctx = is_server ? ssl_context_server : ssl_context_client;
+
+    if (SSL_CTX_use_certificate_file(ctx, cert_file.c_str(), SSL_FILETYPE_PEM) <= 0) {
         return Err(ssl_get_error());
     }
 
-    if (SSL_CTX_use_PrivateKey_file(ssl_context_server, key_file.c_str(), SSL_FILETYPE_PEM) <= 0) {
+    if (SSL_CTX_use_PrivateKey_file(ctx, key_file.c_str(), SSL_FILETYPE_PEM) <= 0) {
+        return Err(ssl_get_error());
+    }
+
+    if (!SSL_CTX_check_private_key(ctx)) {
         return Err(ssl_get_error());
     }
 
@@ -117,12 +128,19 @@ static auto ssl_context_server_configure(const std::string& cert_file, const std
 }
 
 auto TLS::Open(const char* file, int line, Args args) -> Result<TLS> {
-    auto [tcp, tcp_err] = TCP::Open(file, line, std::move(args));
+    auto [tcp, tcp_err] = TCP::Open(file, line, TCP::Args{
+        .host=args.host, 
+        .timeout=args.timeout, 
+        .connection_timeout=args.connection_timeout
+    });
     if (tcp_err) return Err(std::move(*tcp_err));
 
     int flags = fcntl(tcp->socket, F_GETFL, 0);
     flags &= ~O_NONBLOCK;
     fcntl(tcp->socket, F_SETFL, flags);
+
+    auto [_, conf_err] = ssl_context_configure(false, args.cert_file, args.key_file);
+    if (conf_err) return Err(std::move(*conf_err));
 
     auto [ssl, ssl_err] = ssl_handshake(tcp->socket, false);
     if (ssl_err) return Err(std::move(*ssl_err));
@@ -150,6 +168,7 @@ TLS::~TLS() {
 }
 
 auto TLS::read() -> Result<std::vector<uint8_t>> {
+    info(__FILE__, __LINE__, "reading...");
     return delameta_detail_read(file, line, socket, ssl, timeout, delameta_detail_is_socket_alive);
 }
 
@@ -162,10 +181,15 @@ auto TLS::read_as_stream(size_t n) -> Stream {
 }
 
 auto TLS::write(std::string_view data) -> Result<void> {
+    info(__FILE__, __LINE__, "writing...");
     return delameta_detail_write(file, line, socket, ssl, timeout, delameta_detail_is_socket_alive, data);
 }
 
 auto Server<TLS>::start(const char* file, int line, Args args) -> Result<void> {
+    if (args.max_socket <= 0) {
+        return Err("Invalid max socket value, must be positive integer");
+    }
+
     LogError log_error{file, line};
     auto [resolve, resolve_err] = delameta_detail_resolve_domain(args.host, SOCK_STREAM, true);
     if (resolve_err) return Err(log_error(*resolve_err, ::gai_strerror));
@@ -187,39 +211,49 @@ auto Server<TLS>::start(const char* file, int line, Args args) -> Result<void> {
         return Err(log_error(errno, ::strerror));
     }
 
-    auto [_, conf_err] = ssl_context_server_configure(args.cert_file, args.key_file);
+    auto [_, conf_err] = ssl_context_configure(true, args.cert_file, args.key_file);
     if (conf_err) return Err(std::move(*conf_err));
 
     auto defer_conf = defer | &ssl_deinit;
 
+    int epoll_fd = ::epoll_create1(0);
+    if (epoll_fd < 0) {
+        return Err(log_error(errno, ::strerror));
+    }
+
+    auto defer_epoll = defer | [epoll_fd]() { ::close(epoll_fd); };
+
+    epoll_event event;
+    event.events = EPOLLIN;
+    event.data.fd = socket;
+    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, socket, &event) < 0) {
+        return Err(log_error(errno, ::strerror));
+    }
+
     info(file, line, "Created socket as TLS server: " + std::to_string(socket));
 
-    std::list<std::thread> threads;
+    std::vector<std::thread> threads;
     std::mutex mtx;
+    std::condition_variable cv;
     std::atomic_bool is_running {true};
+    std::atomic_int semaphore {0};
+    int sock_client = -1;
 
-    on_stop = [this, &threads, &mtx, &is_running]() { 
-        std::lock_guard<std::mutex> lock(mtx);
+    on_stop = [this, &is_running, &cv]() { 
         is_running = false;
-        for (auto& thd : threads) if (thd.joinable()) {
-            thd.join();
-        }
+        cv.notify_all();
         on_stop = {};
     };
 
-    auto work = [this, socket, file, line, &args, &is_running](int idx) {
+    auto work = [this, file, line, &args, &is_running, &mtx, &cv, &semaphore, &sock_client](int idx) {
         info(file, line, "Spawned worker thread: " + std::to_string(idx));
         while (is_running) {
-            int sock_client = ::accept(socket, nullptr, nullptr);
-            if (sock_client < 0) {
-                if (errno == EWOULDBLOCK || errno == EAGAIN) {
-                    // no incoming connection, sleep briefly
-                    std::this_thread::sleep_for(10ms);
-                } else {
-                    warning(__FILE__, __LINE__, strerror(errno));
-                }
-                continue;
+            {
+                std::unique_lock<std::mutex> lock(mtx);
+                cv.wait(lock);
             }
+
+            if (not is_running) break;
 
             auto [ssl, ssl_err] = ssl_handshake(sock_client, true);
             if (ssl_err) {
@@ -238,11 +272,8 @@ auto Server<TLS>::start(const char* file, int line, Args args) -> Result<void> {
             for (int cnt = 1; is_running and delameta_detail_is_socket_alive(sock_client); ++cnt) {
                 auto received_result = session.read(); // TODO: read() doesn't check for is_running
                 if (received_result.is_err()) {
-                    if (received_result.unwrap_err().code == Error::TransferTimeout) continue;
-                    else break;
+                    break;
                 }
-
-                DBG(info, std::string(received_result.unwrap().begin(), received_result.unwrap().end()));
 
                 auto stream = this->execute_stream_session(session, delameta_detail_get_ip(session.socket), received_result.unwrap());
                 stream >> session;
@@ -262,15 +293,47 @@ auto Server<TLS>::start(const char* file, int line, Args args) -> Result<void> {
             } else {
                 info(file, line, "Closed by peer: " + std::to_string(session.socket));
             }
+
+            --semaphore;
         }
     };
 
-    int i = 0;
-    for (; i < args.max_socket - 1; ++i) {
+    threads.reserve(args.max_socket);
+    for (int i = 0; i < args.max_socket - 1; ++i) {
         threads.emplace_back(work, i);
     }
 
-    work(i);
+    while (is_running) {
+        epoll_event events[args.max_socket];
+        int num_events = epoll_wait(epoll_fd, events, args.max_socket, 10);
+
+        for (int i = 0; i < num_events; ++i) {
+            if (events[i].data.fd == socket) {
+                int new_sock_client = ::accept(socket, nullptr, nullptr);
+                if (new_sock_client < 0) {
+                    if (errno == EWOULDBLOCK || errno == EAGAIN) {
+                    } else {
+                        warning(__FILE__, __LINE__, strerror(errno));
+                    }
+                    continue;
+                }
+                if (semaphore >= args.max_socket) {
+                    ::shutdown(new_sock_client, SHUT_RDWR);
+                    warning(__FILE__, __LINE__, "Thread pool is full");
+                    continue;
+                }
+
+                ++semaphore;
+                {
+                    std::lock_guard<std::mutex> lock(mtx);
+                    sock_client = new_sock_client;
+                }
+
+                cv.notify_one();
+            }
+        }
+    }
+
     for (auto& thd : threads) if (thd.joinable()) {
         thd.join();
     }

@@ -6,6 +6,7 @@
 #include <netdb.h>
 #include <fcntl.h>
 #include <sys/ioctl.h>
+#include <sys/epoll.h>
 #include <cstring>
 #include <thread>
 #include <mutex>
@@ -138,6 +139,10 @@ auto TCP::write(std::string_view data) -> Result<void> {
 }
 
 auto Server<TCP>::start(const char* file, int line, Args args) -> Result<void> {
+    if (args.max_socket <= 0) {
+        return Err("Invalid max socket value, must be positive integer");
+    }
+
     LogError log_error{file, line};
     auto [resolve, resolve_err] = delameta_detail_resolve_domain(args.host, SOCK_STREAM, true);
     if (resolve_err) return Err(log_error(*resolve_err, ::gai_strerror));
@@ -159,39 +164,38 @@ auto Server<TCP>::start(const char* file, int line, Args args) -> Result<void> {
         return Err(log_error(errno, ::strerror));
     }
 
+    int epoll_fd = ::epoll_create1(0);
+    if (epoll_fd < 0) {
+        return Err(log_error(errno, ::strerror));
+    }
+
+    auto defer_epoll = defer | [epoll_fd]() { ::close(epoll_fd); };
+
+    epoll_event event;
+    event.events = EPOLLIN;
+    event.data.fd = socket;
+    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, socket, &event) < 0) {
+        return Err(log_error(errno, ::strerror));
+    }
+
     info(file, line, "Created socket as TCP server: " + std::to_string(socket));
 
-    std::list<std::thread> threads;
+    std::vector<std::thread> threads;
     std::mutex mtx;
     std::condition_variable cv;
     std::atomic_bool is_running {true};
     std::atomic_int semaphore {0};
     int sock_client = -1;
 
-    on_stop = [this, &threads, &mtx, &is_running, &cv]() { 
-        cv.notify_all();
-        // std::lock_guard<std::mutex> lock(mtx);
+    on_stop = [this, &is_running, &cv]() { 
         is_running = false;
-        // for (auto& thd : threads) if (thd.joinable()) {
-        //     thd.join();
-        // }
+        cv.notify_all();
         on_stop = {};
     };
 
-    auto work = [this, socket, file, line, &args, &is_running, &mtx, &cv, &sock_client, &semaphore](int idx) {
+    auto work = [this, file, line, &args, &is_running, &mtx, &cv, &sock_client, &semaphore](int idx) {
         info(file, line, "Spawned worker thread: " + std::to_string(idx));
         while (is_running) {
-            // int sock_client = ::accept(socket, nullptr, nullptr);
-            // if (sock_client < 0) {
-            //     if (errno == EWOULDBLOCK || errno == EAGAIN) {
-            //         // no incoming connection, sleep briefly
-            //         std::this_thread::sleep_for(10ms);
-            //     } else {
-            //         warning(__FILE__, __LINE__, strerror(errno));
-            //     }
-            //     continue;
-            // }
-
             {
                 std::unique_lock<std::mutex> lock(mtx);
                 cv.wait(lock);
@@ -199,7 +203,7 @@ auto Server<TCP>::start(const char* file, int line, Args args) -> Result<void> {
 
             if (not is_running) break;
 
-            info(__FILE__, __LINE__, "processing in thread" + std::to_string(idx));
+            info(__FILE__, __LINE__, "processing in thread " + std::to_string(idx) + ", socket = " + std::to_string(sock_client));
 
             TCP session(file, line, sock_client, args.timeout);
             session.keep_alive = args.keep_alive;
@@ -229,45 +233,44 @@ auto Server<TCP>::start(const char* file, int line, Args args) -> Result<void> {
                 info(file, line, "Closed by peer: " + std::to_string(session.socket));
             }
 
-//             {
-//                 std::unique_lock<std::mutex> lock(mtx);
-//                 --semaphore;
-//             }
+            --semaphore;
         }
     };
 
-    int i = 0;
-    for (; i < args.max_socket; ++i) {
+    threads.reserve(args.max_socket);
+    for (int i = 0; i < args.max_socket; ++i) {
         threads.emplace_back(work, i);
     }
 
     while (is_running) {
-        int new_sock_client = ::accept(socket, nullptr, nullptr);
-        if (new_sock_client < 0) {
-            if (errno == EWOULDBLOCK || errno == EAGAIN) {
-                // no incoming connection, sleep briefly
-                std::this_thread::sleep_for(10ms);
-            } else {
-                warning(__FILE__, __LINE__, strerror(errno));
+        epoll_event events[args.max_socket];
+        int num_events = epoll_wait(epoll_fd, events, args.max_socket, 10);
+
+        for (int i = 0; i < num_events; ++i) {
+            if (events[i].data.fd == socket) {
+                int new_sock_client = ::accept(socket, nullptr, nullptr);
+                if (new_sock_client < 0) {
+                    if (errno == EWOULDBLOCK || errno == EAGAIN) {
+                    } else {
+                        warning(__FILE__, __LINE__, strerror(errno));
+                    }
+                    continue;
+                }
+                if (semaphore >= args.max_socket) {
+                    ::shutdown(new_sock_client, SHUT_RDWR);
+                    warning(__FILE__, __LINE__, "Thread pool is full");
+                    continue;
+                }
+
+                ++semaphore;
+                {
+                    std::lock_guard<std::mutex> lock(mtx);
+                    sock_client = new_sock_client;
+                }
+
+                cv.notify_one();
             }
-            continue;
         }
-
-        if (semaphore >= args.max_socket) {
-            warning(__FILE__, __LINE__, "Thread pool is full");
-            continue;
-        }
-
-        // {
-        //     std::unique_lock<std::mutex> lock(mtx);
-        //     ++semaphore;
-        // }
-        {
-            std::lock_guard<std::mutex> lock(mtx);
-            sock_client = new_sock_client;
-        }
-
-        cv.notify_one();
     }
 
     for (auto& thd : threads) if (thd.joinable()) {
