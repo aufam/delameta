@@ -113,14 +113,17 @@ static auto ssl_context_configure(bool is_server, const std::string& cert_file, 
     auto ctx = is_server ? ssl_context_server : ssl_context_client;
 
     if (SSL_CTX_use_certificate_file(ctx, cert_file.c_str(), SSL_FILETYPE_PEM) <= 0) {
+        --ssl_counter;
         return Err(ssl_get_error());
     }
 
     if (SSL_CTX_use_PrivateKey_file(ctx, key_file.c_str(), SSL_FILETYPE_PEM) <= 0) {
+        --ssl_counter;
         return Err(ssl_get_error());
     }
 
     if (!SSL_CTX_check_private_key(ctx)) {
+        --ssl_counter;
         return Err(ssl_get_error());
     }
 
@@ -145,6 +148,7 @@ auto TLS::Open(const char* file, int line, Args args) -> Result<TLS> {
     auto [ssl, ssl_err] = ssl_handshake(tcp->socket, false);
     if (ssl_err) return Err(std::move(*ssl_err));
 
+    --ssl_counter;
     return Ok(TLS(std::move(*tcp), *ssl));
 }
 
