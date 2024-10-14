@@ -1,5 +1,6 @@
 #include "delameta/tcp.h"
 #include "helper.h"
+#include <string>
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <netdb.h>
@@ -8,6 +9,7 @@
 #include <cstring>
 #include <thread>
 #include <mutex>
+#include <condition_variable>
 #include <atomic>
 #include <algorithm>
 
@@ -30,7 +32,6 @@ auto TCP::Open(const char* file, int line, Args args) -> Result<TCP> {
 
     for (auto p = hint; p != nullptr; p = p->ai_next) {
         char ip_str[INET6_ADDRSTRLEN];
-        void* addr_ptr = nullptr;
         void *addr;
 
         // Check if the address is IPv4 or IPv6
@@ -162,30 +163,43 @@ auto Server<TCP>::start(const char* file, int line, Args args) -> Result<void> {
 
     std::list<std::thread> threads;
     std::mutex mtx;
+    std::condition_variable cv;
     std::atomic_bool is_running {true};
+    std::atomic_int semaphore {0};
+    int sock_client = -1;
 
-    on_stop = [this, &threads, &mtx, &is_running]() { 
-        std::lock_guard<std::mutex> lock(mtx);
+    on_stop = [this, &threads, &mtx, &is_running, &cv]() { 
+        cv.notify_all();
+        // std::lock_guard<std::mutex> lock(mtx);
         is_running = false;
-        for (auto& thd : threads) if (thd.joinable()) {
-            thd.join();
-        }
+        // for (auto& thd : threads) if (thd.joinable()) {
+        //     thd.join();
+        // }
         on_stop = {};
     };
 
-    auto work = [this, socket, file, line, &args, &is_running](int idx) {
+    auto work = [this, socket, file, line, &args, &is_running, &mtx, &cv, &sock_client, &semaphore](int idx) {
         info(file, line, "Spawned worker thread: " + std::to_string(idx));
         while (is_running) {
-            int sock_client = ::accept(socket, nullptr, nullptr);
-            if (sock_client < 0) {
-                if (errno == EWOULDBLOCK || errno == EAGAIN) {
-                    // no incoming connection, sleep briefly
-                    std::this_thread::sleep_for(10ms);
-                } else {
-                    warning(__FILE__, __LINE__, strerror(errno));
-                }
-                continue;
+            // int sock_client = ::accept(socket, nullptr, nullptr);
+            // if (sock_client < 0) {
+            //     if (errno == EWOULDBLOCK || errno == EAGAIN) {
+            //         // no incoming connection, sleep briefly
+            //         std::this_thread::sleep_for(10ms);
+            //     } else {
+            //         warning(__FILE__, __LINE__, strerror(errno));
+            //     }
+            //     continue;
+            // }
+
+            {
+                std::unique_lock<std::mutex> lock(mtx);
+                cv.wait(lock);
             }
+
+            if (not is_running) break;
+
+            info(__FILE__, __LINE__, "processing in thread" + std::to_string(idx));
 
             TCP session(file, line, sock_client, args.timeout);
             session.keep_alive = args.keep_alive;
@@ -214,15 +228,48 @@ auto Server<TCP>::start(const char* file, int line, Args args) -> Result<void> {
             } else {
                 info(file, line, "Closed by peer: " + std::to_string(session.socket));
             }
+
+//             {
+//                 std::unique_lock<std::mutex> lock(mtx);
+//                 --semaphore;
+//             }
         }
     };
 
     int i = 0;
-    for (; i < args.max_socket - 1; ++i) {
+    for (; i < args.max_socket; ++i) {
         threads.emplace_back(work, i);
     }
 
-    work(i);
+    while (is_running) {
+        int new_sock_client = ::accept(socket, nullptr, nullptr);
+        if (new_sock_client < 0) {
+            if (errno == EWOULDBLOCK || errno == EAGAIN) {
+                // no incoming connection, sleep briefly
+                std::this_thread::sleep_for(10ms);
+            } else {
+                warning(__FILE__, __LINE__, strerror(errno));
+            }
+            continue;
+        }
+
+        if (semaphore >= args.max_socket) {
+            warning(__FILE__, __LINE__, "Thread pool is full");
+            continue;
+        }
+
+        // {
+        //     std::unique_lock<std::mutex> lock(mtx);
+        //     ++semaphore;
+        // }
+        {
+            std::lock_guard<std::mutex> lock(mtx);
+            sock_client = new_sock_client;
+        }
+
+        cv.notify_one();
+    }
+
     for (auto& thd : threads) if (thd.joinable()) {
         thd.join();
     }
