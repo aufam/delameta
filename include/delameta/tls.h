@@ -15,6 +15,14 @@ namespace Project::delameta {
         TLS(TLS&&);
         virtual ~TLS();
 
+        struct Args {
+            std::string host;
+            std::string cert_file;
+            std::string key_file;
+            int timeout = -1;
+            int connection_timeout = 5;
+        };
+
         static Result<TLS> Open(const char* file, int line, Args args);
         static Result<TLS> Open(Args args) { return Open("", 0, args); }
 
@@ -37,6 +45,7 @@ namespace Project::delameta {
             std::string key_file;
             int max_socket = 4;
             bool keep_alive = true;
+            int timeout = 1;
         };
 
         Result<void> start(const char* file, int line, Args args);
