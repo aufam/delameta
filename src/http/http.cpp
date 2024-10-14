@@ -10,6 +10,9 @@ using namespace Project::delameta;
 using etl::Err;
 using etl::Ok;
 
+std::string delameta_https_ssl_cert_file;
+std::string delameta_https_ssl_key_file;
+
 http::Error::Error(int status) : status(status), what("") {}
 http::Error::Error(int status, std::string what) : status(status), what(std::move(what)) {}
 http::Error::Error(delameta::Error err) : status(StatusInternalServerError), what(err.what + ": " + std::to_string(err.code)) {}
@@ -119,8 +122,12 @@ auto http::request(StreamSessionClient&& session, RequestWriter req) -> delameta
 }
 
 auto http::request(RequestWriter req) -> delameta::Result<ResponseReader> {
-    if (req.url.url.substr(0, 8) == "https://") {
-        auto [session, err] = TLS::Open(__FILE__, __LINE__, TLS::Args{.host=req.url.url});
+    if (req.url.url.size() >= 8 && req.url.url.substr(0, 8) == "https://") {
+        auto [session, err] = TLS::Open(__FILE__, __LINE__, TLS::Args{
+            .host=req.url.url, 
+            .cert_file=delameta_https_ssl_cert_file,
+            .key_file=delameta_https_ssl_key_file,
+        });
         if (err) return Err(std::move(*err));
         return request(StreamSessionClient(new TLS(std::move(*session))), std::move(req));
     } else {
