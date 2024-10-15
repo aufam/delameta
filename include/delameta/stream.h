@@ -134,6 +134,25 @@ namespace Project::delameta {
 
         std::list<std::string> buffer;
     };
+
+    class StreamDescriptor : public delameta::Descriptor {
+    public:
+        Result<std::vector<uint8_t>> read() override;
+        delameta::Result<std::vector<uint8_t>> read_until(size_t n) override;
+        Stream read_as_stream(size_t n) override;
+        delameta::Result<void> write(std::string_view data) override;
+
+        void flush();
+
+        StreamDescriptor& operator<<(std::string s);
+        StreamDescriptor& operator<<(std::vector<uint8_t> s);
+
+        StreamDescriptor& operator<<(Stream& s);
+        StreamDescriptor& operator>>(Stream& s);
+
+        Stream stream;
+        std::string buffer;
+    };
 }
 
 #ifdef FMT_FORMAT_H_

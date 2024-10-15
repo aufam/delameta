@@ -52,7 +52,10 @@ Stream& Stream::operator<<(Stream& other) {
 
 Stream& Stream::operator<<(Stream&& other) {
     if (!at_destructor) at_destructor = std::move(other.at_destructor);
-    else at_destructor = [f1=std::move(at_destructor), f2=std::move(other.at_destructor)]() { f1(); f2(); };
+    else at_destructor = [f1=std::move(at_destructor), f2=std::move(other.at_destructor)]() {
+        f1();
+        if (f2) f2();
+    };
     return (rules.splice(rules.end(), std::move(other.rules)), *this);
 }
 
@@ -273,5 +276,103 @@ auto StringStream::operator>>(std::string& s) -> StringStream& {
         s = std::move(buffer.front());
         buffer.pop_front();
     }
+    return *this;
+}
+
+auto StreamDescriptor::read() -> Result<std::vector<uint8_t>> {
+    if (!buffer.empty()) {
+        std::vector<uint8_t> res(buffer.begin(), buffer.end());
+        buffer.clear();
+        return Ok(std::move(res));
+    }
+
+    if (!stream.rules.empty()) {
+        return Ok(stream.pop_once());
+    }
+
+    return Err("Stream is empty");
+}
+
+auto StreamDescriptor::read_until(size_t n) -> Result<std::vector<uint8_t>> {
+    std::vector<uint8_t> res;
+    res.reserve(n);
+
+    while (n > 0) {
+        if (!buffer.empty()) {
+            auto m = std::min(n, buffer.size());
+            res.insert(res.end(), buffer.begin(), buffer.begin() + m);
+            buffer = buffer.substr(m);
+            n -= m;
+        } else {
+            if (!stream.rules.empty()) {
+                return Err("Stream is empty");
+            }
+            auto data = stream.pop_once();
+            buffer = std::string(data.begin(), data.end());
+        }
+    }
+
+    return Ok(std::move(res));
+}
+
+auto StreamDescriptor::read_as_stream(size_t n) -> Stream {
+    Stream s;
+    
+    s << [this, buf=std::string(), n](Stream& s) mutable -> std::string_view {
+        while (n > 0) {
+            if (!buffer.empty()) {
+                auto m = std::min(n, buffer.size());
+                buf = buffer.substr(0, m);
+                buffer = buffer.substr(m);
+                n -= m;
+                s.again = n > 0;                
+                return buf;
+            } else {
+                if (!stream.rules.empty()) {
+                    return "";
+                }
+                auto data = stream.pop_once();
+                buffer = std::string(data.begin(), data.end());
+            }
+        }
+
+        return "";
+    };
+
+    return s;
+}
+
+auto StreamDescriptor::write(std::string_view sv) -> Result<void> {
+    stream << std::string(sv);
+    return Ok();
+}
+
+void StreamDescriptor::flush() {
+    buffer.clear();
+    stream.rules.clear();
+    if (stream.at_destructor) stream.at_destructor();
+}
+
+auto StreamDescriptor::operator<<(std::string s) -> StreamDescriptor& {
+    stream << std::move(s);
+    return *this;
+}
+
+auto StreamDescriptor::operator<<(std::vector<uint8_t> s) -> StreamDescriptor& {
+    stream << std::move(s);
+    return *this;
+}
+
+auto StreamDescriptor::operator<<(Stream& s) -> StreamDescriptor& {
+    stream << s;
+    return *this;
+}
+
+auto StreamDescriptor::operator>>(Stream& s) -> StreamDescriptor& {
+    if (!buffer.empty()) {
+        s << std::move(buffer);
+    }
+
+    s << stream;
     return *this;
 }
