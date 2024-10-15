@@ -18,17 +18,14 @@ C++ framework for socket and serial programming for Linux and STM32
     ├── include/delameta/           # Header files directory
     ├── core/
     │ ├── linux/                    # Source files for linux
-    │ ├── stm32_hal/                # Source files for STM32
+    │ └── stm32_hal/                # Source files for STM32
     ├── src/                        # Source files
-    ├── test/                       # Unit testing
+    └── test/                       # Unit testing
 
 ## <a id="how_to_use"></a>How to Use
 You can add this library as an external dependency in your CMake configuration as follows:
 ```cmake
 include(FetchContent)
-
-set(DELAMETA_BUILD_APP OFF CACHE BOOL "Disable build app" FORCE)
-set(DELAMETA_BUILD_TEST OFF CACHE BOOL "Disable build test" FORCE)
 
 FetchContent_Declare(
     delameta
@@ -46,9 +43,6 @@ git submodule update --init --recursive
 ```
 Then modify your CMake configuration as follows:
 ```cmake
-set(DELAMETA_BUILD_APP OFF CACHE BOOL "Disable build app" FORCE)
-set(DELAMETA_BUILD_TEST OFF CACHE BOOL "Disable build test" FORCE)
-
 add_subdirectory(path/to/your/submodules/delameta)
 target_link_libraries(your_awesome_project delameta)
 ```
@@ -89,7 +83,7 @@ Here are some optional macros that has to be defined in order to link this libra
 * `DELAMETA_STM32_WIZCHIP_RST_PORT=GPIOx` where `x` is the GPIO port
 * `DELAMETA_STM32_WIZCHIP_RST_PIN=GPIO_Pin_x` where `x` is the GPIO pin number
 
-Socket programming relies on [wizchip::ethernet](https://github.com/Wiznet/ioLibrary_Driver/tree/master/Ethernet) functionalities 
+Socket programming relies on [wizchip::ethernet](https://github.com/Wiznet/ioLibrary_Driver/tree/master/Ethernet) functionalities
 and `etl::tasks` which utilizes FreeRTOS threads.
 Here are some example macros to configure `etl::tasks`:
 * `ETL_ASYNC_N_CHANNELS=8` allocate 8 threads as asynchronous tasks
@@ -103,10 +97,10 @@ void etl_tasks_init(void);
 void delameta_stm32_hal_init(void);
 void delameta_stm32_hal_wizchip_init(void);
 void delameta_stm32_hal_wizchip_set_net_info(
-    const uint8_t mac[6], 
-    const uint8_t ip[4], 
-    const uint8_t sn[4], 
-    const uint8_t gw[4], 
+    const uint8_t mac[6],
+    const uint8_t ip[4],
+    const uint8_t sn[4],
+    const uint8_t gw[4],
     const uint8_t dns[4]
 );
 
@@ -124,7 +118,7 @@ int main() {
 }
 ```
 #### USB CDC Setup
-Since CubeMX does not provide customizable transmit and receive complete callbacks, 
+Since CubeMX does not provide customizable transmit and receive complete callbacks for USB CDC,
 you will need to manually add them in the `USB_DEVICE/App/usb_cdc_if.c` file:
 ```C
 ...
@@ -167,7 +161,7 @@ static int8_t CDC_TransmitCplt_FS(uint8_t *Buf, uint32_t *Len, uint8_t epnum)
 }
 ```
 
-For a more complete example of how to use this library with STM32, see my template project for the [STM32 blackpill](https://github.com/aufam/blackpill.git) 
+For a more complete example of how to use this library with STM32, see my template project for the [STM32 blackpill](https://github.com/aufam/blackpill.git)
 
 ## <a id="code_consideration"></a>Code Considerations and Structure
 
@@ -175,14 +169,14 @@ For a more complete example of how to use this library with STM32, see my templa
 Since this library is also intended for embedded systems, it's strongly recommended to avoid exception.
 Therefore we use [`etl::Result`](https://github.com/aufam/etl/blob/main/include/etl/result.h) from
 [`etl`](https://github.com/aufam/etl.git) library that can provide return-error-by-value mechanism.
-It also has lightweight JSON parser [`etl::Json`](https://github.com/aufam/etl/blob/main/include/etl/json.h). 
-The cmake will check for the availability of `etl` target, if it's already available in your project configuration, 
+It also has lightweight JSON parser [`etl::Json`](https://github.com/aufam/etl/blob/main/include/etl/json.h).
+The cmake will check for the availability of `etl` target, if it's already available in your project configuration,
 it will use it, otherwise it will fetch from the GitHub repository
 
 ### Global namespace
-All C++ code, including the `delameta` and `etl` namespaces, is enclosed within a global `Project` namespace 
-in order to avoid shadowing to C's code base, 
-or conflicting namespace since there is already more established 
+All C++ code, including the `delameta` and `etl` namespaces, is enclosed within a global `Project` namespace
+in order to avoid shadowing to C's code base,
+or conflicting namespace since there is already more established
 [Embedded Template Library (ETL)](https://github.com/ETLCPP/etl).
 Therefore, you'll need to add `using namespace Project;` in your C++ files.
 
@@ -193,8 +187,8 @@ only in the `core/linux` and `core/stm32_hal` directories.
 ## <a id="fetures"></a>Features
 
 ### Dynamic Memory Management for STM32
-The `etl` library has custom implementations of `::malloc()`, `::calloc()`, `::realloc()`, `::free()`, `::new`, `::new[]`, 
-and `::delete` which are tailored to work with FreeRTOS dynamic memory management. 
+The `etl` library has custom implementations of `malloc()`, `calloc()`, `realloc()`, `free()`, `new`, `new[]`,
+and `delete` which are tailored to work with FreeRTOS dynamic memory management.
 This ensures that using dynamic containers in STM32 projects is safe and compatible with the FreeRTOS environment.
 
 ### Result Template Type with [etl::Result](https://github.com/aufam/etl/blob/main/include/etl/result.h)
@@ -204,7 +198,7 @@ Example usage:
 * Unwrap result or error value:
   ```c++
   #include <etl/result.h>
-  
+
   using namespace Project;
   using etl::Err;
   using etl::Ok;
@@ -272,7 +266,7 @@ Example usage:
       //     {   "num"             :   <int>             ,   "is_true"             :   <bool>                }
       return 1 + size_max("num") + 1 + size_max(m.num) + 1 + size_max("is_true") + 1 + size_max(m.is_true) + 1;
     }
-    
+
     template<> std::string serialize(const Foo& m) {
       std::string res;
       res.reserve(size_max(m));
@@ -284,11 +278,11 @@ Example usage:
       res += '}';
       return res;
     }
-    
+
     template<> constexpr // yes, you can deserialize json in constexpr context
     etl::Result<void, const char*> deserialize(const etl::Json& j, Foo& m) {
       if (!j.is_dictionary()) return etl::Err("JSON is not a map");
-      
+
       auto num = detail::json_deserialize(j, "num", m.num);
       if (num.is_err()) return num;
 
@@ -330,7 +324,7 @@ Example usage:
   ```
 
 ### Stream
-Stream is basically a list of `Stream::Rule` which is an `std::function<std::string_view(Stream&)>`. 
+Stream is basically a list of `Stream::Rule` which is an `std::function<std::string_view(Stream&)>`.
 You can add a rule using `operator<<`.
 ```c++
 #include <delameta/stream.h>
@@ -381,158 +375,6 @@ auto example_stream_out() -> Result<void> {
 }
 ```
 
-### HTTP
-Here are some examples how to use `delameta::http` to create an HTTP server, define routes, handle requests, and manage errors.
-#### Initial setup
-```c++
-#include <boost/preprocessor.hpp> // for enabling JSON_DECLARE
-#include <delameta/http/http.h>
-#include <delameta/tcp.h> // for Server<TCP>
-
-using namespace Project;
-using delameta::Server, delameta::TCP;
-using etl::Ok, etl::Err;
-namespace http = delameta::http;
-
-http::Http app;
-```
-#### Example Hello world
-```c++
-app.route("/hello", {"GET"}, std::tuple{},
-[]() {
-  return "Hello world";
-});
-```
-You can expose the method and body to the handler function
-```c++
-app.route("/hello2", {"GET", "POST"}, std::tuple{http::arg::method, http::arg::body},
-[](std::string_view method, std::string message) -> std::string {
-  return method == "GET" ? "Hello world" : "Hello world with message: " + message;
-});
-```
-#### Example JSON request/response 
-with undeclared json object
-```c++
-app.route("/person", {"PUT"}, std::tuple{http::arg::json_item("name"), http::arg::json_item("age")},
-[](std::string name, int age) {
-  return delameta::json::Map {
-    {"name", name},
-    {"status", age > 25},
-  };
-});
-```
-with declared json object
-```c++
-JSON_DECLARE(
-  (PersonForm)
-  ,
-  (std::string, name)
-  (int        , age )
-)
-
-JSON_DECLARE(
-  (PersonResponse)
-  ,
-  (std::string, name  )
-  (bool       , is_old)
-)
-
-app.route("/person", {"PUT"}, std::tuple{http::arg::json},
-[](PersonForm person) {
-  return PersonResponse {
-    .name = person.name,
-    .is_old = person.age > 25,
-  };
-});
-```
-#### Arguments
-We don't support embedding arguments on the URL since it would be expensive in embedded systems.
-Instead you can expose the query or header parameters using `http::arg::arg`
-```c++
-app.route("/args", {"GET"}, std::tuple{http::arg::arg("id"), http::arg::arg("User-Agent")},
-[](int id, std::string user_agent) {
-  return delameta::json::Map {
-    {"userAgent", user_agent},
-    {"id", id},
-  };
-});
-```
-The request could be something like:
-```
-GET /args?id=42 HTTP/1.1
-User-Agent: curl/8.5.0
-```
-#### Error handling
-```c++
-app.route("/do-stuff", {"POST"}, std::tuple{http::arg::body},
-[](std::string stuff) -> http::Result<std::string> {
-  if (stuff.empty()) {
-    return Err(http::Error{http::StatusBadRequest, "Body cannot be empty"});
-  }
-
-  // do actual stuff
-
-  return Ok("Stuff is done");
-});
-```
-#### Dependency injection
-```c++
-auto get_token(const http::RequestReader& req, http::ResponseWriter&) -> http::Result<std::string_view> {
-  const std::string_view access_token = "Basic 12345";
-  std::string_view token = "";
-  auto it = req.headers.find("Authentication");
-  if (it == req.headers.end()) {
-    it = req.headers.find("authentication");
-  } 
-  if (it != req.headers.end()) {
-    token = it->second;
-  } else {
-    return Err(http::Error{http::StatusUnauthorized, "No authentication provided"});
-  }
-  if (token == access_token) {
-    return Ok(token);
-  } else {
-    return Err(http::Error{http::StatusUnauthorized, "Token doesn't match"});
-  }
-}
-
-app.route("/access-db", {"GET"}, std::tuple{http::arg::depends(get_token)},
-[](std::string_view [[maybe_unused]] token) -> std::string {
-  return Ok("Get something from db");
-});
-```
-#### Binding to a Server
-HTTP is just an application layer. You have to bind it with a server
-```c++
-Server<TCP> tcp_server;
-app.bind(tcp_server);
-tcp_server.start({.host="localhost:5000", .max_socket=4}); // it will block the execution
-```
-#### Request
-```c++
-delameta::Result<http::ResponseReader> request_result = http::request(http::RequestWriter {
-  .method="GET",
-  .url="localhost:5000/hello",
-});
-
-if (request_result.is_err()) {
-  // handle error
-  return;
-}
-
-http::ResponseReader &response = request_result.unwrap();
-
-// extract body
-std::string body;
-response.body_stream >> [&](std::string_view sv) {
-  body += sv;
-};
-
-std::cout << response.status << '\n'; // 200
-std::cout << body << '\n'; // Hello world
-```
-more example see [app/example.cpp](app/example.cpp)
-
 ### Endpoints
 Endpoints are simply serial, file, or socket handlers. For example:
 ```c++
@@ -553,7 +395,7 @@ void example_endpoint() {
   // serial (STM32)
   Result<Endpoint> serial3 = Endpoint::Open("serial:///usb"); // USB CDC
   Result<Endpoint> serial4 = Endpoint::Open("serial:///uart1?baud=9600"); // UART1 handler
-  
+
   // file (currently only linux)
   Result<Endpoint> file1 = Endpoint::Open("file://some_relative_file.txt/?mode=rwa"); // example relative file with mode read write append
   Result<Endpoint> file2 = Endpoint::Open("file:///home/user/some_absolute_file.txt?mode=r"); // example absolute file with mode read only
@@ -578,12 +420,266 @@ Result<std::vector<uint8_t>> read_result = endpoint.read_until(64); // read unti
 Stream read_stream = endpoint.read_as_stream(64); // read until 64 bytes as stream
 ```
 
+### HTTP
+Here are some examples how to use `delameta::http` to create an HTTP server, define routes, handle requests, and manage errors.
+#### Initial setup
+```c++
+#include <boost/preprocessor.hpp> // for enabling JSON_DECLARE
+#include <delameta/http/http.h>
+#include <delameta/tcp.h> // for Server<TCP>
+
+using namespace Project;
+using delameta::Server, delameta::TCP;
+using etl::Ok, etl::Err;
+namespace http = delameta::http;
+namespace json = delameta::json;
+
+http::Http app;
+```
+#### Example Hello world
+Basic hello world
+```c++
+app.route("/hello", {"GET"}, std::tuple{},
+[]() {
+  return "Hello world";
+});
+
+// request:
+// GET /hello HTTP/1.1
+
+// response:
+// HTTP/1.1 200 OK
+// Content-Type: text/plain
+// Content-Length: 11
+//
+// Hello world
+```
+
+You can expose the method and body to the handler function
+```c++
+app.route("/hello2", {"GET", "POST"}, std::tuple{http::arg::method, http::arg::body},
+[](std::string_view method, std::string message) -> std::string {
+  return method == "GET" ? "Hello world" : "Hello world with message: " + message;
+});
+
+// request:
+// POST /hello2 HTTP/1.1
+// Content-Type: text/plain
+// Content-Length: 6
+//
+// Hi mom
+
+// response:
+// HTTP/1.1 200 OK
+// Content-Type: text/plain
+// Content-Length: 32
+//
+// Hello world with message: Hi mom
+```
+#### Example JSON request/response
+With undeclared json structure using `http::arg::json_item`
+```c++
+app.route("/person", {"PUT"}, std::tuple{http::arg::json_item("name"), http::arg::json_item("age")},
+[](std::string name, int age) {
+  return json::Map {
+    {"name", name},
+    {"isOld", age > 25},
+  };
+});
+
+// request:
+// PUT /person HTTP/1.1
+// Content-Type: application/json
+// Content-Length: 25
+//
+// {"name":"Paijo","age":34}
+
+// response:
+// HTTP/1.1 200 OK
+// Content-Type: application/json
+// Content-Length: 29
+//
+// {"name":"Paijo","isOld":true}
+```
+With declared json structures using `JSON_DECLARE` macro
+```c++
+JSON_DECLARE(
+  (PersonForm)
+  ,
+  (std::string, name)
+  (int        , age )
+)
+
+JSON_DECLARE(
+  (PersonResponse)
+  ,
+  (std::string, name )
+  (bool       , isOld)
+)
+
+app.route("/person", {"PUT"}, std::tuple{http::arg::json},
+[](PersonForm person) {
+  return PersonResponse {
+    .name = person.name,
+    .isOld = person.age > 25,
+  };
+});
+
+// request:
+// PUT /person HTTP/1.1
+// Content-Type: application/json
+// Content-Length: 27
+//
+// {"name":"Sucipto","age":20}
+
+// response:
+// HTTP/1.1 200 OK
+// Content-Type: application/json
+// Content-Length: 32
+//
+// {"name":"Sucipto","isOld":false}
+```
+#### Arguments
+We don't support embedding arguments on the URL since it would be expensive in embedded systems.
+Instead you can expose the query or header parameters using `http::arg::arg`
+```c++
+app.route("/args", {"GET"}, std::tuple{http::arg::arg("id"), http::arg::arg("User-Agent")},
+[](int id, std::string user_agent) {
+  return json::Map {
+    {"userAgent", user_agent},
+    {"id", id},
+  };
+});
+
+// request:
+// GET /args?id=42 HTTP/1.1
+// User-Agent: curl/8.5.0
+
+// response:
+// HTTP/1.1 200 OK
+// Content-Type: application/json
+// Content-Length: 34
+//
+// {"userAgent":"curl/8.5.0","id":42}
+```
+#### Error handling
+Error handling is simplified by using the `http::Error` type,
+which encapsulates the status code and an error message
+```c++
+app.route("/do-stuff", {"POST"}, std::tuple{http::arg::body},
+[](std::string stuff) -> http::Result<std::string> {
+  if (stuff.empty()) {
+    return Err(http::Error{http::StatusBadRequest, "Body cannot be empty"});
+  }
+
+  // do actual stuff
+
+  return Ok("Stuff is done");
+});
+
+// request:
+// POST /do-stuff HTTP/1.1
+
+// response:
+// HTTP/1.1 400 Bad Request
+// Content-Type: text/plain
+// Content-Length: 20
+//
+// Body cannot be empty
+```
+#### Dependency injection
+You can add dependency to the route handler by using `http::arg::depends`. 
+It takes a callable with signature `(const http::RequestReader&, http::ResponseWriter&) -> http::Result<T>`.
+It will execute the callable and will return early before the actual handler if the result is Err variant.
+The template argument `T` must be the same as, or convertible to, the corresponding handler argument.
+```c++
+auto get_token_from_request(const http::RequestReader& req, http::ResponseWriter&) -> http::Result<std::string_view> {
+  const std::string_view access_token = "Basic 12345"; // example access token
+  std::string_view token = "";
+  auto it = req.headers.find("Authentication");
+  if (it == req.headers.end()) {
+    it = req.headers.find("authentication");
+  }
+  if (it != req.headers.end()) {
+    token = it->second;
+  } else {
+    return Err(http::Error{http::StatusUnauthorized, "No authentication provided"});
+  }
+  if (token == access_token) {
+    return Ok(token);
+  } else {
+    return Err(http::Error{http::StatusUnauthorized, "Token doesn't match"});
+  }
+}
+
+app.route("/access-db", {"GET"}, std::tuple{http::arg::depends(get_token_from_request)},
+[](std::string_view token) {
+  return get_something_from_db_based_on_access_token(token);
+});
+
+// request:
+// GET /access-db HTTP/1.1
+// Authentication: Basic 54321
+
+// response:
+// HTTP/1.1 401 Unauthorized
+// Content-Type: text/plain
+// Content-Length: 19
+//
+// Token doesn't match
+```
+#### Binding to a Server
+HTTP is just an application layer. You have to bind it with a server
+```c++
+Server<TCP> tcp_server;
+app.bind(tcp_server);
+tcp_server.start({.host="localhost:5000", .max_socket=4}); // it will block the execution
+```
+#### Request
+You can do http request using `http::request` function
+```c++
+delameta::Result<http::ResponseReader> request_result = http::request(http::RequestWriter {
+  .method="GET",
+  .url="localhost:5000/hello",
+});
+
+if (request_result.is_err()) {
+  // handle error
+  return;
+}
+
+http::ResponseReader &response = request_result.unwrap();
+
+// extract body
+std::string body;
+response.body_stream >> [&](std::string_view sv) {
+  body += sv;
+};
+
+std::cout << response.status << '\n'; // 200
+std::cout << body << '\n'; // Hello world
+```
+You can do HTTPS request as well by providing certificate and private key files
+```c++
+extern std::string delameta_https_cert_file;
+extern std::string delameta_https_key_file;
+
+delameta_https_cert_file = "/path/to/certificate.crt";
+delameta_https_key_file = "/path/to/private.key";
+
+delameta::Result<http::ResponseReader> request_result = http::request(http::RequestWriter {
+  .method="GET",
+  .url="https://www.example.com",
+});
+```
+more example see [app/example.cpp](app/example.cpp)
+
 ### And more
 Feel free to head over to [app](app/) and [test](test/) for some more examples.
 Or you can visit my other github repository [todo](https://github.com/aufam/todo.git)
-that shows how to work with other modern c++ libraries like 
+that shows how to work with other modern c++ libraries like
 [`cpm-cmake`](https://github.com/cpm-cmake/CPM.cmake),
-[`fmt`](https://github.com/fmtlib/fmt), 
+[`fmt`](https://github.com/fmtlib/fmt),
 [`jwt-cpp`](https://github.com/Thalhammer/jwt-cpp),
 [`sqlpp11`](https://github.com/rbock/sqlpp11),
 [`Boost::preprocessor`](https://github.com/boostorg/preprocessor), and
