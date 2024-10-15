@@ -74,7 +74,7 @@ namespace Project::delameta {
 
     class StreamSessionServer : public Movable {
     public:
-        using StreamSessionHandler = std::function<Stream(Descriptor&, const std::string&, const std::vector<uint8_t>&)>;
+        using StreamSessionHandler = std::function<Stream(Descriptor&, const std::string&, std::vector<uint8_t>&)>;
 
         StreamSessionServer() = default;
         StreamSessionServer(StreamSessionHandler handler);
@@ -83,7 +83,7 @@ namespace Project::delameta {
         StreamSessionServer(StreamSessionServer&&) noexcept = default;
         StreamSessionServer& operator=(StreamSessionServer&&) noexcept = default;
 
-        Stream execute_stream_session(Descriptor& desc, const std::string& name, const std::vector<uint8_t>& data);
+        Stream execute_stream_session(Descriptor& desc, const std::string& name, std::vector<uint8_t>& data);
         StreamSessionHandler handler;
     };
 

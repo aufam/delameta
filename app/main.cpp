@@ -156,11 +156,11 @@ OPTS_MAIN(
     // create response using http request
     http::ResponseWriter res;
     if (not url_str.empty()) {
-        extern std::string delameta_https_ssl_cert_file;
-        extern std::string delameta_https_ssl_key_file;
+        extern std::string delameta_https_cert_file;
+        extern std::string delameta_https_key_file;
 
-        delameta_https_ssl_cert_file = cert;
-        delameta_https_ssl_key_file = key;
+        delameta_https_cert_file = cert;
+        delameta_https_key_file = key;
 
         http::RequestWriter req_w = std::move(req);
         req_w.url = URL(std::move(url_str));
@@ -234,13 +234,14 @@ static void on_sigint(std::function<void()> fn) {
     std::signal(SIGTERM, sig);
     std::signal(SIGQUIT, sig);
 }
-const char* const RESET   = "\033[0m";   // Reset to default
-const char* const BOLD    = "\033[1m";   // Bold text
-const char* const RED     = "\033[31m";  // Red text
-const char* const GREEN   = "\033[32m";  // Green text
-const char* const YELLOW  = "\033[33m";  // Yellow text
-const char* const BLUE    = "\033[34m";  // Blue
-constexpr char FORMAT[] = "{}{:%Y-%m-%d %H:%M:%S} {}{}{}:{} {}";
+
+static const char* const RESET   = "\033[0m";   // Reset to default
+static const char* const BOLD    = "\033[1m";   // Bold text
+static const char* const RED     = "\033[31m";  // Red text
+static const char* const GREEN   = "\033[32m";  // Green text
+static const char* const YELLOW  = "\033[33m";  // Yellow text
+static const char* const BLUE    = "\033[34m";  // Blue
+static constexpr char FORMAT[] = "{}{:%Y-%m-%d %H:%M:%S} {}{}{}:{} {}";
 
 namespace Project::delameta {
 

@@ -21,7 +21,7 @@ namespace Project::delameta::http {
 
     struct RequestReader {
         RequestReader() = default;
-        RequestReader(Descriptor& desc, const std::vector<uint8_t>& data);
+        RequestReader(Descriptor& desc, std::vector<uint8_t>& data);
         RequestReader(Descriptor& desc, std::vector<uint8_t>&& data);
         operator RequestWriter() const;
 
@@ -34,7 +34,7 @@ namespace Project::delameta::http {
     
     private:
         std::vector<uint8_t> data;
-        void parse(Descriptor& desc, const std::vector<uint8_t>& data);
+        void parse(Descriptor& desc, std::vector<uint8_t>& data);
     };
 }
 

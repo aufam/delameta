@@ -12,23 +12,95 @@ namespace json = delameta::json;
 class DummyDescriptor : public delameta::Descriptor {
 public:
     delameta::Result<std::vector<uint8_t>> read() override {
-        return Err(delameta::Error(-1, "Not implemented"));
+        if (buffer.empty()) {
+            return Err("buffer is empty");
+        }
+
+        std::vector<uint8_t> res(buffer.front().begin(), buffer.front().end());
+        buffer.pop_front();
+        return Ok(std::move(res));
     }
-    delameta::Result<std::vector<uint8_t>> read_until(size_t) override {
-        return Err(delameta::Error(-1, "Not implemented"));
+
+    delameta::Result<std::vector<uint8_t>> read_until(size_t n) override {
+        std::vector<uint8_t> res;
+        res.reserve(n);
+
+        while (n > 0) {
+            if (buffer.empty()) {
+                return Err("buffer is empty");
+            }
+
+            auto &front = buffer.front();
+            auto front_size = front.size();
+
+            if (front_size > n) {
+                res.insert(res.end(), front.begin(), front.begin() + n);
+                front = front.substr(n);
+                n = 0;
+            } else {
+                buffer.pop_front();
+                n -= front_size;
+                res.insert(res.end(), front.begin(), front.end());
+            }
+        }
+
+        return Ok(std::move(res));
     }
-    Stream read_as_stream(size_t) override {
-        return {};
+
+    Stream read_as_stream(size_t n) override {
+        Stream s;
+        s << [buffer=std::move(buffer), data=std::string(), n](Stream& s) mutable -> std::string_view {
+            if (buffer.empty()) {
+                return {};
+            }
+
+            auto &front = buffer.front();
+            auto front_size = front.size();
+            if (front_size > n) {
+                front = front.substr(n);
+                data = front;
+                n = 0;
+            } else {
+                data = front;
+                buffer.pop_front();
+                n -= front_size;
+            }
+
+            s.again = !buffer.empty() and n > 0;
+            return data;
+        };
+        return s;
     }
-    delameta::Result<void> write(std::string_view) override {
-        return Err(delameta::Error(-1, "Not implemented"));
+
+    delameta::Result<void> write(std::string_view data) override {
+        buffer.push_back(std::string(data));
+        return Ok();
     }
+
+    void flush() {
+        buffer.clear();
+    }
+
+    DummyDescriptor& operator<<(std::string s) {
+        buffer.push_back(std::move(s));
+        return *this;
+    }
+
+    DummyDescriptor& operator>>(std::string& s) {
+        if (!buffer.empty()) {
+            s = std::move(buffer.front());
+            buffer.pop_front();
+        }
+        return *this;
+    }
+
+    std::list<std::string> buffer;
 };
 
 TEST(Http, request) {
     DummyDescriptor desc;
 
-    std::string payload = 
+    desc.write( 
         "POST /submit-form HTTP/1.1\r\n"
         "Host: www.example.com\r\n"
         "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)\r\n"
@@ -37,9 +109,10 @@ TEST(Http, request) {
         "Content-Length: 22\r\n"
         "Connection: keep-alive\r\n"
         "\r\n"
-        "name=JohnDoe&age=30\r\n";
+        "name=JohnDoe&age=30\r\n"
+    );
 
-    RequestReader req(desc, std::vector<uint8_t>(payload.begin(), payload.end()));
+    RequestReader req(desc, {});
     EXPECT_EQ(req.method, "POST");
     EXPECT_EQ(req.url.full_path, "/submit-form");
     EXPECT_EQ(req.version, "HTTP/1.1");
@@ -103,7 +176,7 @@ TEST(Http, handler) {
     DummyDescriptor desc;
     {
         std::string payload = "GET /test HTTP/1.1\r\nContent-Length: 12\r\n\r\nthis is body";
-        const auto payload_vec = std::vector<uint8_t>(payload.begin(), payload.end());
+        auto payload_vec = std::vector<uint8_t>(payload.begin(), payload.end());
         auto [req, res] = handler.execute(desc, payload_vec);
 
         EXPECT_EQ(req.method, "GET");
@@ -117,7 +190,7 @@ TEST(Http, handler) {
         EXPECT_EQ(res.body, "");
     } {
         std::string payload = "POST /test HTTP/1.1\r\nContent-Length: 12\r\n\r\nthis is body";
-        const auto payload_vec = std::vector<uint8_t>(payload.begin(), payload.end());
+        auto payload_vec = std::vector<uint8_t>(payload.begin(), payload.end());
         auto [req, res] = handler.execute(desc, payload_vec);
 
         EXPECT_EQ(req.method, "POST");
@@ -131,7 +204,7 @@ TEST(Http, handler) {
         EXPECT_EQ(res.body, "POST: this is body");
     } {
         std::string payload = "PUT /test/123 HTTP/1.1\r\nContent-Length: 12\r\n\r\nthis is body";
-        const auto payload_vec = std::vector<uint8_t>(payload.begin(), payload.end());
+        auto payload_vec = std::vector<uint8_t>(payload.begin(), payload.end());
         auto [req, res] = handler.execute(desc, payload_vec);
 
         EXPECT_EQ(req.method, "PUT");
@@ -145,7 +218,7 @@ TEST(Http, handler) {
         EXPECT_EQ(res.body, "");
     } {
         std::string payload = "PUT /test?id=123 HTTP/1.1\r\nContent-Length: 12\r\n\r\nthis is body";
-        const auto payload_vec = std::vector<uint8_t>(payload.begin(), payload.end());
+        auto payload_vec = std::vector<uint8_t>(payload.begin(), payload.end());
         auto [req, res] = handler.execute(desc, payload_vec);
 
         EXPECT_EQ(req.method, "PUT");
@@ -186,29 +259,22 @@ TEST(Http, json) {
         }
     })";
 
-    std::string payload = 
+    std::string headers = 
         "POST /json HTTP/1.1\r\n"
         "Content-Type: application/json\r\n"
-        "Content-Length: " + std::to_string(body.size()) + "\r\n\r\n" +
-        body;
+        "Content-Length: " + std::to_string(body.size()) + "\r\n\r\n";
     
     DummyDescriptor desc;
-    const auto payload_vec = std::vector<uint8_t>(payload.begin(), payload.end());
-    auto [req, res] = handler.execute(desc, payload_vec);
+    desc.write(headers);
+    desc.write(body);
+
+    auto data = desc.read().unwrap();
+    auto [req, res] = handler.execute(desc, data);
     EXPECT_EQ(res.status, StatusOK);
 }
 
 TEST(Http, form) {
-    static const std::string body = R"(num=42&text=test+123%2F456-789)";
-
-    class Chunked : public DummyDescriptor {
-    public:
-        Stream read_as_stream(size_t) override {
-            Stream s;
-            s << body;
-            return s;
-        }
-    };
+    const std::string body = R"(num=42&text=test+123%2F456-789)";
 
     Http handler;
     handler.route("/form", {"POST"}, std::tuple{arg::form("num"), arg::form("text")}, 
@@ -217,14 +283,14 @@ TEST(Http, form) {
         EXPECT_EQ(text, "test 123/456-789");
     });
 
-    std::string header = 
-        "POST /form HTTP/1.1\r\n"
-        "Content-Type: application/x-www-form-urlencoded; charset=utf-8\r\n"
-        "Content-Length: " + std::to_string(body.size()) + "\r\n\r\n";
+    DummyDescriptor desc;
+    desc.write("POST /form HTTP/1.1\r\n");
+    desc.write("Content-Type: application/x-www-form-urlencoded; charset=utf-8\r\n");
+    desc.write("Content-Length: " + std::to_string(body.size()) + "\r\n\r\n");
+    desc.write(body);
 
-    Chunked desc;
-    const auto header_vec = std::vector<uint8_t>(header.begin(), header.end());
-    auto [req, res] = handler.execute(desc, header_vec);
+    auto first_line = desc.read().unwrap();
+    auto [req, res] = handler.execute(desc, first_line);
     EXPECT_EQ(res.status, StatusOK);
 }
 

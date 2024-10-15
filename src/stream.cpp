@@ -130,7 +130,7 @@ std::vector<uint8_t> Stream::pop_once() {
 
 StreamSessionServer::StreamSessionServer(StreamSessionHandler handler) : handler(std::move(handler)) {}
 
-Stream StreamSessionServer::execute_stream_session(Descriptor& desc, const std::string& name, const std::vector<uint8_t>& data) {
+Stream StreamSessionServer::execute_stream_session(Descriptor& desc, const std::string& name, std::vector<uint8_t>& data) {
     return handler ? handler(desc, name, data) : Stream{};
 }
 

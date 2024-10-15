@@ -2,6 +2,7 @@
 #include "delameta/http/chunked.h"
 #include "delameta/tcp.h"
 #include "delameta/tls.h"
+#include "delameta/utils.h"
 #include <algorithm>
 #include "../time_helper.ipp"
 
@@ -10,27 +11,23 @@ using namespace Project::delameta;
 using etl::Err;
 using etl::Ok;
 
-std::string delameta_https_ssl_cert_file;
-std::string delameta_https_ssl_key_file;
+std::string delameta_https_cert_file;
+std::string delameta_https_key_file;
 
 http::Error::Error(int status) : status(status), what("") {}
 http::Error::Error(int status, std::string what) : status(status), what(std::move(what)) {}
 http::Error::Error(delameta::Error err) : status(StatusInternalServerError), what(err.what + ": " + std::to_string(err.code)) {}
 
-auto http::request(StreamSessionClient& session, RequestWriter req) -> delameta::Result<ResponseReader> {
+static void setup_request(http::RequestWriter& req) {
     if (req.headers.find("User-Agent") == req.headers.end() && 
         req.headers.find("user-agent") == req.headers.end()
     ) {
-        req.headers["User-Agent"] = "delameta/" DELAMETA_VERSION;
+        req.headers.emplace("User-Agent", "delameta/" DELAMETA_VERSION);
     }
     if (req.headers.find("Host") == req.headers.end() && 
         req.headers.find("host") == req.headers.end()
     ) {
-        req.headers["Host"] = req.url.host;
-    }
-
-    if (!req.body.empty() && !req.body_stream.rules.empty()) {
-        return Err("Multiple body source");
+        req.headers.emplace("Host", req.url.host);
     }
 
     auto content_length_it = req.headers.find("Content-Length");
@@ -38,24 +35,39 @@ auto http::request(StreamSessionClient& session, RequestWriter req) -> delameta:
     bool content_length_found = content_length_it != req.headers.end();
 
     auto set_content_length = [&](size_t n, bool force) {
-        if (force) {
-            if (content_length_found) content_length_it->second = std::to_string(n);
-            else req.headers["Content-Length"] = std::to_string(n);
+        if (content_length_found) {
+            if (force) content_length_it->second = std::to_string(n);
+        } else {
+            req.headers.emplace("Content-Length", std::to_string(n));
         }
-        else if (!content_length_found) req.headers["Content-Length"] = std::to_string(n);
     };
 
-    if (!req.body.empty() && !req.body_stream.rules.empty()) {
-    } else if (!req.body.empty()) {
+    if (!req.body.empty()) {
         set_content_length(req.body.size(), false);
     } else if (!req.body_stream.rules.empty()) {
         if (!content_length_found) {
-            req.body_stream = chunked_encode(req.body_stream);
-            req.headers["Transfer-Encoding"] = "chunked";
+            auto transfer_encoding_it = req.headers.find("Transfer-Encoding");
+            if (transfer_encoding_it == req.headers.end()) transfer_encoding_it = req.headers.find("transfer-encoding");
+            bool transfer_encoding_found = transfer_encoding_it != req.headers.end();
+
+            if (!transfer_encoding_found) {
+                req.body_stream = http::chunked_encode(req.body_stream);
+                req.headers.emplace("Transfer-Encoding", "chunked");
+            }
         }
     } else {
-        set_content_length(0, true);
+        if (!(req.method == "GET" or req.method == "DELETE" or req.method == "HEAD" or req.method == "OPTIONS")) {
+            set_content_length(0, true);
+        }
     }
+}
+
+auto http::request(StreamSessionClient& session, RequestWriter req) -> delameta::Result<ResponseReader> {
+    if (!req.body.empty() && !req.body_stream.rules.empty()) {
+        return Err("Multiple body source");
+    }
+
+    setup_request(req);
 
     Stream s = req.dump();
     return session.request(s).then([&session](std::vector<uint8_t> data) {
@@ -64,49 +76,11 @@ auto http::request(StreamSessionClient& session, RequestWriter req) -> delameta:
 }
 
 auto http::request(StreamSessionClient&& session, RequestWriter req) -> delameta::Result<ResponseReader> {
-    if (req.headers.find("User-Agent") == req.headers.end() && 
-        req.headers.find("user-agent") == req.headers.end()
-    ) {
-        req.headers["User-Agent"] = "delameta/" DELAMETA_VERSION;
-    }
-    if (req.headers.find("Host") == req.headers.end() && 
-        req.headers.find("host") == req.headers.end()
-    ) {
-        req.headers["Host"] = req.url.host;
-    }
-    if (req.headers.find("Connection") == req.headers.end() && 
-        req.headers.find("connection") == req.headers.end()
-    ) {
-        req.headers["Connection"] = "close";
-    }
-
     if (!req.body.empty() && !req.body_stream.rules.empty()) {
         return Err("Multiple body source");
     }
 
-    auto content_length_it = req.headers.find("Content-Length");
-    if (content_length_it == req.headers.end()) content_length_it = req.headers.find("content-length");
-    bool content_length_found = content_length_it != req.headers.end();
-
-    auto set_content_length = [&](size_t n, bool force) {
-        if (force) {
-            if (content_length_found) content_length_it->second = std::to_string(n);
-            else req.headers["Content-Length"] = std::to_string(n);
-        }
-        else if (!content_length_found) req.headers["Content-Length"] = std::to_string(n);
-    };
-
-    if (!req.body.empty() && !req.body_stream.rules.empty()) {
-    } else if (!req.body.empty()) {
-        set_content_length(req.body.size(), false);
-    } else if (!req.body_stream.rules.empty()) {
-        if (!content_length_found) {
-            req.body_stream = chunked_encode(req.body_stream);
-            req.headers["Transfer-Encoding"] = "chunked";
-        }
-    } else {
-        set_content_length(0, true);
-    }
+    setup_request(req);
 
     auto session_ptr = new StreamSessionClient(std::move(session));
 
@@ -125,8 +99,8 @@ auto http::request(RequestWriter req) -> delameta::Result<ResponseReader> {
     if (req.url.url.size() >= 8 && req.url.url.substr(0, 8) == "https://") {
         auto [session, err] = TLS::Open(__FILE__, __LINE__, TLS::Args{
             .host=req.url.url, 
-            .cert_file=delameta_https_ssl_cert_file,
-            .key_file=delameta_https_ssl_key_file,
+            .cert_file=delameta_https_cert_file,
+            .key_file=delameta_https_key_file,
         });
         if (err) return Err(std::move(*err));
         return request(StreamSessionClient(new TLS(std::move(*session))), std::move(req));
@@ -151,7 +125,7 @@ auto http::Http::reroute(std::string path, etl::Ref<const RequestReader> req, et
 }
 
 void http::Http::bind(StreamSessionServer& server, BindArg is_tcp_server) const {
-    server.handler = [this, is_tcp_server](Descriptor& desc, const std::string& name, const std::vector<uint8_t>& data) -> Stream {
+    server.handler = [this, is_tcp_server](Descriptor& desc, const std::string& name, std::vector<uint8_t>& data) -> Stream {
         auto [req, res] = execute(desc, data);
 
         // handle socket configuration
@@ -193,7 +167,7 @@ void http::Http::bind(StreamSessionServer& server, BindArg is_tcp_server) const 
     };
 }
 
-auto http::Http::execute(Descriptor& desc, const std::vector<uint8_t>& data) const -> std::pair<RequestReader, ResponseWriter> {
+auto http::Http::execute(Descriptor& desc, std::vector<uint8_t>& data) const -> std::pair<RequestReader, ResponseWriter> {
     auto start = delameta_detail_get_time_stamp();
     auto req = http::RequestReader(desc, data);
     auto res = http::ResponseWriter{};
@@ -227,11 +201,11 @@ auto http::Http::execute(Descriptor& desc, const std::vector<uint8_t>& data) con
     bool content_length_found = content_length_it != res.headers.end();
 
     auto set_content_length = [&](size_t n, bool force) {
-        if (force) {
-            if (content_length_found) content_length_it->second = std::to_string(n);
-            else res.headers["Content-Length"] = std::to_string(n);
+        if (content_length_found) {
+            if (force) content_length_it->second = std::to_string(n);
+        } else {
+            req.headers.emplace("Content-Length", std::to_string(n));
         }
-        else if (!content_length_found) res.headers["Content-Length"] = std::to_string(n);
     };
 
     if (!res.body.empty() && !res.body_stream.rules.empty()) {
@@ -239,8 +213,14 @@ auto http::Http::execute(Descriptor& desc, const std::vector<uint8_t>& data) con
         set_content_length(res.body.size(), false);
     } else if (!res.body_stream.rules.empty()) {
         if (!content_length_found) {
-            res.body_stream = chunked_encode(res.body_stream);
-            res.headers["Transfer-Encoding"] = "chunked";
+            auto transfer_encoding_it = res.headers.find("Transfer-Encoding");
+            if (transfer_encoding_it == res.headers.end()) transfer_encoding_it = res.headers.find("transfer-encoding");
+            bool transfer_encoding_found = transfer_encoding_it != res.headers.end();
+
+            if (!transfer_encoding_found) {
+                res.body_stream = http::chunked_encode(res.body_stream);
+                res.headers.emplace("Transfer-Encoding", "chunked");
+            }
         }
     } else {
         set_content_length(0, true);
@@ -254,7 +234,7 @@ auto http::Http::execute(Descriptor& desc, const std::vector<uint8_t>& data) con
     if (res.headers.find("Server") == res.headers.end() && 
         res.headers.find("server") == res.headers.end()
     ) {
-        res.headers["Server"] = "delameta/" DELAMETA_VERSION;
+        res.headers.emplace("Server", "delameta/" DELAMETA_VERSION);
     }
 
     if (res.status_string.empty()) res.status_string = status_to_string(res.status);
@@ -286,7 +266,7 @@ http::Http::Context::Context(const RequestReader& req) {
 }
 
 bool http::Http::Context::content_type_starts_with(std::string_view prefix) const {
-    return content_type.substr(0, prefix.length()) == prefix;
+    return content_type.length() >= prefix.length() && content_type.substr(0, prefix.length()) == prefix;
 }
 
 auto http::Http::Context::form_at(const char* key) const -> http::Result<std::string_view> {

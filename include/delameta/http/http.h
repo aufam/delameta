@@ -92,7 +92,7 @@ namespace Project::delameta::http {
         };
 
         void bind(StreamSessionServer& server, BindArg is_tcp_server = {false}) const;
-        std::pair<RequestReader, ResponseWriter> execute(Descriptor& desc, const std::vector<uint8_t>& data) const;
+        std::pair<RequestReader, ResponseWriter> execute(Descriptor& desc, std::vector<uint8_t>& data) const;
     
     protected:
         struct Context {
@@ -363,15 +363,17 @@ namespace Project::delameta::http {
             if (ctx.type == Context::JSON)
                 return etl::json::deserialize<T>(ctx.json).except(internal_error);
             else
-                return etl::Err(Error{StatusBadRequest, "Content-Type is not json"});
+                return etl::Err(Error{StatusBadRequest, "Content-Type is not JSON"});
         }
 
         template <typename T> static Result<T>
         process_arg(const ArgFormItem& arg, const RequestReader&, ResponseWriter&, Context& ctx) {
             if (ctx.type == Context::Form)
                 return ctx.form_at(arg.key).and_then(convert_string_into<T>);
+            else if (ctx.type == Context::JSON)
+                return etl::json::deserialize<T>(ctx.json).except(internal_error);
             else
-                return etl::Err(Error{StatusBadRequest, "Content-Type is not url-encoded"});
+                return etl::Err(Error{StatusBadRequest, "Content-Type is not URL-encoded nor JSON"});
         }
 
         template <typename T> static Result<T>
@@ -391,17 +393,17 @@ namespace Project::delameta::http {
 
             if constexpr (std::is_same_v<T, std::string> || std::is_same_v<T, std::string_view> || std::is_same_v<T, const char*>) {
                 res.body = std::move(result);
-                if (ct == res.headers.end()) res.headers["Content-Type"] = "text/plain";
+                if (ct == res.headers.end()) res.headers.emplace("Content-Type", "text/plain");
             } else if constexpr (etl::is_etl_string_v<T> || std::is_same_v<T, etl::StringView>) {
                 res.body = std::string(result.data(), result.len());
-                if (ct == res.headers.end()) res.headers["Content-Type"] = "text/plain";
+                if (ct == res.headers.end()) res.headers.emplace("Content-Type", "text/plain");
             } else if constexpr (std::is_arithmetic_v<T>) {
                 res.body = etl::json::serialize(result);
-                if (ct == res.headers.end()) res.headers["Content-Type"] = "text/plain";
+                if (ct == res.headers.end()) res.headers.emplace("Content-Type", "text/plain");
             } else if constexpr (std::is_same_v<T, std::vector<uint8_t>>) {
                 res.headers["Content-Length"] = std::to_string(result.size());
                 res.body_stream << std::move(result);
-                if (ct == res.headers.end()) res.headers["Content-Type"] = "application/octet-stream";
+                if (ct == res.headers.end()) res.headers.emplace("Content-Type", "application/octet-stream");
             } else if constexpr (std::is_same_v<T, ResponseWriter>) {
                 res = std::move(result);
             } else if constexpr (std::is_same_v<T, ResponseReader>) {
@@ -409,9 +411,9 @@ namespace Project::delameta::http {
             } else if constexpr (std::is_same_v<T, Stream>) {
                 res.body_stream = std::move(result);
             } else {
-                if (ct == res.headers.end()) res.headers["Content-Type"] = "application/json";
                 res.headers["Content-Length"] = std::to_string(etl::json::size_max(result));
                 res.body_stream = delameta::json::serialize_as_stream(std::move(result));
+                if (ct == res.headers.end()) res.headers.emplace("Content-Type", "application/json");
             }
         }
 

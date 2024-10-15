@@ -1,6 +1,5 @@
 #include "delameta/http/response.h"
 #include "delameta/utils.h"
-#include "etl/string_view.h"
 #include <string_view>
 
 using namespace Project;
@@ -58,11 +57,21 @@ auto http::ResponseWriter::dump() -> Stream {
     return s;
 }
 
-http::ResponseReader::ResponseReader(Descriptor& desc, const std::vector<uint8_t>& data) : data() { parse(desc, data); }
+http::ResponseReader::ResponseReader(Descriptor& desc, std::vector<uint8_t>& data) : data() { parse(desc, data); }
 http::ResponseReader::ResponseReader(Descriptor& desc, std::vector<uint8_t>&& data) : data(std::move(data)) { parse(desc, this->data); }
 
-void http::ResponseReader::parse(Descriptor& desc, const std::vector<uint8_t>& data) {
+void http::ResponseReader::parse(Descriptor& desc, std::vector<uint8_t>& data) {
     auto sv = std::string_view(reinterpret_cast<const char*>(data.data()), data.size());
+    while (sv.find("\r\n\r\n") == std::string::npos and sv.find("\n\n") == std::string::npos) {
+        auto read_result = desc.read();
+        if (read_result.is_err()) {
+            return;
+        }
+
+        data.insert(data.end(), read_result.unwrap().begin(), read_result.unwrap().end());
+        sv = std::string_view(reinterpret_cast<const char*>(data.data()), data.size());
+    }
+
     auto first_line = string_view_consume_line(sv);
 
     auto version_end = first_line.find(' ');
@@ -86,7 +95,7 @@ void http::ResponseReader::parse(Descriptor& desc, const std::vector<uint8_t>& d
 http::ResponseReader::operator ResponseWriter() const {
     std::unordered_map<std::string, std::string> headers;
     for (auto [key, value] : this->headers) {
-        headers[std::string(key)] = std::string(value);
+        headers.emplace(key, value);
     }
     return {
         .version=std::string(version),

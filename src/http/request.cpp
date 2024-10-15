@@ -14,11 +14,20 @@ void delameta_detail_http_request_response_reader_parse_headers_body(
     Stream& body_stream
 );
 
-http::RequestReader::RequestReader(Descriptor& desc, const std::vector<uint8_t>& data) : data() { parse(desc, data); }
+http::RequestReader::RequestReader(Descriptor& desc, std::vector<uint8_t>& data) : data() { parse(desc, data); }
 http::RequestReader::RequestReader(Descriptor& desc, std::vector<uint8_t>&& data) : data(std::move(data)) { parse(desc, this->data); }
 
-void http::RequestReader::parse(Descriptor& desc, const std::vector<uint8_t>& data) {
+void http::RequestReader::parse(Descriptor& desc, std::vector<uint8_t>& data) {
     auto sv = std::string_view(reinterpret_cast<const char*>(data.data()), data.size());
+    while (sv.find("\r\n\r\n") == std::string::npos and sv.find("\n\n") == std::string::npos) {
+        auto read_result = desc.read();
+        if (read_result.is_err()) {
+            return;
+        }
+
+        data.insert(data.end(), read_result.unwrap().begin(), read_result.unwrap().end());
+        sv = std::string_view(reinterpret_cast<const char*>(data.data()), data.size());
+    }
 
     auto first_line = string_view_consume_line(sv);
     auto [method, path, version] = etl::string_view(first_line.data(), first_line.size()).split<3>(" ");
@@ -81,7 +90,7 @@ auto http::RequestWriter::dump() -> Stream {
 http::RequestReader::operator RequestWriter() const {
     std::unordered_map<std::string, std::string> headers;
     for (auto [key, value] : this->headers) {
-        headers[std::string(key)] = std::string(value);
+        headers.emplace(key, value);
     }
     return {
         .method=std::string(method),
