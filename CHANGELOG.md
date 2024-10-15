@@ -1,3 +1,14 @@
+## [0.1.5] - 2024-10-15
+### Added
+- Optional print response header in main opts
+- TLS certificate and key global variable for https request
+- TLS and TCP server to use event-driven pattern
+- StringStream
+
+### Fixed
+- Handling incomplete HTTP headers
+- Improve chunked decoding
+
 ## [0.1.4] - 2024-10-13
 ### Added
 - A01 distance sensor
