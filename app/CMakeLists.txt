@@ -35,14 +35,3 @@ install(
     DESTINATION /usr/share/delameta/assets
 )
 
-# cpack
-set(CPACK_PACKAGE_NAME delameta)
-set(CPACK_PACKAGE_VERSION ${delameta_VERSION})
-set(CPACK_PACKAGE_DESCRIPTION_SUMMARY ${delameta_DESCRIPTION})
-
-set(CPACK_PACKAGE_VENDOR "Delameta Bilano")
-set(CPACK_PACKAGE_CONTACT "aufam@github.com")
-set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Aufa")
-
-set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)
-include(CPack)

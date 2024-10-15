@@ -16,7 +16,6 @@ option(DELAMETA_BUILD_APP 	 "Build the main app"  OFF)
 option(DELAMETA_BUILD_TEST 	 "Build the test"	   OFF)
 option(DELAMETA_TARGET_LINUX "Build for Linux"	   ON)
 option(DELAMETA_TARGET_STM32 "Build for STM32"	   OFF)
-option(DELAMETA_INSTALL_DEV  "Enable install dev"  OFF)
 
 # some messages
 message(STATUS "DELAMETA_VERSION      : ${PROJECT_VERSION}")
@@ -24,7 +23,6 @@ message(STATUS "DELAMETA_BUILD_APP    : ${DELAMETA_BUILD_APP}")
 message(STATUS "DELAMETA_BUILD_TEST   : ${DELAMETA_BUILD_TEST}")
 message(STATUS "DELAMETA_TARGET_LINUX : ${DELAMETA_TARGET_LINUX}")
 message(STATUS "DELAMETA_TARGET_STM32 : ${DELAMETA_TARGET_STM32}")
-message(STATUS "DELAMETA_INSTALL_DEV  : ${DELAMETA_INSTALL_DEV}")
 
 # ensure that only one target is selected
 if (DELAMETA_TARGET_LINUX AND DELAMETA_TARGET_STM32)
@@ -120,42 +118,38 @@ if (DELAMETA_TARGET_LINUX AND DELAMETA_BUILD_TEST)
 	add_test(NAME test_all COMMAND test_all)
 endif()
 
-# install
-if (DELAMETA_TARGET_LINUX AND DELAMETA_INSTALL_DEV)
-	# install target
-	install(TARGETS delameta
-		EXPORT delametaTargets
-		LIBRARY DESTINATION lib COMPONENT Runtime
-		ARCHIVE DESTINATION lib COMPONENT Development
-		RUNTIME DESTINATION bin COMPONENT Runtime
-		PUBLIC_HEADER DESTINATION include COMPONENT Development
-		BUNDLE DESTINATION bin COMPONENT Runtime
-	)
+# installation config
+install(TARGETS delameta
+	EXPORT delametaTargets
+	LIBRARY DESTINATION lib COMPONENT Runtime
+	ARCHIVE DESTINATION lib COMPONENT Development
+	RUNTIME DESTINATION bin COMPONENT Runtime
+	PUBLIC_HEADER DESTINATION include COMPONENT Development
+	BUNDLE DESTINATION bin COMPONENT Runtime
+)
 
-	# config version
-	include(CMakePackageConfigHelpers)
-	write_basic_package_version_file(
-		"${PROJECT_BINARY_DIR}/delametaConfigVersion.cmake"
-		VERSION ${PROJECT_VERSION}
-		COMPATIBILITY ExactVersion
-	)
+install(DIRECTORY include/ DESTINATION include)
+install(EXPORT delametaTargets DESTINATION lib/cmake/delameta)
 
-	# config file
-	configure_package_config_file(
-		"${PROJECT_SOURCE_DIR}/cmake/delametaConfig.cmake.in"
-		"${PROJECT_BINARY_DIR}/delametaConfig.cmake"
-		INSTALL_DESTINATION lib/cmake/delameta
-	)
+# package config and versioning
+include(CMakePackageConfigHelpers)
+configure_package_config_file(
+	"${CMAKE_CURRENT_SOURCE_DIR}/cmake/delametaConfig.cmake.in"
+	"${CMAKE_CURRENT_BINARY_DIR}/delametaConfig.cmake"
+	INSTALL_DESTINATION lib/cmake/delameta
+)
 
-	# install config
-	install(EXPORT delametaTargets DESTINATION lib/cmake/delameta)
-	install(FILES "${PROJECT_BINARY_DIR}/delametaConfigVersion.cmake"
-		"${PROJECT_BINARY_DIR}/delametaConfig.cmake"
-		DESTINATION lib/cmake/delameta
-	)
-	install(DIRECTORY ${PROJECT_SOURCE_DIR}/include/ DESTINATION include)
+write_basic_package_version_file(
+	"${CMAKE_CURRENT_BINARY_DIR}/delametaConfigVersion.cmake"
+	VERSION ${PROJECT_VERSION}
+	COMPATIBILITY AnyNewerVersion
+)
 
-endif ()
+install(FILES
+	"${CMAKE_CURRENT_BINARY_DIR}/delametaConfig.cmake"
+	"${CMAKE_CURRENT_BINARY_DIR}/delametaConfigVersion.cmake"
+	DESTINATION lib/cmake/delameta
+)
 
 # uninstall
 if(NOT TARGET uninstall)
@@ -168,4 +162,18 @@ if(NOT TARGET uninstall)
 	add_custom_target(uninstall
 		COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_BINARY_DIR}/uninstall.cmake
 	)
+endif()
+
+# cpack
+if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+	set(CPACK_PACKAGE_NAME delameta)
+	set(CPACK_PACKAGE_VERSION ${delameta_VERSION})
+	set(CPACK_PACKAGE_DESCRIPTION_SUMMARY ${delameta_DESCRIPTION})
+
+	set(CPACK_PACKAGE_VENDOR "Delameta Bilano")
+	set(CPACK_PACKAGE_CONTACT "aufam@github.com")
+	set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Aufa")
+
+	set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)
+	include(CPack)
 endif()
