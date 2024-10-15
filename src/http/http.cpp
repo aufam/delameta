@@ -204,7 +204,7 @@ auto http::Http::execute(Descriptor& desc, std::vector<uint8_t>& data) const -> 
         if (content_length_found) {
             if (force) content_length_it->second = std::to_string(n);
         } else {
-            req.headers.emplace("Content-Length", std::to_string(n));
+            res.headers.emplace("Content-Length", std::to_string(n));
         }
     };
 

@@ -433,6 +433,9 @@ namespace Project::delameta::http {
         template <typename T> static Result<T> 
         convert_stream_into(const RequestReader& req) {
             if constexpr (std::is_same_v<T, Stream>) {
+                if (req.body_stream.rules.empty()) {
+                    return etl::Err(internal_error("Body stream is empty"));
+                }
                 return etl::Ok(std::move(req.body_stream));
             } else {
                 if (req.body.empty()) req.body_stream >> [&req](std::string_view chunk) { req.body += chunk; };

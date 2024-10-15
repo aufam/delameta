@@ -1,5 +1,6 @@
 #include "delameta/http/chunked.h"
 #include "delameta/utils.h"
+#include "delameta/debug.h"
 
 using namespace Project;
 using namespace delameta;
@@ -61,15 +62,14 @@ Stream http::chunked_decode(Descriptor& input) {
             }
 
             auto chunk_size = chunk_size_result.unwrap();
-            if (chunk_size + 2 >= sv.size()) {
+            if (chunk_size + 2 <= sv.size()) {
                 auto res = sv.substr(0, chunk_size);
                 sv = sv.substr(chunk_size + 2);
-                do_append = sv.size() < 3;
                 s.again = chunk_size > 0;
+                do_append = s.again and sv.size() < 3;
                 return res;
             } else {
                 do_append = true;
-                s.again = true;
             }
         }
     };
