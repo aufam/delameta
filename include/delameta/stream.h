@@ -119,6 +119,21 @@ namespace Project::delameta {
 
         std::string_view sv;
     };
+
+    class StringStream : public delameta::Descriptor {
+    public:
+        Result<std::vector<uint8_t>> read() override;
+        delameta::Result<std::vector<uint8_t>> read_until(size_t n) override;
+        Stream read_as_stream(size_t n) override;
+        delameta::Result<void> write(std::string_view data) override;
+
+        void flush();
+
+        StringStream& operator<<(std::string s);
+        StringStream& operator>>(std::string& s);
+
+        std::list<std::string> buffer;
+    };
 }
 
 #ifdef FMT_FORMAT_H_

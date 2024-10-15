@@ -193,4 +193,85 @@ auto StringViewDescriptor::read_line() -> std::string_view {
    return string_view_consume_line(sv);
 }
 
+auto StringStream::read() -> Result<std::vector<uint8_t>> {
+    if (buffer.empty()) {
+        return Err("buffer is empty");
+    }
 
+    std::vector<uint8_t> res(buffer.front().begin(), buffer.front().end());
+    buffer.pop_front();
+    return Ok(std::move(res));
+}
+
+auto StringStream::read_until(size_t n) -> Result<std::vector<uint8_t>> {
+    std::vector<uint8_t> res;
+    res.reserve(n);
+
+    while (n > 0) {
+        if (buffer.empty()) {
+            return Err("buffer is empty");
+        }
+
+        auto &front = buffer.front();
+        auto front_size = front.size();
+
+        if (front_size > n) {
+            res.insert(res.end(), front.begin(), front.begin() + n);
+            front = front.substr(n);
+            n = 0;
+        } else {
+            buffer.pop_front();
+            n -= front_size;
+            res.insert(res.end(), front.begin(), front.end());
+        }
+    }
+
+    return Ok(std::move(res));
+}
+
+auto StringStream::read_as_stream(size_t n) -> Stream {
+    Stream s;
+    s << [buffer=std::move(buffer), data=std::string(), n](Stream& s) mutable -> std::string_view {
+        if (buffer.empty()) {
+            return {};
+        }
+
+        auto &front = buffer.front();
+        auto front_size = front.size();
+        if (front_size > n) {
+            front = front.substr(n);
+            data = front;
+            n = 0;
+        } else {
+            data = front;
+            buffer.pop_front();
+            n -= front_size;
+        }
+
+        s.again = !buffer.empty() and n > 0;
+        return data;
+    };
+    return s;
+}
+
+auto StringStream::write(std::string_view sv) -> Result<void> {
+    buffer.push_back(std::string(sv));
+    return Ok();
+}
+
+void StringStream::flush() {
+    buffer.clear();
+}
+
+auto StringStream::operator<<(std::string s) -> StringStream& {
+    buffer.push_back(std::move(s));
+    return *this;
+}
+
+auto StringStream::operator>>(std::string& s) -> StringStream& {
+    if (!buffer.empty()) {
+        s = std::move(buffer.front());
+        buffer.pop_front();
+    }
+    return *this;
+}
