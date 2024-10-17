@@ -84,6 +84,7 @@ if (DELAMETA_TARGET_STM32)
 		-Wall
 		-Wextra
 		-pedantic
+		$<$<COMPILE_LANGUAGE:C>:-Wno-unused-parameter> # for ethernet
 		$<$<COMPILE_LANGUAGE:CXX>:-Wno-literal-suffix>
 		$<$<COMPILE_LANGUAGE:CXX>:-Woverloaded-virtual>
 		$<$<COMPILE_LANGUAGE:CXX>:-Wnon-virtual-dtor>
