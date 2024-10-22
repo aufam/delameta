@@ -10,7 +10,9 @@ using etl::Ok;
 using etl::Err;
 using etl::Ref;
 
-HTTP_EXTERN_OBJECT(app);
+HTTP_SETUP(readme_setup, app) {
+    app.Static("/docs", "/usr/share/doc/delameta/html");
+}
 
 static HTTP_ROUTE(
     ("/", ("GET")),

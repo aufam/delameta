@@ -1,3 +1,8 @@
+## [0.1.6] - 2024-10-22
+### Added
+- Improve HTTP routing style
+- HTTP handling for static directory
+
 ## [0.1.5] - 2024-10-15
 ### Added
 - Optional print response header in main opts

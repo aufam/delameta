@@ -439,10 +439,10 @@ http::Http app;
 #### Example Hello world
 Basic hello world
 ```c++
-app.route("/hello", {"GET"}, std::tuple{},
+app.route("/hello", {"GET"})|
 []() {
   return "Hello world";
-});
+};
 
 // request:
 // GET /hello HTTP/1.1
@@ -457,10 +457,10 @@ app.route("/hello", {"GET"}, std::tuple{},
 
 You can expose the method and body to the handler function
 ```c++
-app.route("/hello2", {"GET", "POST"}, std::tuple{http::arg::method, http::arg::body},
+app.route("/hello2", {"GET", "POST"}).args(http::arg::method, http::arg::body)|
 [](std::string_view method, std::string message) -> std::string {
   return method == "GET" ? "Hello world" : "Hello world with message: " + message;
-});
+};
 
 // request:
 // POST /hello2 HTTP/1.1
@@ -479,13 +479,15 @@ app.route("/hello2", {"GET", "POST"}, std::tuple{http::arg::method, http::arg::b
 #### Example JSON request/response
 With undeclared json structure using `http::arg::json_item`
 ```c++
-app.route("/person", {"PUT"}, std::tuple{http::arg::json_item("name"), http::arg::json_item("age")},
-[](std::string name, int age) {
+app.route("/person", {"PUT"}).args(
+  http::arg::json_item("name"),
+  http::arg::json_item("age")
+)|[](std::string name, int age) {
   return json::Map {
     {"name", name},
     {"isOld", age > 25},
   };
-});
+};
 
 // request:
 // PUT /person HTTP/1.1
@@ -517,13 +519,13 @@ JSON_DECLARE(
   (bool       , isOld)
 )
 
-app.route("/person", {"PUT"}, std::tuple{http::arg::json},
+app.route("/person", {"PUT"}).args(http::arg::json)|
 [](PersonForm person) {
   return PersonResponse {
     .name = person.name,
     .isOld = person.age > 25,
   };
-});
+};
 
 // request:
 // PUT /person HTTP/1.1
@@ -543,13 +545,15 @@ app.route("/person", {"PUT"}, std::tuple{http::arg::json},
 We don't support embedding arguments on the URL since it would be expensive in embedded systems.
 Instead you can expose the query or header parameters using `http::arg::arg`
 ```c++
-app.route("/args", {"GET"}, std::tuple{http::arg::arg("id"), http::arg::arg("User-Agent")},
-[](int id, std::string user_agent) {
+app.route("/args", {"GET"}).args(
+  http::arg::arg("id"),
+  http::arg::arg("User-Agent")
+)|[](int id, std::string user_agent) {
   return json::Map {
     {"userAgent", user_agent},
     {"id", id},
   };
-});
+};
 
 // request:
 // GET /args?id=42 HTTP/1.1
@@ -566,7 +570,7 @@ app.route("/args", {"GET"}, std::tuple{http::arg::arg("id"), http::arg::arg("Use
 Error handling is simplified by using the `http::Error` type,
 which encapsulates the status code and an error message
 ```c++
-app.route("/do-stuff", {"POST"}, std::tuple{http::arg::body},
+app.route("/do-stuff", {"POST"}).args(http::arg::body)|
 [](std::string stuff) -> http::Result<std::string> {
   if (stuff.empty()) {
     return Err(http::Error{http::StatusBadRequest, "Body cannot be empty"});
@@ -575,7 +579,7 @@ app.route("/do-stuff", {"POST"}, std::tuple{http::arg::body},
   // do actual stuff
 
   return Ok("Stuff is done");
-});
+};
 
 // request:
 // POST /do-stuff HTTP/1.1
@@ -588,7 +592,7 @@ app.route("/do-stuff", {"POST"}, std::tuple{http::arg::body},
 // Body cannot be empty
 ```
 #### Dependency injection
-You can add dependency to the route handler by using `http::arg::depends`. 
+You can add dependency to the route handler by using `http::arg::depends`.
 It takes a callable with signature `(const http::RequestReader&, http::ResponseWriter&) -> http::Result<T>`.
 It will execute the callable and will return early before the actual handler if the result is Err variant.
 The template argument `T` must be the same as, or convertible to, the corresponding handler argument.
@@ -612,10 +616,10 @@ auto get_token_from_request(const http::RequestReader& req, http::ResponseWriter
   }
 }
 
-app.route("/access-db", {"GET"}, std::tuple{http::arg::depends(get_token_from_request)},
+app.route("/access-db", {"GET"}).args(http::arg::depends(get_token_from_request))|
 [](std::string_view token) {
   return get_something_from_db_based_on_access_token(token);
-});
+};
 
 // request:
 // GET /access-db HTTP/1.1

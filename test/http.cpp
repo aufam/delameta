@@ -1,19 +1,19 @@
 #include <delameta/http/http.h>
 #include <delameta/http/chunked.h>
+#include <delameta/utils.h>
 #include <gtest/gtest.h>
 
 using namespace Project;
 using namespace delameta::http;
+using namespace std::literals;
 using delameta::Stream;
 using delameta::StringStream;
-using etl::Ok;
-using etl::Err;
 namespace json = delameta::json;
 
 TEST(Http, request) {
     StringStream ss;
 
-    ss.write( 
+    ss.write(
         "POST /submit-form HTTP/1.1\r\n"
         "Host: www.example.com\r\n"
         "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)\r\n"
@@ -35,7 +35,7 @@ TEST(Http, request) {
     EXPECT_EQ(req.headers.at("Content-Type"), "application/x-www-form-urlencoded");
     EXPECT_EQ(req.headers.at("Content-Length"), "22");
     EXPECT_EQ(req.headers.at("Connection"), "keep-alive");
-    EXPECT_EQ(req.body_stream.rules.front()(req.body_stream), "name=JohnDoe&age=30\r\n");
+    EXPECT_EQ(delameta::collect_into<std::string>(req.body_stream.pop_once()), "name=JohnDoe&age=30\r\n");
 }
 
 TEST(Http, response) {
@@ -52,7 +52,7 @@ TEST(Http, response) {
         "    <p>The requested URL was not found on this server.</p>\r\n"
         "</body>\r\n"
         "</html>\r\n";
-    
+
     ss.write(
         "HTTP/1.1 404 Not Found\r\n"
         "Date: Tue, 20 Aug 2024 12:34:56 GMT\r\n"
@@ -72,20 +72,20 @@ TEST(Http, response) {
     EXPECT_EQ(res.headers.at("Server"), "Apache/2.4.41 (Ubuntu)");
     EXPECT_EQ(res.headers.at("Content-Type"), "text/html");
     EXPECT_EQ(res.headers.at("Content-Length"), "186");
-    EXPECT_EQ(res.body_stream.rules.front()(res.body_stream), body);
+    EXPECT_EQ(delameta::collect_into<std::string>(res.body_stream.pop_once()), body);
 }
 
 TEST(Http, handler) {
     Http handler;
 
-    handler.route("/test", {"POST", "PUT"}, std::tuple{arg::method, arg::body, arg::default_val("id", 0)},
+    handler.route("/test", {"POST", "PUT"}).args(arg::method, arg::body, arg::default_val("id", 0))|
     [](std::string_view method, std::string body, int id) {
         auto res = std::string(method) + ": " + body;
         if (id > 0) {
             return res + " with id = " + std::to_string(id);
         }
         return res;
-    });
+    };
 
     {
         StringStream ss;
@@ -152,19 +152,20 @@ TEST(Http, handler) {
 
 TEST(Http, json) {
     Http handler;
-    handler.route("/json", {"POST"}, std::tuple{
-        arg::json_item("num"), 
+
+    handler.route("/json", {"POST"}).args(
+        arg::json_item("num"),
         arg::json_item("text"),
         arg::json_item("list"),
-        arg::json_item("map"),
-    }, [](int num, std::string text, json::List list, json::Map map) {
+        arg::json_item("map")
+    ) | [](int num, std::string text, json::List list, json::Map map) {
         EXPECT_EQ(num, 42);
         EXPECT_EQ(text, "text");
         EXPECT_EQ(std::get<double>(list[0]), 42);
         EXPECT_EQ(std::get<std::string>(list[1]), "text");
         EXPECT_EQ(std::get<double>(map["num"]), 42);
         EXPECT_EQ(std::get<std::string>(map["text"]), "text");
-    });
+    };
 
     std::string body = R"({
         "num": 42,
@@ -176,11 +177,11 @@ TEST(Http, json) {
         }
     })";
 
-    std::string headers = 
+    std::string headers =
         "POST /json HTTP/1.1\r\n"
         "Content-Type: application/json\r\n"
         "Content-Length: " + std::to_string(body.size()) + "\r\n\r\n";
-    
+
     StringStream ss;
     ss.write(headers);
     ss.write(body);
@@ -191,16 +192,16 @@ TEST(Http, json) {
 }
 
 TEST(Http, form) {
-    const std::string body = R"(num=42&text=test+123%2F456-789)";
-
     Http handler;
-    handler.route("/form", {"POST"}, std::tuple{arg::form("num"), arg::form("text")}, 
+
+    handler.route("/form", {"POST"}).args(arg::form("num"), arg::form("text"))|
     [](int num, std::string text) {
         EXPECT_EQ(num, 42);
         EXPECT_EQ(text, "test 123/456-789");
-    });
+    };
 
     StringStream ss;
+    const std::string body = R"(num=42&text=test+123%2F456-789)";
     ss.write("POST /form HTTP/1.1\r\n");
     ss.write("Content-Type: application/x-www-form-urlencoded; charset=utf-8\r\n");
     ss.write("Content-Length: " + std::to_string(body.size()) + "\r\n\r\n");
@@ -227,12 +228,12 @@ TEST(Http, chunked) {
 
     s >> [&](std::string_view sv) {
         ss.write(sv);
-        if (idx == 0) { EXPECT_EQ(sv, std::string_view("10\r\n{\"name\":\"Jupri\",\r\n")); }
-        if (idx == 1) { EXPECT_EQ(sv, std::string_view("9\r\n\"age\":19,\r\n")); }
-        if (idx == 2) { EXPECT_EQ(sv, std::string_view("12\r\n\"is_married\":true,\r\n")); }
-        if (idx == 3) { EXPECT_EQ(sv, std::string_view("F\r\n\"salary\":9.100,\r\n")); }
-        if (idx == 4) { EXPECT_EQ(sv, std::string_view("C\r\n\"role\":null}\r\n")); }
-        if (idx == 5) { EXPECT_EQ(sv, std::string_view("0\r\n\r\n")); }
+        if (idx == 0) { EXPECT_EQ(sv, "10\r\n{\"name\":\"Jupri\",\r\n"sv); }
+        if (idx == 1) { EXPECT_EQ(sv, "9\r\n\"age\":19,\r\n"sv); }
+        if (idx == 2) { EXPECT_EQ(sv, "12\r\n\"is_married\":true,\r\n"sv); }
+        if (idx == 3) { EXPECT_EQ(sv, "F\r\n\"salary\":9.100,\r\n"sv); }
+        if (idx == 4) { EXPECT_EQ(sv, "C\r\n\"role\":null}\r\n"sv); }
+        if (idx == 5) { EXPECT_EQ(sv, "0\r\n\r\n"sv); }
         ++idx;
     };
 
@@ -243,12 +244,12 @@ TEST(Http, chunked) {
     idx = 0;
 
     s >> [&](std::string_view sv) {
-        if (idx == 0) { EXPECT_EQ(sv, std::string_view("{\"name\":\"Jupri\",")); }
-        if (idx == 1) { EXPECT_EQ(sv, std::string_view("\"age\":19,")); }
-        if (idx == 2) { EXPECT_EQ(sv, std::string_view("\"is_married\":true,")); }
-        if (idx == 3) { EXPECT_EQ(sv, std::string_view("\"salary\":9.100,")); }
-        if (idx == 4) { EXPECT_EQ(sv, std::string_view("\"role\":null}")); }
-        if (idx == 5) { EXPECT_EQ(sv, std::string_view("")); }
+        if (idx == 0) { EXPECT_EQ(sv, "{\"name\":\"Jupri\","sv); }
+        if (idx == 1) { EXPECT_EQ(sv, "\"age\":19,"sv); }
+        if (idx == 2) { EXPECT_EQ(sv, "\"is_married\":true,"sv); }
+        if (idx == 3) { EXPECT_EQ(sv, "\"salary\":9.100,"sv); }
+        if (idx == 4) { EXPECT_EQ(sv, "\"role\":null}"sv); }
+        if (idx == 5) { EXPECT_EQ(sv, ""sv); }
         ++idx;
     };
 

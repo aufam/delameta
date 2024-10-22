@@ -1,9 +1,12 @@
 #ifndef PROJECT_DELAMETA_UTILS_H
 #define PROJECT_DELAMETA_UTILS_H
 
-#include <string>
 #include <etl/result.h>
+#include <string>
 #include <string_view>
+#include <iterator>
+#include <cstdint>
+#include <type_traits>
 
 namespace Project::delameta {
     inline constexpr int char_bin_into_int(char ch) {
@@ -99,7 +102,11 @@ namespace Project::delameta {
         return res;
     }
 
-    inline std::string_view string_view_consume_line(std::string_view& sv) {
+    inline std::string_view string_view_from(const std::vector<uint8_t>& v) {
+        return { reinterpret_cast<const char*>(v.data()), v.size() };
+    }
+
+    inline constexpr std::string_view string_view_consume_line(std::string_view& sv) {
         size_t pos = 0;
         for (; pos < sv.size(); ++pos) {
             if (sv[pos] == '\n') {
@@ -121,9 +128,19 @@ namespace Project::delameta {
         return res;
     }
 
-    inline std::string_view get_content_type_from_file(std::string_view file) {
-        auto extension = file.substr(file.find_last_of('.') + 1);
-        return 
+    template <typename To, typename From>
+    inline To collect_into(const From& from) {
+        return To(from.begin(), from.end());
+    }
+
+    template <typename To, typename From>
+    inline To collect_into(From&& from) {
+        return To(std::make_move_iterator(from.begin()), std::make_move_iterator(from.end()));
+    }
+
+    inline constexpr std::string_view get_content_type_from_file(std::string_view filename) {
+        auto extension = filename.substr(filename.find_last_of('.') + 1);
+        return
             extension == "js"   ? "application/javascript" :
             extension == "json" ? "application/json" :
             extension == "pdf"  ? "application/pdf" :
@@ -163,7 +180,6 @@ namespace Project::delameta {
             "application/octet-stream" // Default to binary data
         ;
     }
-
 }
 
 

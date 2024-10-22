@@ -24,7 +24,7 @@ namespace Project::delameta::http {
 
     template <typename T> struct is_handler : std::is_convertible<T, std::function<void(const RequestReader&, ResponseWriter&)>> {};
     template <typename T> static constexpr bool is_handler_v = is_handler<T>::value;
-    
+
     class Http : public Movable {
     public:
         Http() = default;
@@ -33,52 +33,121 @@ namespace Project::delameta::http {
         Http(Http&&) noexcept = default;
         Http& operator=(Http&&) noexcept = default;
 
-        template <typename... Args, typename F> 
+        template <typename... Args, typename F>
         auto route(std::string path, std::vector<const char*> methods, std::tuple<Args...> args, F&& handler) {
             return route_(std::move(path), std::move(methods), std::move(args), std::function(std::forward<F>(handler)));
         }
 
+        template <typename... Args>
+        struct PathAndMethodsAndArgs {
+            Http& app;
+            std::string path;
+            std::vector<const char*> methods;
+            std::tuple<Args...> args;
+
+            template <typename F>
+            auto service(F&& handler) && {
+                return app.route_(std::move(path), std::move(methods), std::move(args), std::function(std::forward<F>(handler)));
+            }
+
+            template <typename F>
+            auto operator|(F&& handler) && {
+                return app.route_(std::move(path), std::move(methods), std::move(args), std::function(std::forward<F>(handler)));
+            }
+        };
+
+        struct PathAndMethods {
+            Http& app;
+            std::string path;
+            std::vector<const char*> methods;
+
+            template <typename... Args>
+            PathAndMethodsAndArgs<Args...> args(Args&&... args) && {
+                return {
+                    app,
+                    std::move(path),
+                    std::move(methods),
+                    std::forward_as_tuple(std::forward<Args>(args)...),
+                };
+            }
+
+            template <typename... Args>
+            PathAndMethodsAndArgs<Args...> operator()(Args&&... args) && {
+                return {
+                    app,
+                    std::move(path),
+                    std::move(methods),
+                    std::forward_as_tuple(std::forward<Args>(args)...),
+                };
+            }
+
+            template <typename F>
+            auto service(F&& handler) && {
+                return app.route_(std::move(path), std::move(methods), {}, std::function(std::forward<F>(handler)));
+            }
+
+            template <typename F>
+            auto operator|(F&& handler) && {
+                return app.route_(std::move(path), std::move(methods), {}, std::function(std::forward<F>(handler)));
+            }
+        };
+
+        PathAndMethods route(std::string path, std::vector<const char*> methods) {
+            return { *this, std::move(path), std::move(methods) };
+        }
+
         Result<void> reroute(std::string path, etl::Ref<const RequestReader> req, etl::Ref<ResponseWriter> res);
-        
-        template <typename... Args, typename F> 
+
+        template <typename... Args, typename F>
         auto Get(std::string path, std::tuple<Args...> args, F&& handler) {
             return route(std::move(path), {"GET"}, std::move(args), std::forward<F>(handler));
         }
 
-        template <typename... Args, typename F> 
+        template <typename... Args, typename F>
         auto Post(std::string path, std::tuple<Args...> args, F&& handler) {
             return route(std::move(path), {"POST"}, std::move(args), std::forward<F>(handler));
         }
 
-        template <typename... Args, typename F>  
+        template <typename... Args, typename F>
         auto Patch(std::string path, std::tuple<Args...> args, F&& handler) {
             return route(std::move(path), {"PATCH"}, std::move(args), std::forward<F>(handler));
         }
 
-        template <typename... Args, typename F>  
+        template <typename... Args, typename F>
         auto Put(std::string path, std::tuple<Args...> args, F&& handler) {
             return route(std::move(path), {"PUT"}, std::move(args), std::forward<F>(handler));
         }
 
-        template <typename... Args, typename F> 
+        template <typename... Args, typename F>
         auto Head(std::string path, std::tuple<Args...> args, F&& handler) {
             return route(std::move(path), {"HEAD"}, std::move(args), std::forward<F>(handler));
         }
 
-        template <typename... Args, typename F> 
+        template <typename... Args, typename F>
         auto Trace(std::string path, std::tuple<Args...> args, F&& handler) {
             return route(std::move(path), {"TRACE"}, std::move(args), std::forward<F>(handler));
         }
 
-        template <typename... Args, typename F> 
+        template <typename... Args, typename F>
         auto Delete(std::string path, std::tuple<Args...> args, F&& handler) {
             return route(std::move(path), {"DELETE"}, std::move(args), std::forward<F>(handler));
         }
 
-        template <typename... Args, typename F> 
+        template <typename... Args, typename F>
         auto Options(std::string path, std::tuple<Args...> args, F&& handler) {
             return route(std::move(path), {"OPTIONS"}, std::move(args), std::forward<F>(handler));
         }
+
+        PathAndMethods Get(std::string path) { return route(std::move(path), {"GET"}); }
+        PathAndMethods Put(std::string path) { return route(std::move(path), {"PUT"}); }
+        PathAndMethods Post(std::string path) { return route(std::move(path), {"POST"}); }
+        PathAndMethods Head(std::string path) { return route(std::move(path), {"Head"}); }
+        PathAndMethods Patch(std::string path) { return route(std::move(path), {"PATCH"}); }
+        PathAndMethods Trace(std::string path) { return route(std::move(path), {"TRACE"}); }
+        PathAndMethods Delete(std::string path) { return route(std::move(path), {"DELETE"}); }
+        PathAndMethods Options(std::string path) { return route(std::move(path), {"OPTIONS"}); }
+
+        delameta::Result<void> Static(const std::string& prefix, const std::string& root, bool chunked = false);
 
         std::unordered_map<std::string, Handler<std::string>> global_headers;
         std::list<Handler<Result<void>>> preconditions;
@@ -93,7 +162,7 @@ namespace Project::delameta::http {
 
         void bind(StreamSessionServer& server, BindArg is_tcp_server = {false}) const;
         std::pair<RequestReader, ResponseWriter> execute(Descriptor& desc, std::vector<uint8_t>& data) const;
-    
+
     protected:
         struct Context {
             std::string_view content_type;
@@ -125,8 +194,8 @@ namespace Project::delameta::http {
 
         template <typename... RouterArgs, typename R, typename ...HandlerArgs>
         auto route_(
-            std::string path, 
-            std::vector<const char*> methods, 
+            std::string path,
+            std::vector<const char*> methods,
             std::tuple<RouterArgs...> args,
             std::function<R(HandlerArgs...)> handler
         ) {
@@ -146,7 +215,7 @@ namespace Project::delameta::http {
                     } else {
                         R result = handler(req, res);
                         process_result_non_void(result, req, res);
-                    } 
+                    }
                 } else {
                     // process each args
                     std::tuple<Result<HandlerArgs>...> arg_values = std::apply([&](const auto&... items) {
@@ -169,7 +238,7 @@ namespace Project::delameta::http {
                     } else {
                         R result = std::apply([&](auto&... args) { return handler(std::move(args.unwrap())...); }, arg_values);
                         process_result_non_void(result, req, res);
-                    } 
+                    }
                 }
             };
 
@@ -279,13 +348,13 @@ namespace Project::delameta::http {
                 static_assert(always_false<U>::value);
             }
         }
-        
+
         template <typename T> static Result<T>
         process_arg(const ArgRequest&, const RequestReader& req, ResponseWriter&, Context&) {
             static_assert(std::is_same_v<T, etl::Ref<const RequestReader>>);
             return etl::Ok(etl::ref_const(req));
         }
-        
+
         template <typename T> static Result<T>
         process_arg(const ArgResponse&, const RequestReader&, ResponseWriter& res, Context&) {
             static_assert(std::is_same_v<T, etl::Ref<ResponseWriter>>);
@@ -300,7 +369,7 @@ namespace Project::delameta::http {
         template <typename T> static Result<T>
         process_arg(const ArgURL&, const RequestReader& req, ResponseWriter&, Context&) {
             static_assert(
-                std::is_same_v<T, decltype(RequestReader::url)> || 
+                std::is_same_v<T, decltype(RequestReader::url)> ||
                 std::is_same_v<T, etl::Ref<const decltype(RequestReader::url)>>
             );
             if constexpr (std::is_same_v<T, decltype(RequestReader::url)>)
@@ -317,7 +386,7 @@ namespace Project::delameta::http {
             );
             if constexpr (std::is_same_v<T, decltype(RequestReader::headers)>)
                 return etl::Ok(req.headers);
-            else 
+            else
                 return etl::Ok(etl::ref_const(req.headers));
         }
 
@@ -329,7 +398,7 @@ namespace Project::delameta::http {
             );
             if constexpr (std::is_same_v<T, decltype(URL::queries)>)
                 return etl::Ok(req.url.queries);
-            else 
+            else
                 return etl::Ok(etl::ref_const(req.url.queries));
         }
 
@@ -417,7 +486,7 @@ namespace Project::delameta::http {
             }
         }
 
-        template <typename T> static Result<T> 
+        template <typename T> static Result<T>
         convert_string_into(std::string_view str) {
             if constexpr (std::is_same_v<T, std::string> || std::is_same_v<T, std::string_view> || std::is_same_v<T, etl::StringView>) {
                 return etl::Ok(T(str.data(), str.size()));
@@ -430,7 +499,7 @@ namespace Project::delameta::http {
             }
         }
 
-        template <typename T> static Result<T> 
+        template <typename T> static Result<T>
         convert_stream_into(const RequestReader& req) {
             if constexpr (std::is_same_v<T, Stream>) {
                 if (req.body_stream.rules.empty()) {
@@ -453,7 +522,7 @@ namespace Project::delameta::http::arg {
 
     template <typename F>
     auto depends(F&& depends_function) {
-        static_assert(is_handler_v<std::decay_t<F>>, 
+        static_assert(is_handler_v<std::decay_t<F>>,
             "The function signature should be R(const RequestReader&, ResponseWriter&)");
         return ArgDepends<F> { std::move(std::forward<F>(depends_function)) };
     }
@@ -465,7 +534,7 @@ namespace Project::delameta::http::arg {
 
     template <typename F>
     auto default_fn(const char* name, F&& default_function) {
-        static_assert(is_handler_v<std::decay_t<F>>, 
+        static_assert(is_handler_v<std::decay_t<F>>,
             "The function signature should be R(const RequestReader&, ResponseWriter&)");
         return ArgDefaultFn<F> { name, std::forward<F>(default_function) };
     }
@@ -477,7 +546,7 @@ namespace Project::delameta::http::arg {
 
     template <typename F>
     auto json_item_default_fn(const char* key, F&& default_function) {
-        static_assert(is_handler_v<std::decay_t<F>>, 
+        static_assert(is_handler_v<std::decay_t<F>>,
             "The function signature should be R(const RequestReader&, ResponseWriter&)");
         return ArgJsonItemDefaultFn<F> { key, std::forward<F>(default_function) };
     }
@@ -545,7 +614,7 @@ namespace Project::delameta::http::arg {
         } \
     }; \
     static HTTP_HELPER_CLASS_NAME(name) HTTP_HELPER_OBJ_NAME(name) HTTP_LATE_INIT; \
-    HTTP_HELPER_DEFINE_FN(name, args, ret) 
+    HTTP_HELPER_DEFINE_FN(name, args, ret)
 
 #define HTTP_ROUTE(pm, name, args, ret) \
     HTTP_ROUTE_I(BOOST_PP_TUPLE_ELEM(3, 0, pm), BOOST_PP_TUPLE_ELEM(3, 1, pm), BOOST_PP_TUPLE_ELEM(1, 0, name), \
@@ -554,7 +623,7 @@ namespace Project::delameta::http::arg {
 #endif
 #ifdef FMT_FORMAT_H_
 
-template <> 
+template <>
 struct fmt::formatter<Project::delameta::http::Error> {
     constexpr auto parse(fmt::format_parse_context& ctx) { return ctx.end(); }
 

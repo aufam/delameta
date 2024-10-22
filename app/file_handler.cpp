@@ -1,18 +1,20 @@
 #include <boost/preprocessor.hpp>
+#include <fmt/format.h>
 #include <delameta/debug.h>
 #include <delameta/http/http.h>
 #include <delameta/file.h>
 #include <delameta/utils.h>
+#include <filesystem>
 #include <algorithm>
-#include <dirent.h>
 
 using namespace Project;
-namespace http = delameta::http;
 using delameta::File;
 using delameta::Stream;
 using etl::Ref;
 using etl::Err;
 using etl::Ok;
+namespace http = delameta::http;
+namespace fs = std::filesystem;
 
 HTTP_EXTERN_OBJECT(app);
 
@@ -21,35 +23,33 @@ static HTTP_ROUTE(
     (ls), (std::string, path, http::arg::arg("path")),
     (http::Result<std::list<std::string>>)
 ) {
-    DIR* dir = ::opendir(path.c_str());
-    if (dir == nullptr) {
-        return Err(http::Error{http::StatusBadRequest, "Error opening " + path});
+    fs::path dir = path;
+    if (not fs::is_directory(dir)) {
+        return Err(http::Error{http::StatusBadRequest, fmt::format("`{}` is not a directory", path)});
     }
 
-    struct dirent* entry;
     std::list<std::string> items;
-    while ((entry = ::readdir(dir)) != nullptr) {
-        items.emplace_back(entry->d_name);
+    for (const auto& entry: fs::directory_iterator(dir)) {
+        items.emplace_back(fs::relative(entry.path(), dir));
     }
 
-    closedir(dir);
     return Ok(std::move(items));
 }
 
 static HTTP_ROUTE(
     ("/file_size", ("GET")),
     (file_size), (std::string, filename, http::arg::arg("filename")),
-    (http::Result<std::string>)
+    (http::Result<size_t>)
 ) {
     return File::Open(FL, {filename}).then([](File file) {
-        return std::to_string(file.file_size()) + " bytes";
+        return file.file_size();
     });
 }
 
 static HTTP_ROUTE(
     ("/download", ("GET")),
-    (download), 
-        (std::string        , filename, http::arg::arg("filename"))
+    (download),
+        (std::string              , filename, http::arg::arg("filename"))
         (Ref<http::ResponseWriter>, res     , http::arg::response       ),
     (http::Result<void>)
 ) {
@@ -61,7 +61,7 @@ static HTTP_ROUTE(
 
 static HTTP_ROUTE(
     ("/upload", ("PUT")),
-    (upload), 
+    (upload),
         (std::string, filename   , http::arg::arg("filename"))
         (Stream     , body_stream, http::arg::body           ),
     (http::Result<void>)
@@ -86,14 +86,14 @@ static HTTP_ROUTE(
         return Err(http::Error{http::StatusConflict, "path " + path + " is already exist"});
     }
 
-    app.route(path, {"GET", "PUT"}, std::tuple{http::arg::method, http::arg::body, http::arg::response}, 
+    app.route(path, {"GET", "PUT"}).args(http::arg::method, http::arg::body, http::arg::response)|
     [filename](std::string_view method, Stream body_stream, Ref<http::ResponseWriter> res) -> http::Result<void> {
         if (method == "GET") {
             return download(filename, res);
         } else {
             return upload(filename, std::move(body_stream));
         }
-    });
+    };
 
     return Ok();
 }
