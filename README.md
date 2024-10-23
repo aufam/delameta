@@ -1,28 +1,28 @@
-## <a id="introduction"></a>Delameta
+## Delameta
 C++ framework for socket and serial programming for Linux and STM32
 
-## <a id="table_of_content"></a>Table of Contents
+## Table of Contents
 
-- [Introduction](#introduction)
-- [Table of Content](#table_of_content)
-- [Project Structures](#project_structures)
-- [How to Use](#how_to_use)
-- [Code Considerations and Structure](#code_consideration)
-- [Features](#fetures)
+- [Introduction](#delameta)
+- [Table of Contents](#table-of-contents)
+- [Project Structures](#project-structures)
+- [How to Use](#how-to-use)
+- [Code Considerations and Structure](#code-considerations-and-structure)
+- [Features](#features)
 
-## <a id="project_structures"></a>Project Structure
+## Project Structure
     .
     ├── CMakeLists.txt              # Build configuration
     ├── README.md                   # Project documentation
     ├── app/                        # Example demo app
     ├── include/delameta/           # Header files directory
     ├── core/
-    │ ├── linux/                    # Source files for linux
-    │ └── stm32_hal/                # Source files for STM32
+    │   ├── linux/                  # Source files for linux
+    │   └── stm32_hal/              # Source files for STM32
     ├── src/                        # Source files
     └── test/                       # Unit testing
 
-## <a id="how_to_use"></a>How to Use
+## How to Use
 You can add this library as an external dependency in your CMake configuration as follows:
 ```cmake
 include(FetchContent)
@@ -163,7 +163,7 @@ static int8_t CDC_TransmitCplt_FS(uint8_t *Buf, uint32_t *Len, uint8_t epnum)
 
 For a more complete example of how to use this library with STM32, see my template project for the [STM32 blackpill](https://github.com/aufam/blackpill.git)
 
-## <a id="code_consideration"></a>Code Considerations and Structure
+## Code Considerations and Structure
 
 ### Dependency
 Since this library is also intended for embedded systems, it's strongly recommended to avoid exception.
@@ -184,7 +184,7 @@ Therefore, you'll need to add `using namespace Project;` in your C++ files.
 No OS specific headers are included in the `include/delameta` or `src` folders. OS specific source codes are
 only in the `core/linux` and `core/stm32_hal` directories.
 
-## <a id="fetures"></a>Features
+## Features
 
 ### Dynamic Memory Management for STM32
 The `etl` library has custom implementations of `malloc()`, `calloc()`, `realloc()`, `free()`, `new`, `new[]`,
