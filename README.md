@@ -5,7 +5,7 @@ C++ framework for socket and serial programming for Linux and STM32
 
 - [Introduction](#delameta)
 - [Table of Contents](#table-of-contents)
-- [Project Structures](#project-structures)
+- [Project Structure](#project-structure)
 - [How to Use](#how-to-use)
 - [Code Considerations and Structure](#code-considerations-and-structure)
 - [Features](#features)
