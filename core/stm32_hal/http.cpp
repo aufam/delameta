@@ -4,6 +4,6 @@ using namespace Project;
 using etl::Err;
 namespace http = delameta::http;
 
-auto http::Http::Static(std::string path, const std::string& static_dir) -> delameta::Result<void> {
+auto http::Http::Static(const std::string&, const std::string&, bool) -> delameta::Result<void> {
     return Err("Not implemented");
 }
