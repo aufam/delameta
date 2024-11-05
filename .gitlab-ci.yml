@@ -10,7 +10,13 @@ build:
     - apt update
     - apt install -y --no-install-recommends g++ build-essential cmake git ca-certificates libssl-dev
   script:
-    - cmake -B build -DDELAMETA_BUILD_APP=ON -DDELAMETA_BUILD_TEST=ON -DDELAMETA_APP_BUILD_STATIC=ON -DCMAKE_CXX_STANDARD=20 -DCMAKE_BUILD_TYPE=Release
+    - cmake -B build \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_CXX_STANDARD=20 \
+      -DDELAMETA_BUILD_APP=ON \
+      -DDELAMETA_BUILD_TEST=ON \
+      -DOPENSSL_USE_STATIC_LIBS=TRUE \
+      -DCMAKE_EXE_LINKER_FLAGS="-static"
     - cmake --build build
     - ctest --test-dir build --output-on-failure
     - cd build && cpack -G DEB
