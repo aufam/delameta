@@ -163,7 +163,7 @@ namespace Project::delameta::json {
         return etl::Ok(); \
     } \
     template <> inline \
-    delameta::Stream Project::delameta::json::serialize_as_stream(etl::Ref<const name>&& ref) { \
+    Project::delameta::Stream Project::delameta::json::serialize_as_stream(etl::Ref<const name>&& ref) { \
         using T = name; \
         delameta::Stream s; \
         static constexpr std::pair<const char*, std::string (*)(etl::Ref<const T>)> map[] = { \
