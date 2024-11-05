@@ -68,7 +68,7 @@ if (DELAMETA_TARGET_LINUX)
 	# openssl dependency
 	set(OPENSSL_USE_STATIC_LIBS TRUE)
 	find_package(OpenSSL REQUIRED)
-	target_link_libraries(delameta PUBLIC OpenSSL::SSL OpenSSL::Crypto)
+	target_link_libraries(delameta PUBLIC OpenSSL::SSL)
 
 	# etl dependency
 	if (NOT TARGET etl)
