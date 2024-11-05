@@ -1,9 +1,8 @@
 cmake_minimum_required(VERSION 3.14)
 
 # project setting
-file(READ version.txt DELAMETA_VERSION)
 project(delameta
-	VERSION ${DELAMETA_VERSION}
+	VERSION		0.1.6
 	DESCRIPTION "C++ framework for socket and serial programming"
 )
 
@@ -18,7 +17,7 @@ option(DELAMETA_TARGET_LINUX "Build for Linux"	   ON)
 option(DELAMETA_TARGET_STM32 "Build for STM32"	   OFF)
 
 # some messages
-message(STATUS "DELAMETA_VERSION      : ${PROJECT_VERSION}")
+message(STATUS "DELAMETA_VERSION      : ${delameta_VERSION}")
 message(STATUS "DELAMETA_BUILD_APP    : ${DELAMETA_BUILD_APP}")
 message(STATUS "DELAMETA_BUILD_TEST   : ${DELAMETA_BUILD_TEST}")
 message(STATUS "DELAMETA_TARGET_LINUX : ${DELAMETA_TARGET_LINUX}")
@@ -50,12 +49,14 @@ if (DELAMETA_TARGET_LINUX)
 		$<$<COMPILE_LANGUAGE:CXX>:-Woverloaded-virtual>
 		$<$<COMPILE_LANGUAGE:CXX>:-Wnon-virtual-dtor>
 	)
+
 	target_include_directories(delameta PUBLIC
 		$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
 		$<INSTALL_INTERFACE:include> 
 	)
+
 	target_compile_definitions(delameta PUBLIC
-		-DDELAMETA_VERSION="${DELAMETA_VERSION}"
+		-DDELAMETA_VERSION="${delameta_VERSION}"
 		-DDELAMETA_HOME_DIRECTORY="${CMAKE_SOURCE_DIR}"
 	)
 
@@ -89,14 +90,17 @@ if (DELAMETA_TARGET_STM32)
 		$<$<COMPILE_LANGUAGE:CXX>:-Woverloaded-virtual>
 		$<$<COMPILE_LANGUAGE:CXX>:-Wnon-virtual-dtor>
 	)
+
 	target_include_directories(delameta PUBLIC
 		${CMAKE_CURRENT_SOURCE_DIR}/include
 	)
+
 	target_include_directories(delameta PRIVATE
 		${CMAKE_CURRENT_SOURCE_DIR}/core/stm32_hal/Ethernet
 	)
+
 	target_compile_definitions(delameta PUBLIC
-		-DDELAMETA_VERSION="${DELAMETA_VERSION}"
+		-DDELAMETA_VERSION="${delameta_VERSION}"
 		-DDELAMETA_HOME_DIRECTORY="${CMAKE_SOURCE_DIR}"
 	)
 
