@@ -13,7 +13,13 @@ RUN mkdir -p app/ && echo "" > app/dummy.cpp && \
     mkdir -p src/ && echo "" > src/dummy.cpp && \
     mkdir -p test/ && echo "" > test/dummy.cpp
 
-RUN cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_STANDARD=23 -DDELAMETA_BUILD_APP=ON -DDELAMETA_BUILD_TEST=ON && \
+RUN cmake -B build \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_CXX_STANDARD=23 \
+    -DDELAMETA_BUILD_APP=ON \
+    -DDELAMETA_BUILD_TEST=ON \
+    -DOPENSSL_USE_STATIC_LIBS=TRUE \
+    -DCMAKE_EXE_LINKER_FLAGS="-static" && \
     cmake --build build -t fmt && \
     cmake --build build -t gtest_main && \
     cmake --build build -t gtest
@@ -28,7 +34,7 @@ RUN cmake -B build && \
 COPY app/ app/
 COPY test/ test/
 
-RUN cmake -B build -DCMAKE_EXE_LINKER_FLAGS="-static" && \
+RUN cmake -B build && \
     cmake --build build -t main && \
     cmake --build build -t test_all
 

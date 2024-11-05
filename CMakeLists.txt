@@ -66,7 +66,7 @@ if (DELAMETA_TARGET_LINUX)
 	target_link_libraries(delameta PUBLIC ${CMAKE_THREAD_LIBS_INIT} stdc++fs)
 
 	# openssl dependency
-	set(OPENSSL_USE_STATIC_LIBS TRUE)
+	
 	find_package(OpenSSL REQUIRED)
 	target_link_libraries(delameta PUBLIC OpenSSL::SSL)
 
