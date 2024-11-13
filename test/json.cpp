@@ -91,3 +91,12 @@ TEST(Json, list) {
         false,
     }, 2);
 }
+
+TEST(Json, deserialize) {
+    auto person_result = json::deserialize<Person>("{\"name\": \"Bowo\", \"age\": 10}");
+    EXPECT_TRUE(person_result.is_ok());
+
+    auto &person = person_result.unwrap();
+    EXPECT_EQ(person.age, 10);
+    EXPECT_EQ(person.name, "Bowo");
+}

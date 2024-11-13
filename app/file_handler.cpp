@@ -5,7 +5,6 @@
 #include <delameta/file.h>
 #include <delameta/utils.h>
 #include <filesystem>
-#include <algorithm>
 
 using namespace Project;
 using delameta::File;
@@ -78,11 +77,7 @@ static HTTP_ROUTE(
         (std::string, filename, http::arg::arg("filename")),
     (http::Result<void>)
 ) {
-    auto it = std::find_if(app.routers.begin(), app.routers.end(), [&](http::Router& router) {
-        return router.path == path;
-    });
-
-    if (it != app.routers.end()) {
+    if (app.routers.find(path) != app.routers.end()) {
         return Err(http::Error{http::StatusConflict, "path " + path + " is already exist"});
     }
 

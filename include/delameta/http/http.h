@@ -17,7 +17,6 @@ namespace Project::delameta::http {
     using Handler = std::function<R(Args..., const RequestReader&, ResponseWriter&)>;
 
     struct Router {
-        std::string path;
         std::vector<const char*> methods;
         Handler<void> function;
     };
@@ -153,7 +152,7 @@ namespace Project::delameta::http {
         std::list<Handler<Result<void>>> preconditions;
         Handler<void, const std::string&> logger = {};
         Handler<void, Error> error_handler = default_error_handler;
-        std::list<Router> routers;
+        std::unordered_multimap<std::string, Router> routers;
         bool show_response_time = false;
 
         struct BindArg {
@@ -161,6 +160,7 @@ namespace Project::delameta::http {
         };
 
         void bind(StreamSessionServer& server, BindArg is_tcp_server = {false}) const;
+        void execute(const RequestReader& req, ResponseWriter& res) const;
         std::pair<RequestReader, ResponseWriter> execute(Descriptor& desc, std::vector<uint8_t>& data) const;
 
     protected:
@@ -242,7 +242,8 @@ namespace Project::delameta::http {
                 }
             };
 
-            routers.push_back(Router{std::move(path), std::move(methods), std::move(function)});
+            // routers.emplace(std::move(path), std::move(methods), std::move(function));
+            routers.insert(std::make_pair(std::move(path), Router{std::move(methods), std::move(function)}));
             return handler;
         }
 
@@ -569,7 +570,7 @@ namespace Project::delameta::http::arg {
 #ifdef BOOST_PREPROCESSOR_HPP
 
 #define HTTP_EXTERN_OBJECT(o) \
-    extern ::Project::delameta::http::Http o; static auto& _http_server = o
+    extern ::Project::delameta::http::Http o; [[maybe_unused]] static auto& _http_server = o
 
 #define HTTP_DEFINE_OBJECT(o) \
     extern ::Project::delameta::http::Http o; [[maybe_unused]] static auto& _http_server = o; \

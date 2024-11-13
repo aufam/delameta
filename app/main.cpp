@@ -17,8 +17,6 @@ using etl::Ok;
 
 HTTP_DEFINE_OBJECT(app);
 
-static void on_sigint(std::function<void()> fn);
-
 static auto format_time_now() {
     auto now = std::chrono::system_clock::now();
     std::time_t time_now = std::chrono::system_clock::to_time_t(now);
@@ -83,21 +81,24 @@ OPTS_MAIN(
 
     Opts::verbose = verbose;
 
+    static std::function<void()> at_exit;
+    signal(SIGINT, +[](int) { if (at_exit) at_exit(); });
+
     // launch http server if cmd and url are not specified
     if (cmd == "" and url_str == "") {
         if (cert == "" and key == "") {
-            Server<TCP> tcp_server;
+            Server<TCP> tcp;
 
-            app.bind(tcp_server, {.is_tcp_server=true});
-            on_sigint([&]() { tcp_server.stop(); });
+            app.bind(tcp, {.is_tcp_server=true});
+            at_exit = [&] { tcp.stop(); };
 
             fmt::println("Server is starting on {}", uri.host);
-            return tcp_server.start(FL, {.host=uri.host, .max_socket=n_sock});
+            return tcp.start(FL, {.host=uri.host, .max_socket=n_sock});
         } else if (cert != "" and key != "") {
             Server<TLS> tls;
 
             app.bind(tls, {.is_tcp_server=true});
-            on_sigint([&]() { tls.stop(); });
+            at_exit = [&] { tls.stop(); };
 
             fmt::println("Server is starting on {}", uri.host);
             return tls.start(FL, {.host=uri.host, .cert_file=cert, .key_file=key, .max_socket=n_sock});
@@ -170,20 +171,7 @@ OPTS_MAIN(
     }
     // create response using cmd from router path
     else {
-        auto it = std::find_if(app.routers.begin(), app.routers.end(), [&](const http::Router& r) {
-            return r.path == req.url.path;
-        });
-        if (it == app.routers.end()) {
-            return Err(Error{-1, fmt::format("cannot find path '{}'", req.url.path)});
-        }
-        res.status = 200;
-        it->function(req, res);
-        if (res.status_string.empty()) res.status_string = http::status_to_string(res.status);
-
-        if (!res.body.empty()) 
-            res.body_stream.rules.push_front([body=std::move(res.body)](Stream&) -> std::string_view {
-                return body;
-            });
+        app.execute(req, res);
     }
 
     if (p_heads) {
@@ -200,7 +188,7 @@ OPTS_MAIN(
         if (log != "") {
             auto log_out = TRY(File::Open(FL, {.filename=log, .mode="wa"}));
             TRY(log_out.write(fmt::format("{:%Y-%m-%d %H:%M:%S}: ", format_time_now())));
-            
+
             p_log_out = new File(std::move(log_out));
         }
 
@@ -215,7 +203,7 @@ OPTS_MAIN(
 
         if (p_log_out and not isn_lf) p_log_out->write("\n");
         delete p_log_out;
-        
+
         return Ok();
     } else {
         auto ep_out = TRY(Endpoint::Open(FL, "stdio://"));
@@ -226,15 +214,6 @@ OPTS_MAIN(
     }
 }
 
-static void on_sigint(std::function<void()> fn) {
-    static std::function<void()> at_exit;
-    at_exit = std::move(fn);
-    auto sig = +[](int) { at_exit(); };
-    std::signal(SIGINT, sig);
-    std::signal(SIGTERM, sig);
-    std::signal(SIGQUIT, sig);
-}
-
 static const char* const RESET   = "\033[0m";   // Reset to default
 static const char* const BOLD    = "\033[1m";   // Bold text
 static const char* const RED     = "\033[31m";  // Red text
@@ -243,17 +222,14 @@ static const char* const YELLOW  = "\033[33m";  // Yellow text
 static const char* const BLUE    = "\033[34m";  // Blue
 static constexpr char FORMAT[] = "{}{:%Y-%m-%d %H:%M:%S} {}{}{}:{} {}";
 
-namespace Project::delameta {
-
-    void info(const char*, int, const std::string& msg) {
-        if (Opts::verbose) 
-            fmt::println(FORMAT, BLUE, format_time_now(), BOLD, GREEN, "info", RESET, msg);
-    }
-    void warning(const char*, int, const std::string& msg) {
-        fmt::println(FORMAT, BLUE, format_time_now(), BOLD, YELLOW, "warning", RESET, msg);
-    }
-    void panic(const char*, int, const std::string& msg) {
-        fmt::println(FORMAT, BLUE, format_time_now(), BOLD, RED, "panic", RESET, msg);
-        exit(1);
-    }
+void delameta::info(const char*, int, const std::string& msg) {
+    if (Opts::verbose)
+        fmt::println(FORMAT, BLUE, format_time_now(), BOLD, GREEN, "info", RESET, msg);
+}
+void delameta::warning(const char*, int, const std::string& msg) {
+    fmt::println(FORMAT, BLUE, format_time_now(), BOLD, YELLOW, "warning", RESET, msg);
+}
+void delameta::panic(const char*, int, const std::string& msg) {
+    fmt::println(FORMAT, BLUE, format_time_now(), BOLD, RED, "panic", RESET, msg);
+    exit(1);
 }

@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.14)
 
 # project setting
 project(delameta
-	VERSION		0.1.6
+	VERSION		0.1.7
 	DESCRIPTION "C++ framework for socket and serial programming"
 )
 
@@ -66,7 +66,6 @@ if (DELAMETA_TARGET_LINUX)
 	target_link_libraries(delameta PUBLIC ${CMAKE_THREAD_LIBS_INIT} stdc++fs)
 
 	# openssl dependency
-	
 	find_package(OpenSSL REQUIRED)
 	target_link_libraries(delameta PUBLIC OpenSSL::SSL)
 

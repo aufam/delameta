@@ -13,11 +13,6 @@ using etl::Ok;
 using etl::Err;
 
 // define some json rules for some http classes
-JSON_DEFINE(Router,
-    JSON_ITEM("methods", methods),
-    JSON_ITEM("path", path)
-)
-
 JSON_DEFINE(Error,
     JSON_ITEM("err", what)
 )
@@ -151,12 +146,6 @@ HTTP_SETUP(example, app) {
         }
     };
 
-    // example: print all routes of this app as json list
-    app.Get("/routes")|
-    [&]() -> Ref<const std::list<Router>> {
-        return etl::ref_const(app.routers);
-    };
-
     // example: print all headers
     app.Get("/headers").args(arg::headers)|
     [](decltype(RequestReader::headers) headers) {
@@ -194,17 +183,25 @@ HTTP_SETUP(example, app) {
         return Ok(std::move(res_w));
     });
 
-    app.Delete("/delete_route").args(arg::arg("path"))|
-    [&](std::string path) -> Result<void> {
-        auto it = std::find_if(app.routers.begin(), app.routers.end(), [&path](Router& router) {
-            return router.path == path;
-        });
+    app.Delete("/delete_route").args(arg::arg("path"), arg::default_val("method", ""))|
+    [&](std::string path, std::string method) -> Result<void> {
+        auto [begin, end] = app.routers.equal_range(path);
+        bool found = false;
 
-        if (it == app.routers.end()) {
-            return Err(Error{StatusBadRequest, "path " + path + " not found"});
+        for (auto it = begin; it != end;) {
+            auto &router = it->second;
+            if (method.empty() || std::find(router.methods.begin(), router.methods.end(), method) != router.methods.end()) {
+                found = true;
+                it = app.routers.erase(it);
+            } else {
+                ++it;
+            }
         }
 
-        app.routers.erase(it);
-        return Ok();
+        if (found) {
+            return Ok();
+        } else {
+            return Err(Error{StatusBadRequest, method + " " + path + " not found"});
+        }
     };
 }

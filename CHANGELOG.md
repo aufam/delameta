@@ -1,3 +1,7 @@
+## [0.1.7] - 2024-11-13
+### Added
+- Use unordered_multimap as http routers
+
 ## [0.1.6] - 2024-10-22
 ### Added
 - Improve HTTP routing style

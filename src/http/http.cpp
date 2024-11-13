@@ -112,16 +112,20 @@ auto http::request(RequestWriter req) -> delameta::Result<ResponseReader> {
 }
 
 auto http::Http::reroute(std::string path, etl::Ref<const RequestReader> req, etl::Ref<ResponseWriter> res) -> Result<void> {
-    auto it = std::find_if(routers.begin(), routers.end(), [&](http::Router& router) {
-        return router.path == path;
-    });
+    auto [begin, end] = routers.equal_range(path);
 
-    if (it == routers.end()) {
-        return Err(Error{StatusNotFound, "path " + path + " is not found"});
-    }
+    for (auto it = begin; it != end; ++it) {
+        auto m = std::find_if(it->second.methods.begin(), it->second.methods.end(), [&](const char* method) {
+            return req->method == method;
+        });
 
-    it->function(*req, *res);
-    return Ok();
+        if (m == it->second.methods.end()) continue;
+
+        it->second.function(*req, *res);
+        return Ok();
+    };
+
+    return Err(Error{StatusNotFound, "path " + path + " is not found"});
 }
 
 void http::Http::bind(StreamSessionServer& server, BindArg is_tcp_server) const {
@@ -167,28 +171,30 @@ void http::Http::bind(StreamSessionServer& server, BindArg is_tcp_server) const 
     };
 }
 
-auto http::Http::execute(Descriptor& desc, std::vector<uint8_t>& data) const -> std::pair<RequestReader, ResponseWriter> {
+void http::Http::execute(const http::RequestReader& req, http::ResponseWriter& res) const {
     auto start = delameta_detail_get_time_stamp();
-    auto req = http::RequestReader(desc, data);
-    auto res = http::ResponseWriter{};
 
     // TODO: version handling
     res.version = req.version;
 
     // router handler
+    auto [begin, end] = routers.equal_range(req.url.path);
     bool handled = false;
-    for (auto &router : routers) {
-        if (router.path != req.url.path) continue;
-        auto it = std::find(router.methods.begin(), router.methods.end(), req.method);
+
+    for (auto it = begin; it != end; ++it) {
         handled = true;
-        if (it == router.methods.end()) {
+        auto &router = it->second;
+        auto m = std::find(router.methods.begin(), router.methods.end(), req.method);
+
+        if (m == router.methods.end()) {
             res.status = StatusMethodNotAllowed;
-        } else {
-            res.status = StatusOK;
-            router.function(req, res);
-            break;
+            continue; // try next iterator
         }
-    }
+
+        res.status = StatusOK;
+        router.function(req, res);
+        break;
+    };
 
     if (not handled) error_handler(Error(StatusNotFound), req, res);
 
@@ -241,7 +247,13 @@ auto http::Http::execute(Descriptor& desc, std::vector<uint8_t>& data) const -> 
 
     auto elapsed_ms = delameta_detail_count_ms(start);
     if (show_response_time) res.headers["X-Response-Time"] = std::to_string(elapsed_ms) + "ms";
+}
 
+auto http::Http::execute(Descriptor& desc, std::vector<uint8_t>& data) const -> std::pair<RequestReader, ResponseWriter> {
+    auto req = http::RequestReader(desc, data);
+    auto res = http::ResponseWriter{};
+
+    execute(req, res);
     return {std::move(req), std::move(res)};
 }
 
