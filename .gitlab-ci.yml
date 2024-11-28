@@ -16,6 +16,7 @@ build:
     - ctest --test-dir build-dev --output-on-failure
     - cd build-dev && cpack -G DEB
     # only executable
+    - cd ..
     - cmake -B build-release -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_STANDARD=20 -DDELAMETA_BUILD_APP=ON -DDELAMETA_BUILD_TEST=ON -DDELAMETA_INSTALL=OFF -DOPENSSL_USE_STATIC_LIBS=TRUE -DCMAKE_EXE_LINKER_FLAGS="-static"
     - cmake --build build-release
     - ctest --test-dir build-release --output-on-failure
