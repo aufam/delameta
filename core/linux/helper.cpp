@@ -9,7 +9,6 @@
 #include <sys/ioctl.h>
 #include <string>
 #include <iostream>
-#include <sstream>
 #include <thread>
 #include <limits.h>
 #include <etl/string_view.h>
@@ -37,8 +36,6 @@ using namespace std::literals;
 
 using etl::Err;
 using etl::Ok;
-using etl::defer;
-
 
 int delameta_detail_set_non_blocking(int socket) {
     return ::fcntl(socket, F_SETFL, ::fcntl(socket, F_GETFL, 0) | O_NONBLOCK);
@@ -291,7 +288,6 @@ auto delameta_detail_recvfrom_until(const char* file, int line, int fd, int time
 
     int remaining_size = n;
     int bytes_available = 0;
-    auto ptr = buffer.data();
 
     while (delameta_detail_is_socket_alive(fd)) {
         if (::ioctl(fd, FIONREAD, &bytes_available) == -1) {
@@ -313,7 +309,6 @@ auto delameta_detail_recvfrom_until(const char* file, int line, int fd, int time
             return log_err(file, line, fd, Error(errno, ::strerror(errno)));
         }
 
-        ptr += size;
         remaining_size -= size;
 
         if (remaining_size <= 0) {
@@ -325,6 +320,7 @@ auto delameta_detail_recvfrom_until(const char* file, int line, int fd, int time
 }
 
 auto delameta_detail_read_as_stream(const char* file, int line, int timeout, Descriptor* self, size_t n) -> Stream {
+    (void)timeout;
     Stream s;
 
     s << [self, file, line, total=n, buffer=std::vector<uint8_t>{}](Stream& s) mutable -> std::string_view {
@@ -347,6 +343,7 @@ auto delameta_detail_read_as_stream(const char* file, int line, int timeout, Des
 }
 
 auto delameta_detail_write(const char* file, int line, int fd, void* ssl, int timeout, bool(*is_alive)(int), std::string_view data) -> Result<void> {
+    (void)timeout;
     auto ssl_ = reinterpret_cast<SSL*>(ssl);
     size_t total = 0;
     for (size_t i = 0; i < data.size();) {
@@ -381,6 +378,7 @@ auto delameta_detail_write(const char* file, int line, int fd, void* ssl, int ti
 }
 
 auto delameta_detail_sendto(const char* file, int line, int fd, int timeout, void* peer, std::string_view data) -> Result<void> {
+    (void)timeout;
     size_t total = 0;
     for (size_t i = 0; i < data.size();) {
         if (!delameta_detail_is_socket_alive(fd)) {

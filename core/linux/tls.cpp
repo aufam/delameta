@@ -306,8 +306,8 @@ auto Server<TLS>::start(const char* file, int line, Args args) -> Result<void> {
     }
 
     while (is_running) {
-        epoll_event events[args.max_socket];
-        int num_events = epoll_wait(epoll_fd, events, args.max_socket, 10);
+        std::vector<epoll_event> events(args.max_socket);
+        int num_events = epoll_wait(epoll_fd, events.data(), args.max_socket, 10);
 
         for (int i = 0; i < num_events; ++i) {
             if (events[i].data.fd == socket) {

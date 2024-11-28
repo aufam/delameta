@@ -1,3 +1,13 @@
+## [0.1.8] - 2024-11-28
+### Added
+- Option to skip install target
+
+### Fixed
+- Some warnings
+
+### Removed
+- jwt-cpp from main app
+
 ## [0.1.7] - 2024-11-13
 ### Added
 - Use unordered_multimap as http routers
