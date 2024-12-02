@@ -1,7 +1,8 @@
 ## [0.1.9] - 2024-12-02
 ### Fixed
-- Adding small delay after TCP write in STM32 TCP implementation
-- Bug in http response chunked transfer encoding
+- Adding small delay after TCP/UDP write in STM32 TCP/UDP implementation
+- Http response header for chunked transfer encoding
+- Http chunked decode implementation
 
 ### Changed
 - HTTP header is streamed per item

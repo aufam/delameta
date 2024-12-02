@@ -1,6 +1,5 @@
 #include "delameta/http/chunked.h"
 #include "delameta/utils.h"
-#include "delameta/debug.h"
 
 using namespace Project;
 using namespace delameta;
@@ -31,47 +30,54 @@ Stream http::chunked_encode(Stream& inp) {
 Stream http::chunked_decode(Descriptor& input) {
     Stream s;
 
-    s << [
-        &input, 
-        buffer=std::vector<uint8_t>(), 
-        sv=std::string_view(),
-        do_append=true
-    ](Stream& s) mutable -> std::string_view {
+    using bytes = std::vector<uint8_t>;
+    struct Chunked { std::string_view len, data; };
+
+    static const auto read_one_chunk = [](Descriptor &input, bytes &buffer, size_t &residu) -> std::string_view {
+        if (residu > 0) {
+            buffer.erase(buffer.begin(), buffer.begin() + residu);
+        }
+
+        auto sv = delameta::string_view_from(buffer);
+        size_t len_pos = sv.find("\r\n");
+
         while (true) {
-            if (do_append) {
+            if (len_pos == std::string::npos) {
                 auto read_result = input.read();
-                if (read_result.is_err())
+                if (read_result.is_err()) {
                     return "";
+                }
 
                 auto &read_data = read_result.unwrap();
-                if (sv.empty()) {
-                    buffer = std::move(read_data);
-                } else {
-                    buffer.clear();
-                    buffer.reserve(sv.size() + read_data.size());
-                    buffer.insert(buffer.end(), sv.begin(), sv.end());
-                    buffer.insert(buffer.end(), read_data.begin(), read_data.end());
-                }
-                sv = std::string_view(reinterpret_cast<const char*>(buffer.data()), buffer.size());
+                buffer.insert(buffer.end(), read_data.begin(), read_data.end());
+
+                sv = delameta::string_view_from(buffer);
+                len_pos = sv.find("\r\n");
+                continue;
             }
 
-            auto line = string_view_consume_line(sv);
-            auto chunk_size_result = string_hex_into<size_t>(line);
-            if (chunk_size_result.is_err()) {
+            auto len_res = delameta::string_hex_into<size_t>(sv.substr(0, len_pos));
+            if (len_res.is_err()) {
                 return "";
             }
 
-            auto chunk_size = chunk_size_result.unwrap();
-            if (chunk_size + 2 <= sv.size()) {
-                auto res = sv.substr(0, chunk_size);
-                sv = sv.substr(chunk_size + 2);
-                s.again = chunk_size > 0;
-                do_append = s.again and sv.size() < 3;
-                return res;
-            } else {
-                do_append = true;
+            auto len = len_res.unwrap();
+            auto total_read = len_pos + 2 + len + 2;
+
+            if (sv.size() < total_read) {
+                len_pos = std::string::npos; // read again
+                continue;
             }
+
+            residu = total_read;
+            return sv.substr(len_pos + 2, len);
         }
+    };
+
+    s << [&input, buffer=std::vector<uint8_t>(), residu=size_t(0)](Stream& s) mutable -> std::string_view {
+        auto res = read_one_chunk(input, buffer, residu);
+        s.again = res != "";
+        return res;
     };
 
     return s;

@@ -1,5 +1,3 @@
-#include "delameta/error.h"
-#include "delameta/stream.h"
 #include <delameta/http/http.h>
 #include <delameta/http/chunked.h>
 #include <delameta/utils.h>
@@ -330,4 +328,54 @@ TEST(Http, client) {
     };
 
     EXPECT_EQ(idx, 6);
+}
+
+TEST(Http, chunked_decode) {
+    {
+        StringStream ss;
+
+        ss.write(
+            "10\r\n{\"name\":\"Jupri\",\r\n"
+            "9\r\n\"age\":19}\r\n"
+            "0\r\n\r\n"
+        );
+
+        auto s = chunked_decode(ss);
+        std::string res;
+
+        s >> [&](std::string_view sv) {
+            res += sv;
+        };
+
+        EXPECT_EQ(res, "{\"name\":\"Jupri\",\"age\":19}"sv);
+    } {
+        StringStream ss;
+
+        ss.write(
+            "10\r\n{\"name\":"
+        );
+        ss.write(
+            "\"Jupri\",\r\n"
+            "9\r\n\"ag"
+        );
+        ss.write(
+            "e\":19}\r\n"
+            "0\r\n\r\n"
+        );
+
+        auto s = chunked_decode(ss);
+        std::string res;
+
+        int idx = 0;
+        s >> [&](std::string_view sv) {
+            if (idx == 0) { EXPECT_EQ(sv, "{\"name\":\"Jupri\","sv); }
+            if (idx == 1) { EXPECT_EQ(sv, "\"age\":19}"sv); }
+            if (idx == 2) { EXPECT_EQ(sv, ""sv); }
+            idx++;
+            res += sv;
+        };
+
+        EXPECT_EQ(res, "{\"name\":\"Jupri\",\"age\":19}"sv);
+        EXPECT_EQ(idx, 3);
+    }
 }

@@ -140,15 +140,41 @@ void delameta_detail_http_request_response_reader_parse_headers_body(
     auto body = sv;
 
     // prioritize transfer encoding
-    if (transfer_encoding_value == "chunked") {
-        if (not body.empty()) {
-            // create string view descriptor, decode it, and push to body stream
-            auto svd = new StringViewDescriptor(body);
-            body_stream << http::chunked_decode(*svd);
-            body_stream.at_destructor = [svd]() { delete svd; };
+    class ChunkedDescriptor : public delameta::Descriptor {
+    public:
+        ChunkedDescriptor(std::string_view sv, Descriptor& desc) : sv(sv), desc(desc) {}
+        ~ChunkedDescriptor() = default;
+
+        delameta::Result<std::vector<uint8_t>> read() override {
+            if (not sv.empty()) {
+                auto res = std::vector<uint8_t>(sv.begin(), sv.end());
+                sv = "";
+                return etl::Ok(std::move(res));
+            }
+
+            return desc.read();
         }
 
-        body_stream << http::chunked_decode(desc);
+        delameta::Result<std::vector<uint8_t>> read_until(size_t n) override {
+            return desc.read_until(n);
+        }
+
+        Stream read_as_stream(size_t n) override {
+            return desc.read_as_stream(n);
+        }
+
+        delameta::Result<void> write(std::string_view data) override {
+            return desc.write(data);
+        }
+
+        std::string_view sv;
+        Descriptor& desc;
+    };
+
+    if (transfer_encoding_value == "chunked") {
+        auto svd = new ChunkedDescriptor(body, desc);
+        body_stream << http::chunked_decode(*svd);
+        body_stream.at_destructor = [svd]() { delete svd; };
         return;
     }
 
