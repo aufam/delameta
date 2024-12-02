@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.14)
 
 # project setting
 project(delameta
-	VERSION		0.1.8
+	VERSION		0.1.9
 	DESCRIPTION "C++ framework for socket and serial programming"
 )
 
