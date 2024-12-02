@@ -1,6 +1,5 @@
 #include "delameta/http/response.h"
 #include "delameta/utils.h"
-#include <string_view>
 
 using namespace Project;
 using namespace Project::delameta;
@@ -13,48 +12,34 @@ void delameta_detail_http_request_response_reader_parse_headers_body(
     Stream& body_stream
 );
 
+Stream delameta_detail_http_request_response_reader_dump(
+    std::string first_line,
+    std::unordered_map<std::string, std::string> headers,
+    std::string body,
+    Stream& body_stream
+);
+
 auto http::ResponseWriter::dump() -> Stream {
     std::string status_int = std::to_string(status);
     std::string first_line;
-    first_line.reserve(version.size() + 1 + status_int.size() + 1 + status_string.size() + 2);
+    first_line.reserve(version.size() + 1 + status_int.size() + 1 + status_string.size() + 2 + 2);
     first_line += version;
     first_line += ' ';
     first_line += status_int;
     first_line += ' ';
     first_line += status_string;
     first_line += "\r\n";
-    
-    Stream s;
-    s << [buffer=std::string(), first_line=std::move(first_line), headers=std::move(headers)](Stream&) mutable -> std::string_view {
-        size_t total = first_line.size();
-        for (const auto &[key, value]: headers) {
-            total += key.size() + 2 + value.size() + 2;
-        }
-        total += 2;
 
-        buffer.reserve(total);
-        buffer += std::move(first_line);
-        while (not headers.empty()) {
-            auto it = headers.begin();
-            buffer += std::move(it->first);
-            buffer += ": ";
-            buffer += std::move(it->second);
-            buffer += "\r\n";
-            headers.erase(it);
-        }
-        buffer += "\r\n";
-        return buffer;
-    };
-
-    if (!body.empty()) {
-        s << std::move(body);
+    if (headers.empty()) {
+        first_line += "\r\n";
     }
 
-    if (!body_stream.rules.empty()) {
-        s << body_stream;
-    }
-
-    return s;
+    return delameta_detail_http_request_response_reader_dump(
+        std::move(first_line),
+        std::move(headers),
+        std::move(body),
+        body_stream
+    );
 }
 
 http::ResponseReader::ResponseReader(Descriptor& desc, std::vector<uint8_t>& data) : data() { parse(desc, data); }

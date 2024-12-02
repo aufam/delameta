@@ -13,7 +13,7 @@ namespace Project::delameta::http {
 
         std::string method;
         URL url;
-        std::string version;
+        std::string version = "HTTP/1.1";
         std::unordered_map<std::string, std::string> headers = {};
         mutable std::string body = {};
         mutable Stream body_stream = {};
@@ -31,7 +31,7 @@ namespace Project::delameta::http {
         std::unordered_map<std::string_view, std::string_view> headers = {};
         mutable std::string body = {};
         mutable Stream body_stream = {};
-    
+
     private:
         std::vector<uint8_t> data;
         void parse(Descriptor& desc, std::vector<uint8_t>& data);

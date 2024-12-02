@@ -1,3 +1,11 @@
+## [0.1.9] - 2024-12-02
+### Fixed
+- Adding small delay after TCP write in STM32 TCP implementation
+- Bug in http response chunked transfer encoding
+
+### Changed
+- HTTP header is streamed per item
+
 ## [0.1.8] - 2024-11-28
 ### Added
 - Option to skip install target

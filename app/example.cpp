@@ -204,4 +204,15 @@ HTTP_SETUP(example, app) {
             return Err(Error{StatusBadRequest, method + " " + path + " not found"});
         }
     };
+
+    app.route("/chunked", {"GET"})|
+    []() {
+        return delameta::json::Map{
+            {"name", std::string("Jupri")},
+            {"age", 19},
+            {"is_married", true},
+            {"salary", 9.1},
+            {"role", nullptr},
+        };
+    };
 }

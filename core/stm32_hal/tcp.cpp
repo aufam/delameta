@@ -179,7 +179,8 @@ auto TCP::write(std::string_view data) -> Result<void> {
 
         auto n = std::min<size_t>(2048, data.size() - i);
         auto sent = ::send(socket, (uint8_t*)&data[i], n);
-        
+        etl::time::sleep(1ms); // TODO: blocking mode is not really blocking (?)
+
         if (sent == 0) {
             return Err(Error::ConnectionClosed);
         } else if (sent < 0) {
@@ -258,6 +259,8 @@ auto Server<TCP>::start(const char* file, int line, Args args) -> Result<void> {
             }
 
             ::disconnect(session->socket);
+            etl::time::sleep(1ms);
+            ::close(session->socket);
             etl::time::sleep(1ms);
             auto res = ::socket(session->socket, Sn_MR_TCP, port, Sn_MR_ND);
             if (res < 0) {

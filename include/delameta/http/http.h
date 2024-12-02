@@ -161,6 +161,7 @@ namespace Project::delameta::http {
 
         void bind(StreamSessionServer& server, BindArg is_tcp_server = {false}) const;
         void execute(const RequestReader& req, ResponseWriter& res) const;
+        std::pair<RequestReader, ResponseWriter> execute(Descriptor& desc) const;
         std::pair<RequestReader, ResponseWriter> execute(Descriptor& desc, std::vector<uint8_t>& data) const;
 
     protected:
@@ -481,7 +482,6 @@ namespace Project::delameta::http {
             } else if constexpr (std::is_same_v<T, Stream>) {
                 res.body_stream = std::move(result);
             } else {
-                res.headers["Content-Length"] = std::to_string(etl::json::size_max(result));
                 res.body_stream = delameta::json::serialize_as_stream(std::move(result));
                 if (ct == res.headers.end()) res.headers.emplace("Content-Type", "application/json");
             }

@@ -97,7 +97,7 @@ namespace Project::delameta {
         StreamSessionClient(StreamSessionClient&& other);
         StreamSessionClient& operator=(StreamSessionClient&& other) = delete;
 
-        Result<std::vector<uint8_t>> request(Stream& in_stream);
+        virtual Result<std::vector<uint8_t>> request(Stream& in_stream);
         Descriptor* desc;
         bool is_dyn;
     };

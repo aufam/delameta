@@ -249,6 +249,19 @@ void http::Http::execute(const http::RequestReader& req, http::ResponseWriter& r
     if (show_response_time) res.headers["X-Response-Time"] = std::to_string(elapsed_ms) + "ms";
 }
 
+auto http::Http::execute(Descriptor& desc) const -> std::pair<RequestReader, ResponseWriter> {
+    auto read_result = desc.read();
+    if (read_result.is_err()) {
+        return {};
+    }
+
+    auto req = http::RequestReader(desc, std::move(read_result.unwrap()));
+    auto res = http::ResponseWriter{};
+
+    execute(req, res);
+    return {std::move(req), std::move(res)};
+}
+
 auto http::Http::execute(Descriptor& desc, std::vector<uint8_t>& data) const -> std::pair<RequestReader, ResponseWriter> {
     auto req = http::RequestReader(desc, data);
     auto res = http::ResponseWriter{};

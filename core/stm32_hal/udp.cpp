@@ -165,7 +165,8 @@ auto UDP::write(std::string_view data) -> Result<void> {
 
         auto peer_ = reinterpret_cast<addrinfo*>(peer);
         auto sent = ::sendto(socket, (uint8_t*)&data[i], n, peer_->ip, peer_->port);
-        
+        etl::time::sleep(1ms); // TODO: blocking mode is not really blocking (?)
+
         if (sent == 0) {
             return Err(Error::ConnectionClosed);
         } else if (sent < 0) {

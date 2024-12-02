@@ -1,3 +1,5 @@
+#include "delameta/error.h"
+#include "delameta/stream.h"
 #include <delameta/http/http.h>
 #include <delameta/http/chunked.h>
 #include <delameta/utils.h>
@@ -8,6 +10,9 @@ using namespace delameta::http;
 using namespace std::literals;
 using delameta::Stream;
 using delameta::StringStream;
+using delameta::StreamSessionClient;
+using delameta::URL;
+using etl::Ok;
 namespace json = delameta::json;
 
 TEST(Http, request) {
@@ -90,8 +95,7 @@ TEST(Http, handler) {
     {
         StringStream ss;
         ss.write("GET /test HTTP/1.1\r\nContent-Length: 12\r\n\r\nthis is body");
-        auto data = ss.read().unwrap();
-        auto [req, res] = handler.execute(ss, data);
+        auto [req, res] = handler.execute(ss);
 
         EXPECT_EQ(req.method, "GET");
         EXPECT_EQ(req.url.full_path, "/test");
@@ -105,8 +109,7 @@ TEST(Http, handler) {
     } {
         StringStream ss;
         ss.write("POST /test HTTP/1.1\r\nContent-Length: 12\r\n\r\nthis is body");
-        auto data = ss.read().unwrap();
-        auto [req, res] = handler.execute(ss, data);
+        auto [req, res] = handler.execute(ss);
 
         EXPECT_EQ(req.method, "POST");
         EXPECT_EQ(req.url.full_path, "/test");
@@ -120,8 +123,7 @@ TEST(Http, handler) {
     } {
         StringStream ss;
         ss.write("PUT /test/123 HTTP/1.1\r\nContent-Length: 12\r\n\r\nthis is body");
-        auto data = ss.read().unwrap();
-        auto [req, res] = handler.execute(ss, data);
+        auto [req, res] = handler.execute(ss);
 
         EXPECT_EQ(req.method, "PUT");
         EXPECT_EQ(req.url.full_path, "/test/123");
@@ -135,8 +137,7 @@ TEST(Http, handler) {
     } {
         StringStream ss;
         ss.write("PUT /test?id=123 HTTP/1.1\r\nContent-Length: 12\r\n\r\nthis is body");
-        auto data = ss.read().unwrap();
-        auto [req, res] = handler.execute(ss, data);
+        auto [req, res] = handler.execute(ss);
 
         EXPECT_EQ(req.method, "PUT");
         EXPECT_EQ(req.url.full_path, "/test?id=123");
@@ -186,8 +187,7 @@ TEST(Http, json) {
     ss.write(headers);
     ss.write(body);
 
-    auto data = ss.read().unwrap();
-    auto [req, res] = handler.execute(ss, data);
+    auto [req, res] = handler.execute(ss);
     EXPECT_EQ(res.status, StatusOK);
 }
 
@@ -213,20 +213,37 @@ TEST(Http, form) {
 }
 
 TEST(Http, chunked) {
-    Stream s = json::serialize_as_stream(json::Map{
-        {"name", std::string("Jupri")},
-        {"age", 19},
-        {"is_married", true},
-        {"salary", 9.1},
-        {"role", nullptr},
-    });
+    Http handler;
 
-    s = chunked_encode(s);
+    handler.route("/", {"GET"})|
+    []() {
+        return json::Map{
+            {"name", std::string("Jupri")},
+            {"age", 19},
+            {"is_married", true},
+            {"salary", 9.1},
+            {"role", nullptr},
+        };
+    };
 
     StringStream ss;
-    int idx = 0;
+    ss.write("GET / HTTP/1.1\r\n\r\n");
+    auto [req, res] = handler.execute(ss);
 
-    s >> [&](std::string_view sv) {
+    EXPECT_EQ(req.method, "GET");
+    EXPECT_EQ(req.url.full_path, "/");
+    EXPECT_EQ(req.version, "HTTP/1.1");
+    EXPECT_EQ(req.body, "");
+    EXPECT_EQ(req.headers.size(), 0);
+
+    EXPECT_EQ(res.status, delameta::http::StatusOK);
+    EXPECT_EQ(res.status_string, "OK");
+    EXPECT_EQ(res.version, "HTTP/1.1");
+    EXPECT_EQ(res.headers.at("Transfer-Encoding"), "chunked");
+    EXPECT_EQ(res.headers.at("Content-Type"), "application/json");
+
+    int idx = 0;
+    res.body_stream >> [&](std::string_view sv) {
         ss.write(sv);
         if (idx == 0) { EXPECT_EQ(sv, "10\r\n{\"name\":\"Jupri\",\r\n"sv); }
         if (idx == 1) { EXPECT_EQ(sv, "9\r\n\"age\":19,\r\n"sv); }
@@ -240,6 +257,7 @@ TEST(Http, chunked) {
     EXPECT_EQ(idx, 6);
     EXPECT_EQ(ss.buffer.size(), 6);
 
+    Stream s;
     s = chunked_decode(ss);
     idx = 0;
 
@@ -255,4 +273,61 @@ TEST(Http, chunked) {
 
     EXPECT_EQ(idx, 6);
     EXPECT_EQ(ss.buffer.size(), 0);
+}
+
+TEST(Http, client) {
+    class DummyClient : public StreamSessionClient {
+    public:
+        Http& http;
+        StringStream ss;
+        DummyClient(Http& http) : StreamSessionClient(ss), http(http), ss() {}
+
+        delameta::Result<std::vector<uint8_t>> request(Stream& in_stream) override {
+            in_stream >> ss;
+            auto [req, res] = http.execute(ss);
+            ss.flush();
+            res.dump() >> ss;
+            return Ok(std::vector<uint8_t>());
+        }
+    };
+
+    Http handler;
+    handler.route("/", {"GET"})|
+    []() {
+        return json::Map{
+            {"name", std::string("Jupri")},
+            {"age", 19},
+            {"is_married", true},
+            {"salary", 9.1},
+            {"role", nullptr},
+        };
+    };
+
+    DummyClient cli(handler);
+
+    auto res = request(cli, RequestWriter{
+        .method="GET",
+        .url=URL("/"),
+    }).unwrap();
+
+    EXPECT_EQ(res.status, delameta::http::StatusOK);
+    EXPECT_EQ(res.status_string, "OK");
+    EXPECT_EQ(res.version, "HTTP/1.1");
+    EXPECT_EQ(res.headers.at("Transfer-Encoding"), "chunked");
+    EXPECT_EQ(res.headers.at("Content-Type"), "application/json");
+    EXPECT_EQ(res.headers.find("Content-Length"), res.headers.end());
+
+    int idx = 0;
+
+    res.body_stream >> [&](std::string_view sv) {
+        if (idx == 0) { EXPECT_EQ(sv, "{\"name\":\"Jupri\","sv); }
+        if (idx == 1) { EXPECT_EQ(sv, "\"age\":19,"sv); }
+        if (idx == 2) { EXPECT_EQ(sv, "\"is_married\":true,"sv); }
+        if (idx == 3) { EXPECT_EQ(sv, "\"salary\":9.100,"sv); }
+        if (idx == 4) { EXPECT_EQ(sv, "\"role\":null}"sv); }
+        if (idx == 5) { EXPECT_EQ(sv, ""sv); }
+        ++idx;
+    };
+
+    EXPECT_EQ(idx, 6);
 }
