@@ -251,12 +251,10 @@ auto delameta_detail_read_until(const char* file, int line, int fd, void* ssl, i
     auto ssl_ = reinterpret_cast<SSL*>(ssl);
 
     while (is_alive(fd)) {
-        warning(__FILE__, __LINE__, "Prepare to read ...");
         if (::ioctl(fd, FIONREAD, &bytes_available) == -1) {
             return log_err(file, line, fd, Error(errno, ::strerror(errno)));
         }
 
-        warning(__FILE__, __LINE__, "bytes available = " + std::to_string(bytes_available));
         if (bytes_available == 0) {
             if (timeout >= 0 && std::chrono::high_resolution_clock::now() - start > std::chrono::seconds(timeout)) {
                 return log_err(file, line, fd, Error::TransferTimeout);
