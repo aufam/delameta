@@ -130,6 +130,10 @@ static auto ssl_context_configure(bool is_server, const std::string& cert_file, 
     return Ok();
 }
 
+static bool is_tls_alive(int) { 
+    return true;
+}
+
 auto TLS::Open(const char* file, int line, Args args) -> Result<TLS> {
     auto [tcp, tcp_err] = TCP::Open(file, line, TCP::Args{
         .host=args.host, 
@@ -172,11 +176,11 @@ TLS::~TLS() {
 }
 
 auto TLS::read() -> Result<std::vector<uint8_t>> {
-    return delameta_detail_read(file, line, socket, ssl, timeout, delameta_detail_is_socket_alive);
+    return delameta_detail_read(file, line, socket, ssl, timeout, &is_tls_alive);
 }
 
 auto TLS::read_until(size_t n) -> Result<std::vector<uint8_t>> {
-    return delameta_detail_read_until(file, line, socket, ssl, timeout, delameta_detail_is_socket_alive, n);
+    return delameta_detail_read_until(file, line, socket, ssl, timeout, &is_tls_alive, n);
 }
 
 auto TLS::read_as_stream(size_t n) -> Stream {
@@ -184,7 +188,7 @@ auto TLS::read_as_stream(size_t n) -> Stream {
 }
 
 auto TLS::write(std::string_view data) -> Result<void> {
-    return delameta_detail_write(file, line, socket, ssl, timeout, delameta_detail_is_socket_alive, data);
+    return delameta_detail_write(file, line, socket, ssl, timeout, &is_tls_alive, data);
 }
 
 auto Server<TLS>::start(const char* file, int line, Args args) -> Result<void> {
@@ -271,7 +275,7 @@ auto Server<TLS>::start(const char* file, int line, Args args) -> Result<void> {
             TLS session(file, line, sock_client, 1, *ssl);
             session.keep_alive = args.keep_alive;
         
-            for (int cnt = 1; is_running and delameta_detail_is_socket_alive(sock_client); ++cnt) {
+            for (int cnt = 1; is_running and is_tls_alive(sock_client); ++cnt) {
                 auto received_result = session.read(); // TODO: read() doesn't check for is_running
                 if (received_result.is_err()) {
                     break;
@@ -289,7 +293,7 @@ auto Server<TLS>::start(const char* file, int line, Args args) -> Result<void> {
             }
 
             // shutdown if still connected
-            if (delameta_detail_is_socket_alive(session.socket)) {
+            if (is_tls_alive(session.socket)) {
                 SSL_shutdown(*ssl);
                 info(file, line, "Closed by server: " + std::to_string(session.socket));
             } else {

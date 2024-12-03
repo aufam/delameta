@@ -238,6 +238,10 @@ auto delameta_detail_recvfrom(const char* file, int line, int fd, int timeout, v
 }
 
 auto delameta_detail_read_until(const char* file, int line, int fd, void* ssl, int timeout, bool(*is_alive)(int), size_t n) -> Result<std::vector<uint8_t>> {
+    if (ssl) { // cannot read parsial data
+        return delameta_detail_read(file, line, fd, ssl, timeout, is_alive);
+    }
+
     auto start = std::chrono::high_resolution_clock::now();
     std::vector<uint8_t> buffer(n);
 
@@ -247,27 +251,23 @@ auto delameta_detail_read_until(const char* file, int line, int fd, void* ssl, i
     auto ssl_ = reinterpret_cast<SSL*>(ssl);
 
     while (is_alive(fd)) {
+        warning(__FILE__, __LINE__, "Prepare to read ...");
         if (::ioctl(fd, FIONREAD, &bytes_available) == -1) {
             return log_err(file, line, fd, Error(errno, ::strerror(errno)));
         }
 
+        warning(__FILE__, __LINE__, "bytes available = " + std::to_string(bytes_available));
         if (bytes_available == 0) {
             if (timeout >= 0 && std::chrono::high_resolution_clock::now() - start > std::chrono::seconds(timeout)) {
                 return log_err(file, line, fd, Error::TransferTimeout);
             }
+            return log_err(file, line, fd, Error::TransferTimeout);
             std::this_thread::sleep_for(10ms);
             continue;
         }
 
-        auto size = ssl ? SSL_read(ssl_, ptr, std::min(bytes_available, remaining_size)) : ::read(fd, ptr, std::min(bytes_available, remaining_size));
+        auto size = ::read(fd, ptr, std::min(bytes_available, remaining_size));
         if (size < 0) {
-            if (ssl) {
-                char buf[128];
-                auto code = ERR_get_error();
-                ERR_error_string_n(code, buf, 128);
-                panic(__FILE__, __LINE__, buf);
-                return Err(Error{int(code), buf});
-            }
             return log_err(file, line, fd, Error(errno, ::strerror(errno)));
         }
 
@@ -329,7 +329,8 @@ auto delameta_detail_read_as_stream(const char* file, int line, int timeout, Des
 
         if (data.is_ok()) {
             buffer = std::move(data.unwrap());
-            total -= n;
+            n = buffer.size();
+            total = total > n ? total - n : 0;
             s.again = total > 0;
         } else {
             buffer = {};

@@ -1,3 +1,4 @@
+#include "fmt/base.h"
 #include <boost/preprocessor.hpp>
 #include <fmt/chrono.h>
 #include <delameta/debug.h>
@@ -23,8 +24,7 @@ static auto format_time_now() {
     return fmt::localtime(time_now);
 }
 
-using Headers = std::unordered_map<std::string_view, std::string_view>;
-using Queries = std::unordered_map<std::string, std::string>;
+using Headers = std::unordered_map<std::string, std::string>;
 
 template<>
 auto Opts::convert_string_into(const std::string& str) -> Result<Headers> {
@@ -32,24 +32,17 @@ auto Opts::convert_string_into(const std::string& str) -> Result<Headers> {
     return json::deserialize<Headers>(str).except([](const char* err) { return Error{-1, err}; });
 }
 
-template<>
-auto Opts::convert_string_into(const std::string& str) -> Result<Queries> {
-    if (str == "") return Ok(Queries{});
-    return json::deserialize<Queries>(str).except([](const char* err) { return Error{-1, err}; });
-}
-
 OPTS_MAIN(
     (Delameta, "Delameta CLI Tools")
     ,
     /*   Type   |  Arg   | Short |   Long   |              Help                |      Default   */
-    (URL        , uri    , 'H'   , "host"   , "Specify host and port"          , "localhost:5000")
+    (std::string, host   , 'H'   , "host"   , "Specify host and port"          , "localhost:5000")
     (int        , n_sock , 'n'   , "n-sock" , "Number of socket server"        , "4"             )
     (std::string, url_str, 'u'   , "url"    , "Specify URL for HTTP request"   , ""              )
 
     // for sub command
     (std::string, cmd    , 'c'   , "cmd"    , "Specify sub command (optional)" , ""              )
     (Headers    , args   , 'a'   , "args"   , "Sub command's args"             , ""              )
-    (Queries    , queries, 'q'   , "queries", "Sub command's queries"          , ""              )
     (std::string, data   , 'd'   , "data"   , "Sub command's data"             , ""              )
     (std::string, method , 'm'   , "method" , "Sub command's HTTP method"      , ""              )
 
@@ -92,16 +85,16 @@ OPTS_MAIN(
             app.bind(tcp, {.is_tcp_server=true});
             at_exit = [&] { tcp.stop(); };
 
-            fmt::println("Server is starting on {}", uri.host);
-            return tcp.start(FL, {.host=uri.host, .max_socket=n_sock});
+            fmt::println("Server is starting on {}", host);
+            return tcp.start(FL, {.host=host, .max_socket=n_sock});
         } else if (cert != "" and key != "") {
             Server<TLS> tls;
 
             app.bind(tls, {.is_tcp_server=true});
             at_exit = [&] { tls.stop(); };
 
-            fmt::println("Server is starting on {}", uri.host);
-            return tls.start(FL, {.host=uri.host, .cert_file=cert, .key_file=key, .max_socket=n_sock});
+            fmt::println("Server is starting on {}", host);
+            return tls.start(FL, {.host=host, .cert_file=cert, .key_file=key, .max_socket=n_sock});
         } else if (cert == "") {
             return Err(Error{-1, "TLS certificate file is not provided"});
         } else if (key == "") {
@@ -110,31 +103,26 @@ OPTS_MAIN(
     }
 
     // setup request/response
-    http::RequestReader req;
-    std::string content_length;
+    http::RequestWriter req;
 
     req.version = "HTTP/1.1";
     req.headers = std::move(args);
-
-    uri.path = std::move(cmd);
-    uri.queries = std::move(queries);
-    req.url = std::move(uri);
 
     // setup body
     if ((not data.empty()) + (not input.empty()) + (not file.empty()) > 1) {
         return Err(Error{-1, "multiple data source"});
     }
     if (data != "") {
-        req.headers["Content-Length"] = content_length = std::to_string(data.size());
+        req.headers["Content-Length"] = std::to_string(data.size());
         req.body_stream << std::move(data);
     } else if (input != "") {
         auto ep_in = TRY(Endpoint::Open(FL, input));
         auto read_data = TRY(ep_in.read());
-        req.headers["Content-Length"] = content_length = std::to_string(read_data.size());
+        req.headers["Content-Length"] = std::to_string(read_data.size());
         req.body_stream << std::move(read_data);
     } else if (file != "") {
         auto f = TRY(File::Open(FL, {file}));
-        req.headers["Content-Length"] = content_length = std::to_string(f.file_size());
+        req.headers["Content-Length"] = std::to_string(f.file_size());
         req.headers["Content-Type"] = get_content_type_from_file(file);
         f >> req.body_stream;
     }
@@ -154,34 +142,56 @@ OPTS_MAIN(
         req.method = std::move(method);
     }
 
+    // dummy client with string stream
+    class DummyClient : public StreamSessionClient {
+    public:
+        http::Http& http;
+        StringStream ss;
+        DummyClient(http::Http& http) : StreamSessionClient(ss), http(http), ss() {}
+
+        delameta::Result<std::vector<uint8_t>> request(Stream& in_stream) override {
+            in_stream >> ss;
+            auto [req, res] = http.execute(ss);
+            ss.flush();
+            res.dump() >> ss;
+            return Ok(std::vector<uint8_t>());
+        }
+    };
+
+    DummyClient dummy_client(app);
+
     // create response using http request
-    http::ResponseWriter res;
-    if (not url_str.empty()) {
-        extern std::string delameta_https_cert_file;
-        extern std::string delameta_https_key_file;
+    auto res = [&]() {
+        if (not url_str.empty()) {
+            extern std::string delameta_https_cert_file;
+            extern std::string delameta_https_key_file;
 
-        delameta_https_cert_file = cert;
-        delameta_https_key_file = key;
+            delameta_https_cert_file = cert;
+            delameta_https_key_file = key;
 
-        http::RequestWriter req_w = std::move(req);
-        req_w.url = URL(std::move(url_str));
+            req.url = url_str;
+            return http::request(std::move(req));
+        }
 
-        auto res_r = TRY(http::request(std::move(req_w)));
-        res = std::move(res_r);
+        // create response using cmd from router path
+        req.url = host + cmd;
+        return http::request(dummy_client, std::move(req));
+    }();
+
+    if (res.is_err()) {
+        return Err(std::move(res.unwrap_err()));
     }
-    // create response using cmd from router path
-    else {
-        app.execute(req, res);
-    }
 
+    auto &response = res.unwrap();
     if (p_heads) {
-        for (auto &[key, value]: res.headers) {
+        for (auto &[key, value]: response.headers) {
             fmt::println("{}: {}", key, value);
         }
+        fmt::println("");
     }
 
     // return ok or error
-    if (res.status < 300) {
+    if (response.status < 300) {
         // output the response
         auto ep_out = TRY(Endpoint::Open(FL, output));
         File* p_log_out = nullptr;
@@ -192,7 +202,7 @@ OPTS_MAIN(
             p_log_out = new File(std::move(log_out));
         }
 
-        res.body_stream.out_with_prefix(ep_out, [p_log_out](std::string_view sv) -> Result<void> {
+        response.body_stream.out_with_prefix(ep_out, [p_log_out](std::string_view sv) -> Result<void> {
             if (p_log_out) TRY(p_log_out->write(sv));
             return Ok();
         });
@@ -207,10 +217,10 @@ OPTS_MAIN(
         return Ok();
     } else {
         auto ep_out = TRY(Endpoint::Open(FL, "stdio://"));
-        ep_out << res.body << res.body_stream;
+        ep_out << response.body << response.body_stream;
         fmt::println("");
 
-        return Err(Error{res.status, res.status_string});
+        return Err(Error{response.status, std::string(response.status_string)});
     }
 }
 

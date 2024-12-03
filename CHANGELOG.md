@@ -1,3 +1,8 @@
+## [0.1.10] - 2024-12-03
+### Fixed
+- TLS read implementation
+- URL debug formatter
+
 ## [0.1.9] - 2024-12-02
 ### Fixed
 - Adding small delay after TCP/UDP write in STM32 TCP/UDP implementation
