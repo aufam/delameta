@@ -4,6 +4,7 @@
 __pycache__
 
 .*
+!.github/
 !.gitignore
 !.gitmodules
 !.gitlab-ci.yml
