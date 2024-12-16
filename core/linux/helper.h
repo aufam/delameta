@@ -10,6 +10,11 @@ bool delameta_detail_is_socket_alive(int socket);
 auto delameta_detail_get_ip(int socket) -> std::string;
 auto delameta_detail_get_filename(int fd) -> std::string;
 
+auto delameta_detail_log_format_fd(
+    int fd,
+    const std::string& msg
+) -> std::string;
+
 auto delameta_detail_resolve_domain(
     const std::string& domain, 
     int sock_type, 

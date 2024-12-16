@@ -1,8 +1,12 @@
+#include "delameta/http/response.h"
+#include "delameta/utils.h"
 #include <boost/preprocessor.hpp>
 #include <delameta/debug.h>
 #include <delameta/http/http.h>
 #include <delameta/tcp.h>
 #include <algorithm>
+#include <stdexcept>
+#include <string>
 
 using namespace Project;
 using namespace Project::delameta::http;
@@ -45,7 +49,13 @@ struct Bar {
 
 template<>
 auto Http::convert_string_into(std::string_view str) -> Result<Bar> {
-    return Ok(Bar{str.size()});
+    try {
+        return Ok(Bar{std::stoul(std::string(str))});
+    } catch (const std::invalid_argument& e) {
+        return Err(Error{http::StatusBadRequest, std::string("Invalid argument. ") + e.what()});
+    } catch (const std::out_of_range& e) {
+        return Err(Error{http::StatusBadRequest, std::string("Out of range. ") + e.what()});
+    }
 }
 
 template<>
@@ -81,7 +91,7 @@ HTTP_SETUP(example, app) {
 
     app.logger = [](const std::string& ip, const RequestReader& req, const ResponseWriter& res) {
         std::string msg = ip + " " + std::string(req.method) + " " + req.url.path + " " + std::to_string(res.status) + " " + res.status_string;
-        DBG(info, msg);
+        INFO(msg);
     };
 
     // example custom handler: jsonify Error
@@ -98,6 +108,7 @@ HTTP_SETUP(example, app) {
     };
 
     // example: print hello with msg
+    // - notice that we can assign the same route but with different method
     app.Post("/hello").args(arg::json_item("msg"))|
     [](std::string msg) {
         return "Hello world " + msg;
@@ -116,14 +127,14 @@ HTTP_SETUP(example, app) {
     };
 
     // example:
-    // - dependency injection (in this case is authentication token),
+    // - dependency injection (in this case is authentication token which is "Bearer 1234"),
     // - arg with default value, it will try to find "add" key in the request headers and request queries
-    //   If not found, use the default value
+    //   if not found, use the default value
     // - since json rule for Foo is defined and the arg type is json, the request body will be deserialized into foo
     // - new foo will be created and serialized as response body
     app.Post("/foo").args(arg::depends(get_token), arg::default_val("add", 20), arg::json)|
-    [](std::string_view token, int add, Foo foo) -> Foo {
-        return {foo.num + add, foo.text + ": " + std::string(token)};
+    []([[maybe_unused]] std::string_view token, int add, Foo foo) -> Foo {
+        return {foo.num + add, foo.text + ", added by" + std::to_string(add)};
     };
 
     // example:

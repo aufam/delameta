@@ -23,23 +23,36 @@ message(STATUS "DELAMETA_BUILD_TEST   : ${DELAMETA_BUILD_TEST}")
 message(STATUS "DELAMETA_INSTALL      : ${DELAMETA_INSTALL}")
 message(STATUS "DELAMETA_TARGET_STM32 : ${DELAMETA_TARGET_STM32}")
 
-# cpm cmake
+# private dependencies
 include(cmake/delameta.cmake)
+delameta_github_package("fmt:fmtlib/fmt#11.0.2" OPTIONS "FMT_INSTALL OFF")
+delameta_github_package("preprocessor:boostorg/preprocessor#boost-1.86.0" DOWNLOAD_ONLY  YES)
 
 # build library
 if (NOT DELAMETA_TARGET_STM32)
 	file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS src/*.* core/linux/*.*)
 	add_library(delameta ${SOURCES})
-	
-	target_compile_options(delameta PRIVATE
-		-Wall
-		-Wextra
-		-pedantic
-		-Wnull-dereference
-		$<$<COMPILE_LANGUAGE:CXX>:-Wno-literal-suffix>
-		$<$<COMPILE_LANGUAGE:CXX>:-Woverloaded-virtual>
-		$<$<COMPILE_LANGUAGE:CXX>:-Wnon-virtual-dtor>
-	)
+
+	if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+		target_compile_options(delameta PRIVATE
+			-Wall
+			-Wextra
+			-pedantic
+			-Wnull-dereference
+			-fmacro-prefix-map=${CMAKE_CURRENT_SOURCE_DIR}/=
+			$<$<COMPILE_LANGUAGE:CXX>:-Wno-literal-suffix>
+			$<$<COMPILE_LANGUAGE:CXX>:-Woverloaded-virtual>
+			$<$<COMPILE_LANGUAGE:CXX>:-Wnon-virtual-dtor>
+		)
+	elseif (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+		target_compile_options(delameta PRIVATE
+			/W4          # Enable warning level 4 (high level of warnings)
+			/permissive- # Enforce standards-conformant C++ behavior
+			/w44265      # Warn on potential null pointer dereferences
+			/w44061      # Warn on overloaded virtual functions hiding base ones
+			/wd4251      # Disable warnings about DLL interface (common for templates)
+		)
+	endif()
 
 	target_include_directories(delameta PUBLIC
 		$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
@@ -53,18 +66,37 @@ if (NOT DELAMETA_TARGET_STM32)
 
 	# thread dependency
 	find_package(Threads REQUIRED)
-	set_target_properties(delameta PROPERTIES COMPILE_OPTIONS "-pthread")
-	target_link_libraries(delameta PUBLIC ${CMAKE_THREAD_LIBS_INIT} stdc++fs)
+	target_link_libraries(delameta PUBLIC Threads::Threads)
+
+	# check if stdc++fs is needed (for GCC < 9)
+	if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 9.0)
+		target_link_libraries(delameta PUBLIC stdc++fs)
+	endif()
 
 	# openssl dependency
-	find_package(OpenSSL REQUIRED)
-	target_link_libraries(delameta PUBLIC OpenSSL::SSL)
+	find_package(OpenSSL)
+	if (OpenSSL_FOUND)
+		target_link_libraries(delameta PRIVATE
+			OpenSSL::SSL
+		)
+	else ()
+		target_compile_definitions(delameta PRIVATE
+			-DDELAMETA_DISABLE_OPENSSL=1
+		)
+	endif()
 
 	# etl dependency
 	if (NOT TARGET etl)
-		delameta_github_add_package("etl:aufam/etl#main" OPTIONS "ETL_INSTALL ${DELAMETA_INSTALL}")
+		delameta_github_package("etl:aufam/etl#main" OPTIONS "ETL_INSTALL ${DELAMETA_INSTALL}")
 	endif ()
 	target_link_libraries(delameta PUBLIC etl)
+
+	# fmt dependency
+	target_link_libraries(delameta PRIVATE fmt-header-only)
+
+	# preprocessor
+	target_include_directories(delameta PRIVATE "${preprocessor_SOURCE_DIR}/include")
+
 else()
 	file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS src/*.* core/stm32_hal/*.*)
 	add_library(delameta ${SOURCES})
@@ -73,6 +105,7 @@ else()
 		-Wall
 		-Wextra
 		-pedantic
+		-fmacro-prefix-map=${CMAKE_CURRENT_SOURCE_DIR}/=
 		$<$<COMPILE_LANGUAGE:C>:-Wno-unused-parameter> # for ethernet
 		$<$<COMPILE_LANGUAGE:CXX>:-Wno-literal-suffix>
 		$<$<COMPILE_LANGUAGE:CXX>:-Woverloaded-virtual>
@@ -94,9 +127,15 @@ else()
 
 	# etl dependency
 	if (NOT TARGET etl)
-		delameta_github_add_package("etl:aufam/etl#FreeRTOS")
+		delameta_github_package("etl:aufam/etl#FreeRTOS")
 	endif ()
 	target_link_libraries(delameta PUBLIC etl)
+
+	# fmt dependency
+	target_link_libraries(delameta PRIVATE fmt-header-only)
+
+	# preprocessor
+	target_include_directories(delameta PRIVATE "${preprocessor_SOURCE_DIR}/include")
 endif()
 
 # install
@@ -123,6 +162,7 @@ if (NOT DELAMETA_TARGET_STM32 AND DELAMETA_INSTALL)
 	# targets
 	install(
 		TARGETS delameta
+				fmt-header-only
 		EXPORT delametaTargets
 		LIBRARY DESTINATION lib COMPONENT Runtime
 		ARCHIVE DESTINATION lib COMPONENT Development

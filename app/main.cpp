@@ -1,6 +1,6 @@
-#include "fmt/base.h"
 #include <boost/preprocessor.hpp>
 #include <fmt/chrono.h>
+#include <fmt/color.h>
 #include <delameta/debug.h>
 #include <delameta/http/http.h>
 #include <delameta/tcp.h>
@@ -230,16 +230,18 @@ static const char* const RED     = "\033[31m";  // Red text
 static const char* const GREEN   = "\033[32m";  // Green text
 static const char* const YELLOW  = "\033[33m";  // Yellow text
 static const char* const BLUE    = "\033[34m";  // Blue
-static constexpr char FORMAT[] = "{}{:%Y-%m-%d %H:%M:%S} {}{}{}:{} {}";
+static constexpr char FORMAT[] = "{}{:%H:%M:%S} {}:{} {}{}{}:{} {}";
 
-void delameta::info(const char*, int, const std::string& msg) {
-    if (Opts::verbose)
-        fmt::println(FORMAT, BLUE, format_time_now(), BOLD, GREEN, "info", RESET, msg);
+void delameta::info(const char* file, int line, const std::string& msg) {
+    if (Opts::verbose and file)
+        fmt::println(FORMAT, BLUE, format_time_now(), file, line, BOLD, GREEN, "info", RESET, msg);
 }
-void delameta::warning(const char*, int, const std::string& msg) {
-    fmt::println(FORMAT, BLUE, format_time_now(), BOLD, YELLOW, "warning", RESET, msg);
+void delameta::warning(const char* file, int line, const std::string& msg) {
+    if (file)
+        fmt::println(FORMAT, BLUE, format_time_now(), file, line, BOLD, YELLOW, "warning", RESET, msg);
 }
-void delameta::panic(const char*, int, const std::string& msg) {
-    fmt::println(FORMAT, BLUE, format_time_now(), BOLD, RED, "panic", RESET, msg);
+void delameta::panic(const char* file, int line, const std::string& msg) {
+    if (file)
+        fmt::println(FORMAT, BLUE, format_time_now(), file, line, BOLD, RED, "panic", RESET, msg);
     exit(1);
 }

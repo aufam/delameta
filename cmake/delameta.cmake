@@ -26,7 +26,7 @@ include(${CPM_DOWNLOAD_LOCATION})
 ## end of CPM.cmake
 
 # add package from github.com
-function(delameta_github_add_package url)
+function(delameta_github_package url)
   # Parse input URL of the form "[user:password@]package:repo.git#tag"
   string(REGEX MATCH "([^:]+):([^#]+)#(.+)" _ "${url}")
 
@@ -48,4 +48,6 @@ function(delameta_github_add_package url)
     GIT_TAG        ${TAG}
     ${options}  # Any additional options passed to the function
   )
+
+  set(${PACKAGE}_SOURCE_DIR ${${PACKAGE}_SOURCE_DIR} PARENT_SCOPE)
 endfunction()

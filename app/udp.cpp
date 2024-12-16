@@ -40,7 +40,7 @@ static HTTP_ROUTE(
         Stream s;
         s << "UDP response: ";
         s << data;
-        DBG(delameta::info, "peer = " + peer);
+        INFO("peer = " + peer);
         return s;
     };
 

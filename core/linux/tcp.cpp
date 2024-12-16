@@ -87,7 +87,6 @@ auto TCP::Open(const char* file, int line, Args args) -> Result<TCP> {
             }
         } 
 
-        info(file, line, "Created socket as TCP client: " + std::to_string(socket));
         return Ok(TCP(file, line, socket, args.timeout));
     }
 
@@ -102,7 +101,11 @@ TCP::TCP(const char* file, int line, int socket, int timeout)
     , timeout(timeout)
     , max(-1) 
     , file(file)
-    , line(line) { delameta_detail_set_non_blocking(socket); }
+    , line(line)
+{
+    delameta_detail_set_non_blocking(socket);
+    info(file, line, delameta_detail_log_format_fd(socket, "created"));
+}
 
 TCP::TCP(TCP&& other)
     : Descriptor()
@@ -116,7 +119,7 @@ TCP::TCP(TCP&& other)
 
 TCP::~TCP() {
     if (socket >= 0) {
-        info(file, line, "Closed TCP socket: " + std::to_string(socket));
+        info(file, line, delameta_detail_log_format_fd(socket, "closed"));
         ::close(socket);
         socket = -1;
     }
@@ -178,8 +181,6 @@ auto Server<TCP>::start(const char* file, int line, Args args) -> Result<void> {
         return Err(log_error(errno, ::strerror));
     }
 
-    info(file, line, "Created socket as TCP server: " + std::to_string(socket));
-
     std::vector<std::thread> threads;
     std::mutex mtx;
     std::condition_variable cv;
@@ -203,7 +204,7 @@ auto Server<TCP>::start(const char* file, int line, Args args) -> Result<void> {
 
             if (not is_running) break;
 
-            info(__FILE__, __LINE__, "processing in thread " + std::to_string(idx) + ", socket = " + std::to_string(sock_client));
+            info(file, line, "processing in thread " + std::to_string(idx) + ", socket = " + std::to_string(sock_client));
 
             TCP session(file, line, sock_client, args.timeout);
             session.keep_alive = args.keep_alive;
@@ -219,18 +220,20 @@ auto Server<TCP>::start(const char* file, int line, Args args) -> Result<void> {
 
                 if (not session.keep_alive) {
                     if (session.max > 0 and cnt >= session.max) {
-                        warning(session.file, session.line, "Reached maximum receive: " + std::to_string(session.socket));
+                        info(file, line, delameta_detail_log_format_fd(sock_client, "reached maximum receive"));
                     }
                     break;
                 }
+
+                info(file, line, delameta_detail_log_format_fd(sock_client, "kept alive"));
             }
 
             // shutdown if still connected
             if (delameta_detail_is_socket_alive(session.socket)) {
                 ::shutdown(session.socket, SHUT_RDWR);
-                info(file, line, "Closed by server: " + std::to_string(session.socket));
+                info(file, line, delameta_detail_log_format_fd(sock_client, "closed by server"));
             } else {
-                info(file, line, "Closed by peer: " + std::to_string(session.socket));
+                info(file, line, delameta_detail_log_format_fd(sock_client, "closed by peer"));
             }
 
             --semaphore;

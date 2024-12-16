@@ -1,3 +1,10 @@
+## [0.2.0] - 2024-12-03
+### Changed
+- Debug macros
+
+### Improved
+- Some improvements
+
 ## [0.1.10] - 2024-12-03
 ### Fixed
 - TLS read implementation

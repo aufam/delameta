@@ -1,6 +1,5 @@
+#include <fmt/format.h>
 #include <sys/socket.h>
-#include <openssl/ssl.h>
-#include <openssl/err.h>
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <netdb.h>
@@ -10,23 +9,27 @@
 #include <string>
 #include <iostream>
 #include <thread>
-#include <limits.h>
 #include <etl/string_view.h>
 #include "delameta/stream.h"
 #include "delameta/url.h"
 #include "helper.h"
 
+#ifndef DELAMETA_DISABLE_OPENSSL
+#include <openssl/ssl.h>
+#include <openssl/err.h>
+#endif
+
 namespace Project::delameta {
-    __attribute__((weak)) 
+    __attribute__((weak))
     void info(const char*, int, const std::string&) {}
 
-    __attribute__((weak)) 
+    __attribute__((weak))
     void warning(const char*, int, const std::string&) {}
 
-    __attribute__((weak)) 
-    void panic(const char* file, int line, const std::string& msg) { 
-        std::cerr << file << ":" << std::to_string(line) << ": " << msg << '\n';
-        exit(1); 
+    __attribute__((weak))
+    void panic(const char* file, int line, const std::string& msg) {
+        std::cerr << fmt::format("{}:{} {}\n", file, line, msg);
+        exit(1);
     }
 }
 
@@ -62,8 +65,9 @@ auto delameta_detail_get_ip(int socket) -> std::string {
     socklen_t addr_len = sizeof(addr);
 
     if (getpeername(socket, (sockaddr*)&addr, &addr_len) != 0) {
-        warning(__FILE__, __LINE__, ::strerror(errno));
-        return "<Invalid socket>";
+        PANIC(
+            fmt::format("Cannot resolve IP address of socket {}: {}", socket, ::strerror(errno))
+        );
     }
 
     char ip_str[INET6_ADDRSTRLEN];
@@ -74,13 +78,17 @@ auto delameta_detail_get_ip(int socket) -> std::string {
     } else if (addr.ss_family == AF_INET6) { // IPv6
         addr_ptr = &((sockaddr_in6*)&addr)->sin6_addr;
     } else {
-        warning(__FILE__, __LINE__, "Unknown address family");
-        return "<Invalid socket>";
+        PANIC(
+            fmt::format("Unknown address family. expect AF_INET(={}) or AF_INET6(={}) got {}",
+                AF_INET, AF_INET6, addr.ss_family
+            )
+        );
     }
 
     if (inet_ntop(addr.ss_family, addr_ptr, ip_str, sizeof(ip_str)) == nullptr) {
-        warning(__FILE__, __LINE__, ::strerror(errno));
-        return "<Invalid socket>";
+        PANIC(
+            fmt::format("Cannot convert struct IP into string IP: {}", ::strerror(errno))
+        );
     }
 
     return std::string(ip_str);
@@ -88,15 +96,21 @@ auto delameta_detail_get_ip(int socket) -> std::string {
 
 auto delameta_detail_get_filename(int fd) -> std::string {
     char filename[PATH_MAX];
-    ssize_t len = readlink(("/proc/self/fd/" + std::to_string(fd)).c_str(), filename, sizeof(filename) - 1);
+    ssize_t len = ::readlink(("/proc/self/fd/" + std::to_string(fd)).c_str(), filename, sizeof(filename) - 1);
 
     if (len != -1) {
         filename[len] = '\0';
         return std::string(filename);
     } else {
-        warning(__FILE__, __LINE__, ::strerror(errno));
+        PANIC(
+            fmt::format("Cannot resolve filename from FD {} : {}", fd, ::strerror(errno))
+        );
         return "<Invalid fd>";
     }
+}
+
+auto delameta_detail_log_format_fd(int fd, const std::string& msg) -> std::string {
+    return fmt::format("FD {}: {}", fd, msg);
 }
 
 static const std::unordered_map<std::string, int> protocol_default_ports = {
@@ -106,7 +120,7 @@ static const std::unordered_map<std::string, int> protocol_default_ports = {
     {"smtp", 25},
     {"pop3", 110},
     {"imap", 143},
-    // Add more protocols and their default ports as needed
+    // TODO: Add more protocols and their default ports as needed
 };
 
 static constexpr auto parse_host(etl::StringView domain) -> std::pair<etl::StringView, etl::StringView> {
@@ -160,24 +174,27 @@ auto delameta_detail_resolve_domain(const std::string& domain, int sock_type, bo
 }
 
 static auto log_err(const char* file, int line, int fd, Error err) {
-    warning(file, line, "FD " + std::to_string(fd) + ": Error: " + err.what);
-    return Err(err);
+    warning(file, line, delameta_detail_log_format_fd(fd, err.what));
+    return Err(std::move(err));
 }
 
 static auto log_received_ok(const char* file, size_t line, int fd, std::vector<uint8_t>& res) {
-    info(file, line, "FD " + std::to_string(fd) + " read " + std::to_string(res.size()) + " bytes");
+    info(file, line, delameta_detail_log_format_fd(fd, "read " + std::to_string(res.size()) + " bytes"));
     return Ok(std::move(res));
 }
 
 static auto log_sent_ok(const char* file, size_t line, int fd, size_t n) {
-    info(file, line, "FD " + std::to_string(fd) + " write " + std::to_string(n) + " bytes");
+    info(file, line, delameta_detail_log_format_fd(fd, "written " + std::to_string(n) + " bytes"));
     return Ok();
 }
 
-auto delameta_detail_read(const char* file, int line, int fd, void* ssl, int timeout, bool(*is_alive)(int)) -> Result<std::vector<uint8_t>> {
+auto delameta_detail_read(const char* file, int line, int fd, [[maybe_unused]] void* ssl, int timeout, bool(*is_alive)(int)) -> Result<std::vector<uint8_t>> {
     auto start = std::chrono::high_resolution_clock::now();
     int bytes_available = 0;
+
+#ifndef DELAMETA_DISABLE_OPENSSL
     auto ssl_ = reinterpret_cast<SSL*>(ssl);
+#endif
 
     while (is_alive(fd)) {
         if (::ioctl(fd, FIONREAD, &bytes_available) == -1) {
@@ -193,7 +210,12 @@ auto delameta_detail_read(const char* file, int line, int fd, void* ssl, int tim
         }
 
         std::vector<uint8_t> buffer(bytes_available);
+
+#ifndef DELAMETA_DISABLE_OPENSSL
         auto size = ssl ? SSL_read(ssl_, buffer.data(), bytes_available) : ::read(fd, buffer.data(), bytes_available);
+#else
+        auto size = ::read(fd, buffer.data(), bytes_available);
+#endif
         if (size < 0) {
             return log_err(file, line, fd, Error(errno, ::strerror(errno)));
         }
@@ -237,10 +259,12 @@ auto delameta_detail_recvfrom(const char* file, int line, int fd, int timeout, v
     return log_err(file, line, fd, Error::ConnectionClosed);
 }
 
-auto delameta_detail_read_until(const char* file, int line, int fd, void* ssl, int timeout, bool(*is_alive)(int), size_t n) -> Result<std::vector<uint8_t>> {
+auto delameta_detail_read_until(const char* file, int line, int fd, [[maybe_unused]] void* ssl, int timeout, bool(*is_alive)(int), size_t n) -> Result<std::vector<uint8_t>> {
+#ifndef DELAMETA_DISABLE_OPENSSL
     if (ssl) { // cannot read parsial data
         return delameta_detail_read(file, line, fd, ssl, timeout, is_alive);
     }
+#endif
 
     auto start = std::chrono::high_resolution_clock::now();
     std::vector<uint8_t> buffer(n);
@@ -248,7 +272,6 @@ auto delameta_detail_read_until(const char* file, int line, int fd, void* ssl, i
     int remaining_size = n;
     int bytes_available = 0;
     auto ptr = buffer.data();
-    auto ssl_ = reinterpret_cast<SSL*>(ssl);
 
     while (is_alive(fd)) {
         if (::ioctl(fd, FIONREAD, &bytes_available) == -1) {
@@ -259,7 +282,6 @@ auto delameta_detail_read_until(const char* file, int line, int fd, void* ssl, i
             if (timeout >= 0 && std::chrono::high_resolution_clock::now() - start > std::chrono::seconds(timeout)) {
                 return log_err(file, line, fd, Error::TransferTimeout);
             }
-            return log_err(file, line, fd, Error::TransferTimeout);
             std::this_thread::sleep_for(10ms);
             continue;
         }
@@ -317,11 +339,11 @@ auto delameta_detail_recvfrom_until(const char* file, int line, int fd, int time
     return log_err(file, line, fd, Error::ConnectionClosed);
 }
 
-auto delameta_detail_read_as_stream(const char* file, int line, int timeout, Descriptor* self, size_t n) -> Stream {
+auto delameta_detail_read_as_stream(const char*, int, int timeout, Descriptor* self, size_t n) -> Stream {
     (void)timeout;
     Stream s;
 
-    s << [self, file, line, total=n, buffer=std::vector<uint8_t>{}](Stream& s) mutable -> std::string_view {
+    s << [self, total=n, buffer=std::vector<uint8_t>{}](Stream& s) mutable -> std::string_view {
         size_t n = std::min(total, (size_t)MAX_HANDLE_SZ);
         auto data = self->read_until(n);
 
@@ -332,18 +354,19 @@ auto delameta_detail_read_as_stream(const char* file, int line, int timeout, Des
             s.again = total > 0;
         } else {
             buffer = {};
-            warning(file, line, data.unwrap_err().what);
         }
-        
+
         return {reinterpret_cast<const char*>(buffer.data()), buffer.size()};
     };
 
     return s;
 }
 
-auto delameta_detail_write(const char* file, int line, int fd, void* ssl, int timeout, bool(*is_alive)(int), std::string_view data) -> Result<void> {
+auto delameta_detail_write(const char* file, int line, int fd, [[maybe_unused]] void* ssl, int timeout, bool(*is_alive)(int), std::string_view data) -> Result<void> {
     (void)timeout;
+#ifndef DELAMETA_DISABLE_OPENSSL
     auto ssl_ = reinterpret_cast<SSL*>(ssl);
+#endif
     size_t total = 0;
     for (size_t i = 0; i < data.size();) {
         if (!is_alive(fd)) {
@@ -351,22 +374,29 @@ auto delameta_detail_write(const char* file, int line, int fd, void* ssl, int ti
         }
 
         auto n = std::min<size_t>(MAX_HANDLE_SZ, data.size() - i);
+#ifndef DELAMETA_DISABLE_OPENSSL
         auto sent = ssl ? SSL_write(ssl_, &data[i], n) : ::write(fd, &data[i], n);
-        
+#else
+        auto sent = ::write(fd, &data[i], n);
+#endif
+
         if (sent == 0) {
             return log_err(file, line, fd, Error::ConnectionClosed);
         } else if (sent < 0) {
+#ifndef DELAMETA_DISABLE_OPENSSL
             if (ssl) {
                 char buf[128];
                 auto code = ERR_get_error();
                 ERR_error_string_n(code, buf, 128);
-                panic(__FILE__, __LINE__, buf);
-                return Err(Error{int(code), buf});
+                return log_err(file, line, fd, Error{int(code), buf});
             }
-            int code = errno;
-            std::string what = ::strerror(code);
-            warning(file, line, what);
-            return Err(Error{code, std::move(what)});
+#endif
+            auto errno_ = errno;
+            if (errno_ == EAGAIN || errno_ == EWOULDBLOCK) {
+                std::this_thread::sleep_for(10ms);
+                continue; // maybe try again
+            }
+            return log_err(file, line, fd, Error(errno_, ::strerror(errno_)));
         }
 
         total += sent;
@@ -387,14 +417,11 @@ auto delameta_detail_sendto(const char* file, int line, int fd, int timeout, voi
         auto n = std::min<size_t>(MAX_HANDLE_SZ, data.size() - i);
         auto peer_ = reinterpret_cast<struct addrinfo *>(peer);
         auto sent = ::sendto(fd, &data[i], n, 0, peer_->ai_addr, peer_->ai_addrlen);
-        
+
         if (sent == 0) {
             return log_err(file, line, fd, Error::ConnectionClosed);
         } else if (sent < 0) {
-            int code = errno;
-            std::string what = ::strerror(code);
-            warning(file, line, what);
-            return Err(Error{code, std::move(what)});
+            return log_err(file, line, fd, Error(errno, ::strerror(errno)));
         }
 
         total += sent;

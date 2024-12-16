@@ -36,7 +36,7 @@ auto File::Open(const char* file, int line, Args args) -> Result<File> {
     } else if (args.mode == "rwa") {
         __oflag = O_RDWR | O_APPEND | O_CREAT;
     } else {
-        Error err = {-1, "Invalid mode"};
+        Error err = {-1, "Invalid mode. expect `r`, `w`, `wa`, `rw` or `rwa`, given `" + args.mode + "`"};
         warning(file, line, err.what);
         return Err(std::move(err));
     }
@@ -45,7 +45,7 @@ auto File::Open(const char* file, int line, Args args) -> Result<File> {
     if (fd < 0) {
         return log_errno(file, line);
     } else {
-        info(file, line, "Created fd: " + std::to_string(fd));
+        info(file, line, delameta_detail_log_format_fd(fd, "created"));
         return Ok(File(file, line, fd));
     }
 }
@@ -64,8 +64,8 @@ File::File(File&& other)
 
 File::~File() {
     if (fd < 0) return;
-    info(file, line, "Closed FD: " + std::to_string(fd));
     ::close(fd);
+    info(file, line, delameta_detail_log_format_fd(fd, "closed"));
     fd = -1;
 }
 
@@ -88,19 +88,16 @@ auto File::write(std::string_view data) -> Result<void> {
 auto File::file_size() -> size_t {
     off_t cp = lseek(fd, 0, SEEK_CUR);
     if (cp == -1) {
-        log_errno(file, line);
-        return 0;
+        PANIC(delameta_detail_log_format_fd(fd, std::string("lseek() failed, ") + strerror(errno)));
     }
-    
+
     off_t size = lseek(fd, 0, SEEK_END);
-    if (cp == -1) {
-        log_errno(file, line);
-        return 0;
+    if (size == -1) {
+        PANIC(delameta_detail_log_format_fd(fd, std::string("lseek() failed, ") + strerror(errno)));
     }
 
     if (lseek(fd, cp, SEEK_SET) == -1) {
-        log_errno(file, line);
-        return 0;
+        PANIC(delameta_detail_log_format_fd(fd, std::string("lseek() failed, ") + strerror(errno)));
     }
 
     return size;
@@ -125,7 +122,6 @@ auto File::operator>>(Stream& s) -> File& {
             s.again = total > 0;
         } else {
             buffer = {};
-            warning(self->file, self->line, data.unwrap_err().what);
         }
 
         if (!s.again) {

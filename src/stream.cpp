@@ -157,9 +157,7 @@ StreamSessionClient::~StreamSessionClient() {
 
 auto StreamSessionClient::request(Stream& in_stream) -> Result<std::vector<uint8_t>> {
     if (desc == nullptr) {
-        std::string what = "Fatal error: No descriptor created in the session";
-        warning(__FILE__, __LINE__, what);
-        return Err(Error{-1, what});
+        PANIC("Fatal error: No descriptor created in the session");
     }
 
     in_stream >> *desc;

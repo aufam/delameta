@@ -1,4 +1,5 @@
 #include "delameta/serial.h"
+#include "delameta/debug.h"
 #include "helper.h"
 #include <fcntl.h>
 #include <sys/ioctl.h>
@@ -54,7 +55,7 @@ static Result<int> get_baudrate(const char* file, int line, int baud) {
         case 3500000: return Ok(B3500000);
         case 4000000: return Ok(B4000000);
         default: {
-            std::string what = "Cannot convert baudrate: " + std::to_string(baud);
+            std::string what = "baudrate of " + std::to_string(baud) + " is not acceptable";
             warning(file, line, what);
             return Err(Error{-1, what});
         }
@@ -70,7 +71,7 @@ static auto log_errno(const char* file, int line) {
 
 // TODO
 struct FileDescriptorHandler {
-    std::string filename;
+    std::string port;
     int fd;
     int counter;
 };
@@ -79,18 +80,40 @@ static std::mutex handlers_mtx;
 static std::list<FileDescriptorHandler> handlers;
 
 auto Serial::Open(const char* file, int line, Args args) -> Result<Serial> {
+    std::scoped_lock<std::mutex> lock(handlers_mtx);
+
+    auto [baud_val, baud_err] = get_baudrate(file, line, args.baud);
+    if (baud_err) return Err(std::move(*baud_err));
+
     if (args.port == "auto") {
         struct dirent *ent;
         auto dir = ::opendir("/dev/");
         if (!dir) {
             return log_errno(file, line);
-        }   
-        while ((ent = ::readdir(dir)) != nullptr) {
-            if (::strstr(ent->d_name, "ttyACM") != nullptr || ::strstr(ent->d_name, "ttyUSB") != nullptr) 
-                args.port = std::string("/dev/") + ent->d_name;
         }
+
+        while ((ent = ::readdir(dir)) != nullptr) if (::strstr(ent->d_name, "ttyACM") != nullptr || ::strstr(ent->d_name, "ttyUSB") != nullptr) {
+            auto port = std::string("/dev/") + ent->d_name;
+            auto it = std::find_if(handlers.begin(), handlers.end(), [&](const FileDescriptorHandler& h) {
+                return h.port == port;
+            });
+            if (it == handlers.end()) {
+                args.port = std::move(port);
+                break;
+            }
+        }
+
         ::closedir(dir);
-    } 
+    }
+
+    auto it = std::find_if(handlers.begin(), handlers.end(), [&](const FileDescriptorHandler& h) {
+        return h.port == args.port;
+    });
+
+    if (it != handlers.end()) {
+        it->counter++;
+        return Ok(Serial(file, line, it->fd, args.timeout));
+    }
 
     int fd = ::open(args.port.c_str(), O_RDWR | O_NOCTTY | O_SYNC);
     if (fd < 0) return log_errno(file, line);
@@ -98,9 +121,6 @@ auto Serial::Open(const char* file, int line, Args args) -> Result<Serial> {
     struct termios tty = {};
     if (::tcgetattr(fd, &tty) != 0)
         return log_errno(file, line);
-    
-    auto [baud_val, baud_err] = get_baudrate(file, line, args.baud);
-    if (baud_err) return Err(std::move(*baud_err));
 
     ::cfsetispeed(&tty, *baud_val);
     ::cfsetospeed(&tty, *baud_val);
@@ -125,7 +145,8 @@ auto Serial::Open(const char* file, int line, Args args) -> Result<Serial> {
 
     ::tcflush(fd, TCIOFLUSH); // clear rx buffer
 
-    info(file, line, "Created fd: " + std::to_string(fd));
+    handlers.emplace_back(args.port, fd, 1);
+    info(file, line, delameta_detail_log_format_fd(fd, "created"));
     return Ok(Serial(file, line, fd, args.timeout));
 }
 
@@ -147,9 +168,24 @@ Serial::Serial(Serial&& other)
 
 Serial::~Serial() {
     if (fd < 0) return;
-    info(file, line, "Closed FD: " + std::to_string(fd));
-    ::close(fd);
-    fd = -1;
+    std::scoped_lock<std::mutex> lock(handlers_mtx);
+
+    auto it = std::find_if(handlers.begin(), handlers.end(), [this](const FileDescriptorHandler& h) {
+        return h.fd == fd;
+    });
+
+    if (it != handlers.end()) {
+        it->counter--;
+    } else {
+        PANIC("FD " + std::to_string(fd) + " is not found in the handler list");
+    }
+
+    if (it->counter == 0) {
+        ::close(fd);
+        handlers.erase(it);
+        info(file, line, delameta_detail_log_format_fd(fd, "closed"));
+        fd = -1;
+    }
 }
 
 auto Serial::read() -> Result<std::vector<uint8_t>> {
@@ -194,7 +230,7 @@ auto Server<Serial>::start(const char* file, int line, Serial::Args args) -> Res
         ser->wait_until_ready();
         auto read_result = ser->read();
         if (read_result.is_err()) {
-            break;
+            continue;
         }
 
         std::lock_guard<std::mutex> lock(mtx);

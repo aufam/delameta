@@ -48,7 +48,7 @@ using etl::Ok;
 
 static void check_phy_link() {
     while (wizphy_getphylink() == PHY_LINK_OFF) {
-        DBG(warning, "PHY_LINK_OFF");
+        WARNING("PHY_LINK_OFF");
         etl::task::sleep(50ms).await();
     }
 };
@@ -123,25 +123,25 @@ extern "C" void delameta_stm32_hal_wizchip_set_net_info(
 	ctlnetwork(CN_SET_TIMEOUT,(void*)&tout);
 	ctlnetwork(CN_GET_TIMEOUT, (void*)&tout);
 
-    DBG_VAL(info, phyConf.by);
-    DBG_VAL(info, phyConf.mode);
-    DBG_VAL(info, phyConf.speed);
-    DBG_VAL(info, phyConf.duplex);
-    DBG_VAL(info, phyConf.duplex);
-    DBG_VAL(info, tout.retry_cnt);
-    DBG_VAL(info, tout.time_100us * 10);
+    DBG(phyConf.by);
+    DBG(phyConf.mode);
+    DBG(phyConf.speed);
+    DBG(phyConf.duplex);
+    DBG(phyConf.duplex);
+    DBG(tout.retry_cnt);
+    DBG(tout.time_100us * 10);
 
     static char buffer[64];
     snprintf(buffer, 64, "dhcp: %s", wizchip_net_info.dhcp == NETINFO_STATIC ? "static" : "dynamic");
-    DBG(info, buffer);
+    INFO(buffer);
     snprintf(buffer, 64, "dns: %d.%d.%d.%d", wizchip_net_info.dns[0], wizchip_net_info.dns[1], wizchip_net_info.dns[2], wizchip_net_info.dns[3]);
-    DBG(info, buffer);
+    INFO(buffer);
     snprintf(buffer, 64, "mac: %02x:%02x:%02x:%02x:%02x:%02x", wizchip_net_info.mac[0], wizchip_net_info.mac[1], wizchip_net_info.mac[2], wizchip_net_info.mac[3], wizchip_net_info.mac[4], wizchip_net_info.mac[5]);
-    DBG(info, buffer);
+    INFO(buffer);
     snprintf(buffer, 64, "gw: %d.%d.%d.%d", wizchip_net_info.gw[0], wizchip_net_info.gw[1], wizchip_net_info.gw[2], wizchip_net_info.gw[3]);
-    DBG(info, buffer);
+    INFO(buffer);
     snprintf(buffer, 64, "ip: %d.%d.%d.%d", wizchip_net_info.ip[0], wizchip_net_info.ip[1], wizchip_net_info.ip[2], wizchip_net_info.ip[3]);
-    DBG(info, buffer);
+    INFO(buffer);
 }
 
 extern "C" void delameta_stm32_hal_wizchip_init() {
@@ -182,11 +182,11 @@ extern "C" void delameta_stm32_hal_wizchip_init() {
         HAL_GPIO_WritePin(DELAMETA_STM32_WIZCHIP_CS_PORT, DELAMETA_STM32_WIZCHIP_CS_PIN, GPIO_PIN_SET);
         etl::task::sleep(100ms).await();
     
-        DBG(info, "ethernet is starting...");
+        INFO("ethernet is starting...");
 
         uint8_t memsize[2][8] = { {2,2,2,2,2,2,2,2}, {2,2,2,2,2,2,2,2} };
         if (wizchip_init(memsize[0], memsize[1]) == -1) {
-            DBG(warning, "wizchip_init fail");
+            WARNING("wizchip_init fail");
             return;
         }
 

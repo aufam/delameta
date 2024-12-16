@@ -1,3 +1,62 @@
+#ifdef DELAMETA_DISABLE_OPENSSL
+#include "delameta/tls.h"
+
+using namespace Project;
+using namespace Project::delameta;
+using namespace std::literals;
+
+using etl::Err;
+using etl::Ok;
+using etl::defer;
+
+#define NOT_IMPLEMENTED return Err(Error{-1, "no impl"});
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+
+auto TLS::Open(const char* file, int line, Args args) -> Result<TLS> {
+    NOT_IMPLEMENTED
+}
+
+TLS::TLS(TCP&& tcp, void* ssl)
+    : TCP(std::move(tcp)) 
+    , ssl(ssl) {}
+
+TLS::TLS(const char* file, int line, int socket, int timeout, void* ssl)
+    : TCP(file, line, socket, timeout)
+    , ssl(ssl) {}
+
+TLS::TLS(TLS&& other)
+    : TCP(std::move(other)) 
+    , ssl(std::exchange(other.ssl, nullptr)) {}
+
+TLS::~TLS() {}
+
+auto TLS::read() -> Result<std::vector<uint8_t>> {
+    NOT_IMPLEMENTED
+}
+
+auto TLS::read_until(size_t n) -> Result<std::vector<uint8_t>> {
+    NOT_IMPLEMENTED
+}
+
+auto TLS::read_as_stream(size_t n) -> Stream {
+    return {};
+}
+
+auto TLS::write(std::string_view data) -> Result<void> {
+    NOT_IMPLEMENTED
+}
+
+auto Server<TLS>::start(const char* file, int line, Args args) -> Result<void> {
+    NOT_IMPLEMENTED
+}
+
+void Server<TLS>::stop() {}
+
+#pragma GCC diagnostic pop
+
+#else
 #include "delameta/tls.h"
 #include "helper.h"
 #include <openssl/ssl.h>
@@ -70,7 +129,7 @@ static void ssl_deinit() {
     }
 }
 
-static auto ssl_handshake(int socket, bool as_server) -> Result<SSL*> {
+static auto ssl_handshake(const char* file, int line, int socket, bool as_server) -> Result<SSL*> {
     auto [_, err] = ssl_init();
     if (err) return Err(std::move(*err));
 
@@ -80,22 +139,22 @@ static auto ssl_handshake(int socket, bool as_server) -> Result<SSL*> {
     int res;
     while (true) {
         res = as_server ? SSL_accept(ssl) : SSL_connect(ssl);
-        int ssl_error = SSL_get_error(ssl, res);
         if (res == 1) 
             break;
 
+        int ssl_error = SSL_get_error(ssl, res);
         if (ssl_error == SSL_ERROR_WANT_READ) {
             // Wait for the socket to be ready for reading (use select/poll/epoll)
-            info(__FILE__, __LINE__, "Waiting for socket to be readable...");
+            info(file, line, delameta_detail_log_format_fd(socket, "waiting for socket to be readable..."));
         } else if (ssl_error == SSL_ERROR_WANT_WRITE) {
             // Wait for the socket to be ready for writing
-            info(__FILE__, __LINE__, "Waiting for socket to be writable...");
+            info(file, line, delameta_detail_log_format_fd(socket, "waiting for socket to be writable..."));
         } else {
-            warning(__FILE__, __LINE__, "SSL handshake failed: " + std::to_string(ssl_error));
+            warning(file, line, delameta_detail_log_format_fd(socket, "SSL handshake failed: " + std::to_string(ssl_error)));
             break;
         }
 
-        std::this_thread::sleep_for(100ms);
+        std::this_thread::sleep_for(10ms);
     }
 
     if (res <= 0) {
@@ -149,7 +208,7 @@ auto TLS::Open(const char* file, int line, Args args) -> Result<TLS> {
     auto [_, conf_err] = ssl_context_configure(false, args.cert_file, args.key_file);
     if (conf_err) return Err(std::move(*conf_err));
 
-    auto [ssl, ssl_err] = ssl_handshake(tcp->socket, false);
+    auto [ssl, ssl_err] = ssl_handshake(file, line, tcp->socket, false);
     if (ssl_err) return Err(std::move(*ssl_err));
 
     --ssl_counter;
@@ -236,8 +295,6 @@ auto Server<TLS>::start(const char* file, int line, Args args) -> Result<void> {
         return Err(log_error(errno, ::strerror));
     }
 
-    info(file, line, "Created socket as TLS server: " + std::to_string(socket));
-
     std::vector<std::thread> threads;
     std::mutex mtx;
     std::condition_variable cv;
@@ -261,20 +318,17 @@ auto Server<TLS>::start(const char* file, int line, Args args) -> Result<void> {
 
             if (not is_running) break;
 
-            auto [ssl, ssl_err] = ssl_handshake(sock_client, true);
+            auto [ssl, ssl_err] = ssl_handshake(file, line, sock_client, true);
             if (ssl_err) {
                 ::close(sock_client);
                 continue;
             }
 
-            if (SSL_accept(*ssl) <= 0) {
-                ::close(sock_client);
-                continue;
-            }
+            info(file, line, "processing in thread " + std::to_string(idx) + ", socket = " + std::to_string(sock_client));
 
             TLS session(file, line, sock_client, 1, *ssl);
             session.keep_alive = args.keep_alive;
-        
+
             for (int cnt = 1; is_running and is_tls_alive(sock_client); ++cnt) {
                 auto received_result = session.read(); // TODO: read() doesn't check for is_running
                 if (received_result.is_err()) {
@@ -286,18 +340,20 @@ auto Server<TLS>::start(const char* file, int line, Args args) -> Result<void> {
 
                 if (not session.keep_alive) {
                     if (session.max > 0 and cnt >= session.max) {
-                        warning(session.file, session.line, "Reached maximum receive: " + std::to_string(session.socket));
+                        info(file, line, delameta_detail_log_format_fd(sock_client, "reached maximum receive"));
                     }
                     break;
                 }
+
+                info(file, line, delameta_detail_log_format_fd(sock_client, "kept alive"));
             }
 
             // shutdown if still connected
-            if (is_tls_alive(session.socket)) {
+            if (is_tls_alive(sock_client)) {
                 SSL_shutdown(*ssl);
-                info(file, line, "Closed by server: " + std::to_string(session.socket));
+                info(file, line, delameta_detail_log_format_fd(sock_client, "closed by server"));
             } else {
-                info(file, line, "Closed by peer: " + std::to_string(session.socket));
+                info(file, line, delameta_detail_log_format_fd(sock_client, "closed by peer"));
             }
 
             --semaphore;
@@ -305,7 +361,7 @@ auto Server<TLS>::start(const char* file, int line, Args args) -> Result<void> {
     };
 
     threads.reserve(args.max_socket);
-    for (int i = 0; i < args.max_socket - 1; ++i) {
+    for (int i = 0; i < args.max_socket; ++i) {
         threads.emplace_back(work, i);
     }
 
@@ -351,3 +407,4 @@ void Server<TLS>::stop() {
         on_stop();
     }
 }
+#endif
