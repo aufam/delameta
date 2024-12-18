@@ -39,6 +39,12 @@ if (NOT DELAMETA_TARGET_STM32)
 	file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS src/*.* core/linux/*.*)
 	add_library(delameta ${SOURCES})
 
+	if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
+		target_link_libraries(delameta PUBLIC
+			ws2_32
+		)
+	endif()
+
 	target_compile_options(delameta PRIVATE
 		-Wall
 		-Wextra
