@@ -1,18 +1,29 @@
 #include "delameta/tcp.h"
 #include "helper.h"
 #include <string>
-#include <unistd.h>
-#include <arpa/inet.h>
-#include <netdb.h>
-#include <fcntl.h>
-#include <sys/ioctl.h>
-#include <sys/epoll.h>
 #include <cstring>
 #include <thread>
 #include <mutex>
 #include <condition_variable>
 #include <atomic>
 #include <algorithm>
+
+#ifndef _WIN32
+// Unix/Linux headers and definitions
+#include <sys/socket.h>
+#include <sys/epoll.h>
+#include <arpa/inet.h>
+#include <netdb.h>
+#else
+// Windows headers and definitions
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <io.h>
+#pragma comment(lib, "Ws2_32.lib")  // Link Winsock library
+#undef min
+#undef max
+#define SHUT_RDWR SD_BOTH
+#endif
 
 using namespace Project;
 using namespace Project::delameta;
@@ -44,7 +55,7 @@ auto TCP::Open(const char* file, int line, Args args) -> Result<TCP> {
             addr = &(ipv6->sin6_addr);
         }
 
-        inet_ntop(hint->ai_family, addr, ip_str, sizeof ip_str);
+        ::inet_ntop(hint->ai_family, addr, ip_str, sizeof ip_str);
         info(__FILE__, __LINE__, "resolved: " + std::string(ip_str));
     }
 
@@ -58,7 +69,7 @@ auto TCP::Open(const char* file, int line, Args args) -> Result<TCP> {
         auto socket = *sock;
         if (::connect(socket, p->ai_addr, p->ai_addrlen) != 0) {
             if (errno != EINPROGRESS) {
-                ::close(socket);
+                delameta_detail_close_socket(socket);
                 err = log_error(errno, ::strerror);
                 continue;
             }
@@ -72,7 +83,7 @@ auto TCP::Open(const char* file, int line, Args args) -> Result<TCP> {
             tv.tv_usec = 0;
 
             if (::select(socket + 1, nullptr, &write_fds, nullptr, &tv) <= 0) {
-                ::close(socket);
+                delameta_detail_close_socket(socket);
                 err = log_error(errno, ::strerror);
                 continue;
             }
@@ -80,8 +91,12 @@ auto TCP::Open(const char* file, int line, Args args) -> Result<TCP> {
             // Connection established or error occurred
             int error_code = 0;
             socklen_t len = sizeof(error_code);
-            if (::getsockopt(socket, SOL_SOCKET, SO_ERROR, &error_code, &len) != 0 || error_code != 0){
-                ::close(socket);
+#ifndef _WIN32
+            if (::getsockopt(socket, SOL_SOCKET, SO_ERROR, &error_code, &len) != 0 || error_code != 0) {
+#else
+            if (::getsockopt(socket, SOL_SOCKET, SO_ERROR, (char*)&error_code, &len) != 0 || error_code != 0) {
+#endif
+                delameta_detail_close_socket(socket);
                 err = log_error(errno, ::strerror);
                 continue;
             }
@@ -120,7 +135,7 @@ TCP::TCP(TCP&& other)
 TCP::~TCP() {
     if (socket >= 0) {
         info(file, line, delameta_detail_log_format_fd(socket, "closed"));
-        ::close(socket);
+        delameta_detail_close_socket(socket);
         socket = -1;
     }
 }
@@ -157,7 +172,7 @@ auto Server<TCP>::start(const char* file, int line, Args args) -> Result<void> {
     if (sock_err) return Err(std::move(*sock_err));
 
     auto socket = *sock;
-    auto defer_socket = defer | [socket]() { ::close(socket); };
+    auto defer_socket = defer | [socket]() { delameta_detail_close_socket(socket); };
 
     if (::bind(socket, hint->ai_addr, hint->ai_addrlen) < 0) {
         return Err(log_error(errno, ::strerror));
@@ -167,6 +182,7 @@ auto Server<TCP>::start(const char* file, int line, Args args) -> Result<void> {
         return Err(log_error(errno, ::strerror));
     }
 
+#ifndef _WIN32
     int epoll_fd = ::epoll_create1(0);
     if (epoll_fd < 0) {
         return Err(log_error(errno, ::strerror));
@@ -180,6 +196,17 @@ auto Server<TCP>::start(const char* file, int line, Args args) -> Result<void> {
     if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, socket, &event) < 0) {
         return Err(log_error(errno, ::strerror));
     }
+#else
+    WSAEVENT event = WSACreateEvent();
+    if (event == WSA_INVALID_EVENT) {
+        return Err(log_error(errno, ::strerror));
+    }
+
+    auto defer_epoll = defer | [event]() { WSACloseEvent(event); };
+    if (WSAEventSelect(socket, event, FD_ACCEPT) == SOCKET_ERROR) {
+        return Err(log_error(errno, ::strerror));
+    }
+#endif
 
     std::vector<std::thread> threads;
     std::mutex mtx;
@@ -246,33 +273,37 @@ auto Server<TCP>::start(const char* file, int line, Args args) -> Result<void> {
     }
 
     while (is_running) {
+#ifndef _WIN32
         std::vector<epoll_event> events(args.max_socket);
         int num_events = epoll_wait(epoll_fd, events.data(), args.max_socket, 10);
 
-        for (int i = 0; i < num_events; ++i) {
-            if (events[i].data.fd == socket) {
-                int new_sock_client = ::accept(socket, nullptr, nullptr);
-                if (new_sock_client < 0) {
-                    if (errno == EWOULDBLOCK || errno == EAGAIN) {
-                    } else {
-                        warning(__FILE__, __LINE__, strerror(errno));
-                    }
-                    continue;
+        for (int i = 0; i < num_events; ++i) if (events[i].data.fd == socket)
+#else
+        DWORD dwEventIndex = WSAWaitForMultipleEvents(1, &event, FALSE, 10, FALSE);
+        if (dwEventIndex == WAIT_OBJECT_0)
+#endif
+        {
+            int new_sock_client = ::accept(socket, nullptr, nullptr);
+            if (new_sock_client < 0) {
+                if (errno == EWOULDBLOCK || errno == EAGAIN) {
+                } else {
+                    WARNING(delameta_detail_log_format_fd(socket, "accept() failed, ") + strerror(errno));
                 }
-                if (semaphore >= args.max_socket) {
-                    ::shutdown(new_sock_client, SHUT_RDWR);
-                    warning(__FILE__, __LINE__, "Thread pool is full");
-                    continue;
-                }
-
-                ++semaphore;
-                {
-                    std::lock_guard<std::mutex> lock(mtx);
-                    sock_client = new_sock_client;
-                }
-
-                cv.notify_one();
+                continue;
             }
+            if (semaphore >= args.max_socket) {
+                ::shutdown(new_sock_client, SHUT_RDWR);
+                WARNING(delameta_detail_log_format_fd(socket, "Thread pool is full"));
+                continue;
+            }
+
+            ++semaphore;
+            {
+                std::lock_guard<std::mutex> lock(mtx);
+                sock_client = new_sock_client;
+            }
+
+            cv.notify_one(); // notify thread pool
         }
     }
 

@@ -1,17 +1,20 @@
 #include "delameta/serial.h"
 #include "delameta/debug.h"
 #include "helper.h"
-#include <fcntl.h>
-#include <sys/ioctl.h>
-#include <unistd.h>
-#include <cstring>
-#include <termios.h>
-#include <dirent.h>
 #include <cstring>
 #include <thread>
 #include <mutex>
 #include <atomic>
 #include <algorithm>
+
+#ifndef _WIN32
+#include <fcntl.h>
+#include <unistd.h>
+#include <termios.h>
+#include <dirent.h>
+#else
+#include <windows.h>
+#endif
 
 using namespace Project;
 using namespace Project::delameta;
@@ -23,6 +26,7 @@ using etl::defer;
 
 static Result<int> get_baudrate(const char* file, int line, int baud) {
     switch (baud) {
+#ifndef _WIN32
         case 50: return Ok(B50);
         case 75: return Ok(B75);
         case 110: return Ok(B110);
@@ -38,7 +42,6 @@ static Result<int> get_baudrate(const char* file, int line, int baud) {
         case 9600: return Ok(B9600);
         case 19200: return Ok(B19200);
         case 38400: return Ok(B38400);
-        case 59600: return Ok(B9600);
         case 57600: return Ok(B57600);
         case 115200: return Ok(B115200);
         case 230400: return Ok(B230400);
@@ -54,6 +57,22 @@ static Result<int> get_baudrate(const char* file, int line, int baud) {
         case 3000000: return Ok(B3000000);
         case 3500000: return Ok(B3500000);
         case 4000000: return Ok(B4000000);
+#else
+        case 110: return Ok(CBR_110);
+        case 300: return Ok(CBR_300);
+        case 600: return Ok(CBR_600);
+        case 1200: return Ok(CBR_1200);
+        case 2400: return Ok(CBR_2400);
+        case 4800: return Ok(CBR_4800);
+        case 9600: return Ok(CBR_9600);
+        case 19200: return Ok(CBR_19200);
+        case 38400: return Ok(CBR_38400);
+        case 56000: return Ok(CBR_56000);
+        case 57600: return Ok(CBR_57600);
+        case 115200: return Ok(CBR_115200);
+        case 128000: return Ok(CBR_128000);
+        case 256000: return Ok(CBR_256000);
+#endif
         default: {
             std::string what = "baudrate of " + std::to_string(baud) + " is not acceptable";
             warning(file, line, what);
@@ -69,15 +88,23 @@ static auto log_errno(const char* file, int line) {
     return Err(Error{code, std::move(what)});
 }
 
-// TODO
 struct FileDescriptorHandler {
     std::string port;
+#ifndef _WIN32
     int fd;
+#else
+    void* fd;
+#endif
     int counter;
 };
 
-static std::mutex handlers_mtx;
+#ifndef _WIN32
 static std::list<FileDescriptorHandler> handlers;
+#else
+static std::unordered_map<int, FileDescriptorHandler> handlers;
+static int fd_counter;
+#endif
+static std::mutex handlers_mtx;
 
 auto Serial::Open(const char* file, int line, Args args) -> Result<Serial> {
     std::scoped_lock<std::mutex> lock(handlers_mtx);
@@ -85,6 +112,7 @@ auto Serial::Open(const char* file, int line, Args args) -> Result<Serial> {
     auto [baud_val, baud_err] = get_baudrate(file, line, args.baud);
     if (baud_err) return Err(std::move(*baud_err));
 
+#ifndef _WIN32
     if (args.port == "auto") {
         struct dirent *ent;
         auto dir = ::opendir("/dev/");
@@ -119,9 +147,7 @@ auto Serial::Open(const char* file, int line, Args args) -> Result<Serial> {
     if (fd < 0) return log_errno(file, line);
 
     struct termios tty = {};
-    if (::tcgetattr(fd, &tty) != 0)
-        return log_errno(file, line);
-
+    ::tcgetattr(fd, &tty);
     ::cfsetispeed(&tty, *baud_val);
     ::cfsetospeed(&tty, *baud_val);
     
@@ -140,13 +166,78 @@ auto Serial::Open(const char* file, int line, Args args) -> Result<Serial> {
     tty.c_cc[VTIME] = 1; // 100ms
     tty.c_cc[VMIN]  = 0; 
 
-    if (::tcsetattr(fd, TCSANOW, &tty) != 0)
-        return log_errno(file, line);
-
+    ::tcsetattr(fd, TCSANOW, &tty);
     ::tcflush(fd, TCIOFLUSH); // clear rx buffer
 
+    delameta_detail_set_non_blocking(fd);
     handlers.emplace_back(args.port, fd, 1);
     info(file, line, delameta_detail_log_format_fd(fd, "created"));
+#else 
+    if (args.port == "auto") {
+        for (int i = 1; i <= 9; ++i) {
+            auto port = "\\\\.\\COM" + std::to_string(i);
+            auto it = std::find_if(handlers.begin(), handlers.end(), [&](const auto& h) {
+                return h.second.port == port;
+            });
+            if (it == handlers.end()) {
+                args.port = std::move(port);
+                break;
+            }
+        }
+    }
+
+    // Check if port is already open
+    auto it = std::find_if(handlers.begin(), handlers.end(), [&](const auto& h) {
+        return h.second.port == args.port;
+    });
+
+    if (it != handlers.end()) {
+        it->second.counter++;
+        return Ok(Serial(file, line, it->first, args.timeout));
+    }
+
+    // Open serial port (Windows specific)
+    HANDLE hComm = CreateFileA(args.port.c_str(), GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
+    if (hComm == INVALID_HANDLE_VALUE) {
+        return log_errno(file, line);
+    }
+
+    // Setup communication settings (baud rate, parity, etc.)
+    DCB dcbSerialParams = {};
+    if (!GetCommState(hComm, &dcbSerialParams)) {
+        CloseHandle(hComm);
+        return log_errno(file, line);
+    }
+
+    dcbSerialParams.BaudRate = *baud_val;
+    dcbSerialParams.ByteSize = 8;  // 8 data bits
+    dcbSerialParams.StopBits = ONESTOPBIT;  // 1 stop bit
+    dcbSerialParams.Parity = NOPARITY;  // No parity
+
+    if (!SetCommState(hComm, &dcbSerialParams)) {
+        CloseHandle(hComm);
+        return log_errno(file, line);
+    }
+
+    COMMTIMEOUTS timeouts = {};
+    // Set non-blocking read configuration
+    timeouts.ReadIntervalTimeout = MAXDWORD; // No timeout between bytes
+    timeouts.ReadTotalTimeoutMultiplier = 0; // No per-byte timeout
+    timeouts.ReadTotalTimeoutConstant = 0;   // No constant timeout
+
+    // Set non-blocking write configuration
+    timeouts.WriteTotalTimeoutMultiplier = 0; // No per-byte timeout
+    timeouts.WriteTotalTimeoutConstant = 0;   // No constant timeout
+
+    if (!SetCommTimeouts(hComm, &timeouts)) {
+        CloseHandle(hComm);
+        return log_errno(file, line);
+    }
+
+    int fd = ++fd_counter;
+    handlers.emplace(fd, FileDescriptorHandler{args.port, hComm, 1});
+    info(file, line, "created serial port");
+#endif
     return Ok(Serial(file, line, fd, args.timeout));
 }
 
@@ -156,7 +247,7 @@ Serial::Serial(const char* file, int line, int fd, int timeout)
     , fd(fd)
     , timeout(timeout)
     , file(file)
-    , line(line) { delameta_detail_set_non_blocking(fd); }
+    , line(line) {}
 
 Serial::Serial(Serial&& other) 
     : Descriptor()
@@ -170,6 +261,7 @@ Serial::~Serial() {
     if (fd < 0) return;
     std::scoped_lock<std::mutex> lock(handlers_mtx);
 
+#ifndef _WIN32
     auto it = std::find_if(handlers.begin(), handlers.end(), [this](const FileDescriptorHandler& h) {
         return h.fd == fd;
     });
@@ -186,8 +278,22 @@ Serial::~Serial() {
         info(file, line, delameta_detail_log_format_fd(fd, "closed"));
         fd = -1;
     }
+#else
+    auto it = handlers.find(fd);
+
+    if (it != handlers.end()) {
+        it->second.counter--;
+    } else {
+        PANIC("");
+    }
+
+    handlers.erase(it);
+    info(file, line, "closed");
+    fd = -1;
+#endif
 }
 
+#ifndef _WIN32
 auto Serial::read() -> Result<std::vector<uint8_t>> {
     return delameta_detail_read(file, line, fd, nullptr, timeout, &delameta_detail_is_fd_alive);
 }
@@ -196,12 +302,25 @@ auto Serial::read_until(size_t n) -> Result<std::vector<uint8_t>> {
     return delameta_detail_read_until(file, line, fd, nullptr, timeout, &delameta_detail_is_fd_alive, n);
 }
 
-auto Serial::read_as_stream(size_t n) -> Stream {
-    return delameta_detail_read_as_stream(file, line, timeout, this, n);
+auto Serial::write(std::string_view data) -> Result<void> {
+    return delameta_detail_write(file, line, fd, nullptr, timeout, &delameta_detail_is_fd_alive, data);
+}
+#else
+auto Serial::read() -> Result<std::vector<uint8_t>> {
+    return delameta_detail_windows_serial_read(file, line, handlers.at(fd).fd, timeout);
+}
+
+auto Serial::read_until(size_t n) -> Result<std::vector<uint8_t>> {
+    return delameta_detail_windows_serial_read_until(file, line, handlers.at(fd).fd, timeout, n);
 }
 
 auto Serial::write(std::string_view data) -> Result<void> {
-    return delameta_detail_write(file, line, fd, nullptr, timeout, &delameta_detail_is_fd_alive, data);
+    return delameta_detail_windows_serial_write(file, line, handlers.at(fd).fd, timeout, data);
+}
+#endif
+
+auto Serial::read_as_stream(size_t n) -> Stream {
+    return delameta_detail_read_as_stream(file, line, timeout, this, n);
 }
 
 auto Serial::wait_until_ready() -> Result<void> {

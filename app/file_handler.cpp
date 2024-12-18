@@ -29,7 +29,7 @@ static HTTP_ROUTE(
 
     std::list<std::string> items;
     for (const auto& entry: fs::directory_iterator(dir)) {
-        items.emplace_back(fs::relative(entry.path(), dir));
+        items.emplace_back(fs::relative(entry.path(), dir).string());
     }
 
     return Ok(std::move(items));

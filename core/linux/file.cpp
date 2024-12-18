@@ -1,10 +1,13 @@
 #include "delameta/file.h"
 #include "helper.h"
-#include <fcntl.h>
-#include <sys/ioctl.h>
-#include <unistd.h>
 #include <cstring>
 #include <algorithm>
+#include <fcntl.h>
+#include <unistd.h> // lseek
+
+#ifndef MAX_HANDLE_SZ
+#define MAX_HANDLE_SZ 128
+#endif
 
 using namespace Project;
 using namespace Project::delameta;

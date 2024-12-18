@@ -1,15 +1,28 @@
 #include "delameta/udp.h"
 #include "helper.h"
-#include <unistd.h>
-#include <arpa/inet.h>
-#include <netdb.h>
-#include <fcntl.h>
-#include <sys/ioctl.h>
 #include <cstring>
 #include <thread>
 #include <mutex>
 #include <atomic>
 #include <algorithm>
+
+#ifndef _WIN32
+// Unix/Linux headers and definitions
+#include <sys/socket.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <fcntl.h>
+#else
+// Windows headers and definitions
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <io.h>
+#pragma comment(lib, "Ws2_32.lib")  // Link Winsock library
+#undef min
+#undef max
+#define SHUT_RDWR SD_BOTH
+#endif
 
 using namespace Project;
 using namespace Project::delameta;
@@ -32,7 +45,7 @@ auto UDP::Open(const char* file, int line, Args args) -> Result<UDP> {
     auto hint = *resolve;
 
     if (args.as_server && ::bind(socket, hint->ai_addr, hint->ai_addrlen) < 0) {
-        ::close(socket);
+        delameta_detail_close_socket(socket);
         ::freeaddrinfo(hint);
         return Err(log_error(errno, ::strerror));
     }
@@ -62,7 +75,7 @@ UDP::UDP(UDP&& other)
 
 UDP::~UDP() {
     if (socket >= 0) {
-        ::close(socket);
+        delameta_detail_close_socket(socket);
         info(file, line, "Closed UDP socket: " + std::to_string(socket));
         socket = -1;
     } 

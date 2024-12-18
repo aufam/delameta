@@ -61,18 +61,31 @@ void Server<TLS>::stop() {}
 #include "helper.h"
 #include <openssl/ssl.h>
 #include <openssl/err.h>
-#include <unistd.h>
-#include <arpa/inet.h>
-#include <netdb.h>
-#include <fcntl.h>
-#include <sys/ioctl.h>
-#include <sys/epoll.h>
 #include <cstring>
 #include <thread>
 #include <mutex>
 #include <atomic>
 #include <condition_variable>
 #include <algorithm>
+
+#ifndef _WIN32
+// Unix/Linux headers and definitions
+#include <sys/socket.h>
+#include <sys/epoll.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <fcntl.h>
+#else
+// Windows headers and definitions
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <io.h>
+#pragma comment(lib, "Ws2_32.lib")  // Link Winsock library
+#undef min
+#undef max
+#define SHUT_RDWR SD_BOTH
+#endif
 
 using namespace Project;
 using namespace Project::delameta;
@@ -201,9 +214,7 @@ auto TLS::Open(const char* file, int line, Args args) -> Result<TLS> {
     });
     if (tcp_err) return Err(std::move(*tcp_err));
 
-    int flags = fcntl(tcp->socket, F_GETFL, 0);
-    flags &= ~O_NONBLOCK;
-    fcntl(tcp->socket, F_SETFL, flags);
+    delameta_detail_set_blocking(tcp->socket);
 
     auto [_, conf_err] = ssl_context_configure(false, args.cert_file, args.key_file);
     if (conf_err) return Err(std::move(*conf_err));
@@ -281,6 +292,7 @@ auto Server<TLS>::start(const char* file, int line, Args args) -> Result<void> {
 
     auto defer_conf = defer | &ssl_deinit;
 
+#ifndef _WIN32
     int epoll_fd = ::epoll_create1(0);
     if (epoll_fd < 0) {
         return Err(log_error(errno, ::strerror));
@@ -294,6 +306,17 @@ auto Server<TLS>::start(const char* file, int line, Args args) -> Result<void> {
     if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, socket, &event) < 0) {
         return Err(log_error(errno, ::strerror));
     }
+#else
+    WSAEVENT event = WSACreateEvent();
+    if (event == WSA_INVALID_EVENT) {
+        return Err(log_error(errno, ::strerror));
+    }
+
+    auto defer_epoll = defer | [event]() { WSACloseEvent(event); };
+    if (WSAEventSelect(socket, event, FD_ACCEPT) == SOCKET_ERROR) {
+        return Err(log_error(errno, ::strerror));
+    }
+#endif
 
     std::vector<std::thread> threads;
     std::mutex mtx;
@@ -366,33 +389,37 @@ auto Server<TLS>::start(const char* file, int line, Args args) -> Result<void> {
     }
 
     while (is_running) {
+#ifndef _WIN32
         std::vector<epoll_event> events(args.max_socket);
         int num_events = epoll_wait(epoll_fd, events.data(), args.max_socket, 10);
 
-        for (int i = 0; i < num_events; ++i) {
-            if (events[i].data.fd == socket) {
-                int new_sock_client = ::accept(socket, nullptr, nullptr);
-                if (new_sock_client < 0) {
-                    if (errno == EWOULDBLOCK || errno == EAGAIN) {
-                    } else {
-                        warning(__FILE__, __LINE__, strerror(errno));
-                    }
-                    continue;
+        for (int i = 0; i < num_events; ++i) if (events[i].data.fd == socket)
+#else
+        DWORD dwEventIndex = WSAWaitForMultipleEvents(1, &event, FALSE, 10, FALSE);
+        if (dwEventIndex == WAIT_OBJECT_0)
+#endif
+        {
+            int new_sock_client = ::accept(socket, nullptr, nullptr);
+            if (new_sock_client < 0) {
+                if (errno == EWOULDBLOCK || errno == EAGAIN) {
+                } else {
+                    WARNING(delameta_detail_log_format_fd(socket, "accept() failed, ") + strerror(errno));
                 }
-                if (semaphore >= args.max_socket) {
-                    ::shutdown(new_sock_client, SHUT_RDWR);
-                    warning(__FILE__, __LINE__, "Thread pool is full");
-                    continue;
-                }
-
-                ++semaphore;
-                {
-                    std::lock_guard<std::mutex> lock(mtx);
-                    sock_client = new_sock_client;
-                }
-
-                cv.notify_one();
+                continue;
             }
+            if (semaphore >= args.max_socket) {
+                ::shutdown(new_sock_client, SHUT_RDWR);
+                WARNING(delameta_detail_log_format_fd(socket, "Thread pool is full"));
+                continue;
+            }
+
+            ++semaphore;
+            {
+                std::lock_guard<std::mutex> lock(mtx);
+                sock_client = new_sock_client;
+            }
+
+            cv.notify_one(); // notify thread pool
         }
     }
 

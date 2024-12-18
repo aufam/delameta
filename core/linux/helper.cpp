@@ -1,18 +1,34 @@
 #include <fmt/format.h>
-#include <sys/socket.h>
-#include <unistd.h>
-#include <arpa/inet.h>
-#include <netdb.h>
-#include <cstring>
-#include <fcntl.h>
-#include <sys/ioctl.h>
-#include <string>
 #include <iostream>
 #include <thread>
 #include <etl/string_view.h>
+#include <algorithm>
 #include "delameta/stream.h"
 #include "delameta/url.h"
 #include "helper.h"
+
+#ifndef _WIN32
+// Unix/Linux headers and definitions
+#include <sys/socket.h>
+#include <sys/ioctl.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <fcntl.h>
+#define IOCTL ::ioctl
+#else
+// Windows headers and definitions
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <io.h>
+#include <mutex>
+#pragma comment(lib, "Ws2_32.lib")  // Link Winsock library
+#define IOCTL ::ioctlsocket
+#define MAX_HANDLE_SZ 128
+#undef min
+static std::mutex windows_socket_mutex;
+static int windows_socket_startup_counter;
+#endif
 
 #ifndef DELAMETA_DISABLE_OPENSSL
 #include <openssl/ssl.h>
@@ -40,16 +56,33 @@ using namespace std::literals;
 using etl::Err;
 using etl::Ok;
 
+#ifndef _WIN32
 int delameta_detail_set_non_blocking(int socket) {
     return ::fcntl(socket, F_SETFL, ::fcntl(socket, F_GETFL, 0) | O_NONBLOCK);
+}
+int delameta_detail_set_blocking(int socket) {
+    return ::fcntl(socket, F_SETFL, ::fcntl(socket, F_GETFL, 0) & ~O_NONBLOCK);
 }
 
 bool delameta_detail_is_fd_alive(int fd) {
     return ::fcntl(fd, F_GETFD) != -1 || errno != EBADF;
 }
+#else
+int delameta_detail_set_non_blocking(int socket) {
+    u_long mode = 1; // 1 = non-blocking mode
+    return ::ioctlsocket(socket, FIONBIO, &mode) == 0 ? 0 : -1;
+}
+int delameta_detail_set_blocking(int socket) {
+    u_long mode = 0; // 0 = non-blocking mode
+    return ::ioctlsocket(socket, FIONBIO, &mode) == 0 ? 0 : -1;
+}
+bool delameta_detail_is_fd_alive(int fd) {
+    return _get_osfhandle(fd) != -1;
+}
+#endif
 
 bool delameta_detail_is_socket_alive(int socket) {
-    uint8_t dummy;
+    char dummy;
     auto res = ::recv(socket, &dummy, 1, MSG_PEEK);
     if (res == 0)
         return false; // connection close
@@ -64,7 +97,7 @@ auto delameta_detail_get_ip(int socket) -> std::string {
     sockaddr_storage addr;
     socklen_t addr_len = sizeof(addr);
 
-    if (getpeername(socket, (sockaddr*)&addr, &addr_len) != 0) {
+    if (::getpeername(socket, (sockaddr*)&addr, &addr_len) != 0) {
         PANIC(
             fmt::format("Cannot resolve IP address of socket {}: {}", socket, ::strerror(errno))
         );
@@ -85,7 +118,7 @@ auto delameta_detail_get_ip(int socket) -> std::string {
         );
     }
 
-    if (inet_ntop(addr.ss_family, addr_ptr, ip_str, sizeof(ip_str)) == nullptr) {
+    if (::inet_ntop(addr.ss_family, addr_ptr, ip_str, sizeof(ip_str)) == nullptr) {
         PANIC(
             fmt::format("Cannot convert struct IP into string IP: {}", ::strerror(errno))
         );
@@ -95,18 +128,34 @@ auto delameta_detail_get_ip(int socket) -> std::string {
 }
 
 auto delameta_detail_get_filename(int fd) -> std::string {
+#ifdef _WIN32
+    // Windows-specific implementation
+    HANDLE hFile = (HANDLE)_get_osfhandle(fd);
+    if (hFile == INVALID_HANDLE_VALUE) {
+        PANIC(fmt::format("Cannot resolve filename from FD {}: Invalid handle", fd));
+        return "<Invalid fd>";
+    }
+
+    char filename[MAX_PATH];
+    DWORD dwSize = GetFinalPathNameByHandleA(hFile, filename, MAX_PATH, VOLUME_NAME_DOS);
+    if (dwSize == 0) {
+        PANIC(fmt::format("Cannot resolve filename from FD {}: Error {}", fd, GetLastError()));
+        return "<Invalid fd>";
+    }
+    return std::string(filename);
+#else
+    // Linux-specific implementation
     char filename[PATH_MAX];
     ssize_t len = ::readlink(("/proc/self/fd/" + std::to_string(fd)).c_str(), filename, sizeof(filename) - 1);
-
+    
     if (len != -1) {
         filename[len] = '\0';
         return std::string(filename);
     } else {
-        PANIC(
-            fmt::format("Cannot resolve filename from FD {} : {}", fd, ::strerror(errno))
-        );
+        PANIC(fmt::format("Cannot resolve filename from FD {}: {}", fd, ::strerror(errno)));
         return "<Invalid fd>";
     }
+#endif
 }
 
 auto delameta_detail_log_format_fd(int fd, const std::string& msg) -> std::string {
@@ -188,16 +237,31 @@ static auto log_sent_ok(const char* file, size_t line, int fd, size_t n) {
     return Ok();
 }
 
+[[maybe_unused]] static auto log_err(const char* file, int line, Error err) {
+    warning(file, line, err.what);
+    return Err(std::move(err));
+}
+
+[[maybe_unused]] static auto log_received_ok(const char* file, size_t line, std::vector<uint8_t>& res) {
+    info(file, line, "read " + std::to_string(res.size()) + " bytes");
+    return Ok(std::move(res));
+}
+
+[[maybe_unused]] static auto log_sent_ok(const char* file, size_t line, size_t n) {
+    info(file, line, "written " + std::to_string(n) + " bytes");
+    return Ok();
+}
+
 auto delameta_detail_read(const char* file, int line, int fd, [[maybe_unused]] void* ssl, int timeout, bool(*is_alive)(int)) -> Result<std::vector<uint8_t>> {
     auto start = std::chrono::high_resolution_clock::now();
-    int bytes_available = 0;
+    u_long bytes_available = 0;
 
 #ifndef DELAMETA_DISABLE_OPENSSL
     auto ssl_ = reinterpret_cast<SSL*>(ssl);
 #endif
 
     while (is_alive(fd)) {
-        if (::ioctl(fd, FIONREAD, &bytes_available) == -1) {
+        if (IOCTL(fd, FIONREAD, &bytes_available) == -1) {
             return log_err(file, line, fd, Error(errno, ::strerror(errno)));
         }
 
@@ -214,7 +278,7 @@ auto delameta_detail_read(const char* file, int line, int fd, [[maybe_unused]] v
 #ifndef DELAMETA_DISABLE_OPENSSL
         auto size = ssl ? SSL_read(ssl_, buffer.data(), bytes_available) : ::read(fd, buffer.data(), bytes_available);
 #else
-        auto size = ::read(fd, buffer.data(), bytes_available);
+        auto size = ::read(fd, (char*)buffer.data(), bytes_available);
 #endif
         if (size < 0) {
             return log_err(file, line, fd, Error(errno, ::strerror(errno)));
@@ -229,10 +293,10 @@ auto delameta_detail_read(const char* file, int line, int fd, [[maybe_unused]] v
 
 auto delameta_detail_recvfrom(const char* file, int line, int fd, int timeout, void *peer) -> Result<std::vector<uint8_t>> {
     auto start = std::chrono::high_resolution_clock::now();
-    int bytes_available = 0;
+    u_long bytes_available = 0;
 
     while (delameta_detail_is_socket_alive(fd)) {
-        if (::ioctl(fd, FIONREAD, &bytes_available) == -1) {
+        if (IOCTL(fd, FIONREAD, &bytes_available) == -1) {
             return log_err(file, line, fd, Error(errno, ::strerror(errno)));
         }
 
@@ -247,7 +311,7 @@ auto delameta_detail_recvfrom(const char* file, int line, int fd, int timeout, v
         std::vector<uint8_t> buffer(bytes_available);
         auto peer_ = reinterpret_cast<struct addrinfo *>(peer);
         socklen_t len_ = peer_->ai_addrlen;
-        auto size = ::recvfrom(fd, buffer.data(), bytes_available, 0, peer_->ai_addr, &len_);
+        auto size = ::recvfrom(fd, (char*)buffer.data(), bytes_available, 0, peer_->ai_addr, &len_);
         if (size < 0) {
             return log_err(file, line, fd, Error(errno, ::strerror(errno)));
         }
@@ -270,11 +334,11 @@ auto delameta_detail_read_until(const char* file, int line, int fd, [[maybe_unus
     std::vector<uint8_t> buffer(n);
 
     int remaining_size = n;
-    int bytes_available = 0;
+    u_long bytes_available = 0;
     auto ptr = buffer.data();
 
     while (is_alive(fd)) {
-        if (::ioctl(fd, FIONREAD, &bytes_available) == -1) {
+        if (IOCTL(fd, FIONREAD, &bytes_available) == -1) {
             return log_err(file, line, fd, Error(errno, ::strerror(errno)));
         }
 
@@ -286,7 +350,7 @@ auto delameta_detail_read_until(const char* file, int line, int fd, [[maybe_unus
             continue;
         }
 
-        auto size = ::read(fd, ptr, std::min(bytes_available, remaining_size));
+        auto size = ::read(fd, ptr, std::min((int)bytes_available, remaining_size));
         if (size < 0) {
             return log_err(file, line, fd, Error(errno, ::strerror(errno)));
         }
@@ -307,10 +371,10 @@ auto delameta_detail_recvfrom_until(const char* file, int line, int fd, int time
     std::vector<uint8_t> buffer(n);
 
     int remaining_size = n;
-    int bytes_available = 0;
+    u_long bytes_available = 0;
 
     while (delameta_detail_is_socket_alive(fd)) {
-        if (::ioctl(fd, FIONREAD, &bytes_available) == -1) {
+        if (IOCTL(fd, FIONREAD, &bytes_available) == -1) {
             return log_err(file, line, fd, Error(errno, ::strerror(errno)));
         }
 
@@ -324,7 +388,7 @@ auto delameta_detail_recvfrom_until(const char* file, int line, int fd, int time
 
         auto peer_ = reinterpret_cast<struct addrinfo *>(peer);
         socklen_t len_ = peer_->ai_addrlen;
-        auto size = ::recvfrom(fd, buffer.data(), bytes_available, 0, peer_->ai_addr, &len_);
+        auto size = ::recvfrom(fd, (char*)buffer.data(), bytes_available, 0, peer_->ai_addr, &len_);
         if (size < 0) {
             return log_err(file, line, fd, Error(errno, ::strerror(errno)));
         }
@@ -432,6 +496,7 @@ auto delameta_detail_sendto(const char* file, int line, int fd, int timeout, voi
 }
 
 auto delameta_detail_create_socket(void* hint, const LogError& log_error) -> Result<int> {
+#ifndef _WIN32
     auto h = reinterpret_cast<struct addrinfo*>(hint);
     auto socket = ::socket(h->ai_family, h->ai_socktype, h->ai_protocol);
     if (socket < 0) {
@@ -446,4 +511,174 @@ auto delameta_detail_create_socket(void* hint, const LogError& log_error) -> Res
     }
 
     return Ok(socket);
+#else
+    std::scoped_lock<std::mutex> lock(windows_socket_mutex);
+
+    if (windows_socket_startup_counter == 0) {
+        WSADATA wsaData;
+        if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+            return Err(log_error(errno, ::strerror));
+        }
+        windows_socket_startup_counter++;
+    }
+
+    auto h = reinterpret_cast<struct addrinfo*>(hint);
+    
+    SOCKET socket = ::socket(h->ai_family, h->ai_socktype, h->ai_protocol);
+    if (socket == INVALID_SOCKET) {
+        windows_socket_startup_counter--;
+        if (windows_socket_startup_counter == 0) {
+            WSACleanup();
+        }
+        return Err(log_error(errno, ::strerror));
+    }
+ 
+    delameta_detail_set_non_blocking(socket);
+
+    int enable = 1;
+    if (::setsockopt(socket, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<char*>(&enable), sizeof(enable)) == SOCKET_ERROR) {
+        ::closesocket(socket);
+        windows_socket_startup_counter--;
+        if (windows_socket_startup_counter == 0) {
+            WSACleanup();
+        }
+        return Err(log_error(errno, ::strerror));
+    }
+
+    return Ok(socket);
+#endif
 }
+
+void delameta_detail_close_socket(int socket) {
+#ifndef _WIN32
+    ::close(socket);
+#else
+    std::scoped_lock<std::mutex> lock(windows_socket_mutex);
+    ::closesocket(socket);
+    windows_socket_startup_counter--;
+    if (windows_socket_startup_counter == 0) {
+        WSACleanup();
+    }
+#endif
+}
+
+#ifdef _WIN32
+auto delameta_detail_windows_serial_read(const char* file, int line, void* fd, int timeout) -> Result<std::vector<uint8_t>> {
+    auto start = std::chrono::high_resolution_clock::now();
+    HANDLE hSerial = fd;
+
+    while (true) {
+        // Check the status of the serial port
+        DWORD errors;
+        COMSTAT status;
+        if (!ClearCommError(hSerial, &errors, &status)) {
+            return log_err(file, line, Error(GetLastError(), "Failed to clear communication errors"));
+        }
+
+        // Check if bytes are available to read
+        if (status.cbInQue == 0) {
+            // Check for timeout
+            if (timeout >= 0 && std::chrono::high_resolution_clock::now() - start > std::chrono::seconds(timeout)) {
+                return log_err(file, line, Error::TransferTimeout);
+            }
+
+            // Sleep briefly before checking again
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            continue;
+        }
+
+        // Allocate a buffer and read the available data
+        std::vector<uint8_t> buffer(status.cbInQue);
+        DWORD bytesRead = 0;
+        if (!ReadFile(hSerial, buffer.data(), status.cbInQue, &bytesRead, NULL)) {
+            return log_err(file, line, Error(GetLastError(), "Failed to read from serial port"));
+        }
+
+        // Resize the buffer to the actual number of bytes read
+        buffer.resize(bytesRead);
+        return log_received_ok(file, line, buffer);
+    }
+
+    return log_err(file, line, Error::ConnectionClosed);
+}
+
+auto delameta_detail_windows_serial_read_until(const char* file, int line, void* fd, int timeout, size_t n) -> Result<std::vector<uint8_t>> {
+    auto start = std::chrono::high_resolution_clock::now();
+    std::vector<uint8_t> buffer(n);
+    HANDLE hSerial = fd;
+
+    size_t remaining_size = n;
+    auto ptr = buffer.data();
+
+    while (true) {
+        // Check for available bytes in the input buffer
+        DWORD errors;
+        COMSTAT status;
+        if (!ClearCommError(hSerial, &errors, &status)) {
+            return log_err(file, line, Error(GetLastError(), "Failed to clear communication errors"));
+        }
+
+        DWORD bytes_available = status.cbInQue;
+
+        if (bytes_available == 0) {
+            // Check for timeout
+            if (timeout >= 0 && std::chrono::high_resolution_clock::now() - start > std::chrono::seconds(timeout)) {
+                return log_err(file, line, Error::TransferTimeout);
+            }
+
+            // Sleep briefly and retry
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            continue;
+        }
+
+        // Read the available data
+        DWORD bytes_to_read = std::min(static_cast<DWORD>(bytes_available), static_cast<DWORD>(remaining_size));
+        DWORD bytes_read = 0;
+
+        if (!ReadFile(hSerial, ptr, bytes_to_read, &bytes_read, NULL)) {
+            return log_err(file, line, Error(GetLastError(), "Failed to read from serial port"));
+        }
+
+        ptr += bytes_read;
+        remaining_size -= bytes_read;
+
+        // Check if we have read the required number of bytes
+        if (remaining_size == 0) {
+            return log_received_ok(file, line, buffer);
+        }
+    }
+
+    return log_err(file, line, Error::ConnectionClosed);
+}
+
+auto delameta_detail_windows_serial_write(const char* file, int line, void* fd, int timeout, std::string_view data) -> Result<void> {
+    (void)timeout;
+    size_t total = 0;
+    HANDLE hSerial = fd;
+
+    for (size_t i = 0; i < data.size();) {
+        // Calculate the chunk size to send
+        DWORD n = static_cast<DWORD>(std::min<size_t>(MAX_HANDLE_SZ, data.size() - i));
+        DWORD bytes_written = 0;
+
+        // Write data to the serial port
+        if (!WriteFile(hSerial, &data[i], n, &bytes_written, NULL)) {
+            DWORD last_error = GetLastError();
+            if (last_error == ERROR_IO_PENDING || last_error == ERROR_TIMEOUT) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                continue; // Retry
+            }
+            return log_err(file, line, Error(last_error, "Failed to write to serial port"));
+        }
+
+        if (bytes_written == 0) {
+            return log_err(file, line, Error::ConnectionClosed);
+        }
+
+        total += bytes_written;
+        i += bytes_written;
+    }
+
+    return log_sent_ok(file, line, total);
+}
+#endif

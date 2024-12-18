@@ -5,6 +5,7 @@
 #include "delameta/stream.h"
 
 int delameta_detail_set_non_blocking(int socket);
+int delameta_detail_set_blocking(int socket);
 bool delameta_detail_is_fd_alive(int fd);
 bool delameta_detail_is_socket_alive(int socket);
 auto delameta_detail_get_ip(int socket) -> std::string;
@@ -82,5 +83,10 @@ namespace Project::delameta {
 }
 
 auto delameta_detail_create_socket(void* hint, const Project::delameta::LogError& log_error) -> Project::delameta::Result<int>;
+void delameta_detail_close_socket(int socket);
+
+auto delameta_detail_windows_serial_read(const char* file, int line, void* fd, int timeout) -> Project::delameta::Result<std::vector<uint8_t>>;
+auto delameta_detail_windows_serial_read_until(const char* file, int line, void* fd, int timeout, size_t n) -> Project::delameta::Result<std::vector<uint8_t>>;
+auto delameta_detail_windows_serial_write(const char* file, int line, void* fd, int timeout, std::string_view data) -> Project::delameta::Result<void>;
 
 #endif
