@@ -211,6 +211,25 @@ auto delameta_detail_resolve_domain(const std::string& domain, int sock_type, bo
     hints.ai_socktype = sock_type;
     if (for_binding) hints.ai_flags = AI_PASSIVE; // For wildcard IP address
 
+#ifdef _WIN32
+    std::scoped_lock<std::mutex> lock(windows_socket_mutex);
+
+    if (windows_socket_startup_counter == 0) {
+        WSADATA wsaData;
+        if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+            return Err(-1);
+        }
+        windows_socket_startup_counter++;
+    }
+
+    auto wsa_defer = etl::defer | [&]() {
+        windows_socket_startup_counter--;
+        if (windows_socket_startup_counter == 0) {
+            WSACleanup();
+        }
+    };
+#endif
+
     if (int code = ::getaddrinfo(host.c_str(), std::to_string(port).c_str(), &hints, &hint); code == 0) {
         return Ok(hint);
     } else {
