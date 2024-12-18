@@ -4,13 +4,10 @@
 #include <string>
 
 namespace Project::delameta {
-    __attribute__((weak))
     void info(const char* file, int line, const std::string& msg);
 
-    __attribute__((weak))
     void warning(const char* file, int line, const std::string& msg);
 
-    __attribute__((weak))
     void panic(const char* file, int line, const std::string& msg);
 }
 

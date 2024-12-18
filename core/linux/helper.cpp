@@ -22,7 +22,6 @@
 #include <ws2tcpip.h>
 #include <io.h>
 #include <mutex>
-#pragma comment(lib, "Ws2_32.lib")  // Link Winsock library
 #define IOCTL ::ioctlsocket
 #define MAX_HANDLE_SZ 128
 #undef min
@@ -36,14 +35,11 @@ static int windows_socket_startup_counter;
 #endif
 
 namespace Project::delameta {
-    __attribute__((weak))
-    void info(const char*, int, const std::string&) {}
+    void __attribute__((weak)) info(const char*, int, const std::string&) {}
 
-    __attribute__((weak))
-    void warning(const char*, int, const std::string&) {}
+    void __attribute__((weak)) warning(const char*, int, const std::string&) {}
 
-    __attribute__((weak))
-    void panic(const char* file, int line, const std::string& msg) {
+    void __attribute__((weak)) panic(const char* file, int line, const std::string& msg) {
         std::cerr << fmt::format("{}:{} {}\n", file, line, msg);
         exit(1);
     }

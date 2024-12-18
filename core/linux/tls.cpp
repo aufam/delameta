@@ -81,7 +81,6 @@ void Server<TLS>::stop() {}
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <io.h>
-#pragma comment(lib, "Ws2_32.lib")  // Link Winsock library
 #undef min
 #undef max
 #define SHUT_RDWR SD_BOTH
@@ -277,7 +276,7 @@ auto Server<TLS>::start(const char* file, int line, Args args) -> Result<void> {
     if (sock_err) return Err(std::move(*sock_err));
 
     auto socket = *sock;
-    auto defer_socket = defer | [socket]() { ::close(socket); };
+    auto defer_socket = defer | [socket]() { delameta_detail_close_socket(socket); };
 
     if (::bind(socket, hint->ai_addr, hint->ai_addrlen) < 0) {
         return Err(log_error(errno, ::strerror));
@@ -343,7 +342,7 @@ auto Server<TLS>::start(const char* file, int line, Args args) -> Result<void> {
 
             auto [ssl, ssl_err] = ssl_handshake(file, line, sock_client, true);
             if (ssl_err) {
-                ::close(sock_client);
+                delameta_detail_close_socket(sock_client);
                 continue;
             }
 

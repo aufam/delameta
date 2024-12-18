@@ -19,7 +19,6 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <io.h>
-#pragma comment(lib, "Ws2_32.lib")  // Link Winsock library
 #undef min
 #undef max
 #define SHUT_RDWR SD_BOTH
