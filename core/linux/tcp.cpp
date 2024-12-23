@@ -196,15 +196,16 @@ auto Server<TCP>::start(const char* file, int line, Args args) -> Result<void> {
         return Err(log_error(errno, ::strerror));
     }
 #else
-    WSAEVENT event = WSACreateEvent();
-    if (event == WSA_INVALID_EVENT) {
-        return Err(log_error(errno, ::strerror));
-    }
+    // TODO: event handler in MinGW
+    // WSAEVENT event = WSACreateEvent();
+    // if (event == WSA_INVALID_EVENT) {
+    //     return Err(log_error(errno, ::strerror));
+    // }
 
-    auto defer_epoll = defer | [event]() { WSACloseEvent(event); };
-    if (WSAEventSelect(socket, event, FD_ACCEPT) == SOCKET_ERROR) {
-        return Err(log_error(errno, ::strerror));
-    }
+    // auto defer_epoll = defer | [event]() { WSACloseEvent(event); };
+    // if (WSAEventSelect(socket, event, FD_ACCEPT) == SOCKET_ERROR) {
+    //     return Err(log_error(errno, ::strerror));
+    // }
 #endif
 
     std::vector<std::thread> threads;
@@ -278,8 +279,10 @@ auto Server<TCP>::start(const char* file, int line, Args args) -> Result<void> {
 
         for (int i = 0; i < num_events; ++i) if (events[i].data.fd == socket)
 #else
-        DWORD dwEventIndex = WSAWaitForMultipleEvents(1, &event, FALSE, 10, FALSE);
-        if (dwEventIndex == WAIT_OBJECT_0)
+        // TODO: event handler in MinGW?
+        // DWORD dwEventIndex = WSAWaitForMultipleEvents(1, &event, FALSE, 10, FALSE);
+        // if (dwEventIndex == WAIT_OBJECT_0)
+        std::this_thread::sleep_for(10ms);
 #endif
         {
             int new_sock_client = ::accept(socket, nullptr, nullptr);

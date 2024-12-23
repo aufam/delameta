@@ -5,6 +5,9 @@
 ### Improved
 - Some improvements
 
+### Added
+- Support for MinGW
+
 ## [0.1.10] - 2024-12-03
 ### Fixed
 - TLS read implementation
