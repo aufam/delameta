@@ -6,12 +6,13 @@
 #include <atomic>
 #include <algorithm>
 
-// Unix/Linux headers and definitions
-#include <sys/socket.h>
-#include <unistd.h>
-#include <arpa/inet.h>
-#include <netdb.h>
-#include <fcntl.h>
+// Windows headers and definitions
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <io.h>
+#undef min
+#undef max
+#define SHUT_RDWR SD_BOTH
 
 using namespace Project;
 using namespace Project::delameta;
@@ -36,7 +37,7 @@ auto UDP::Open(const char* file, int line, Args args) -> Result<UDP> {
     if (args.as_server && ::bind(socket, hint->ai_addr, hint->ai_addrlen) < 0) {
         delameta_detail_close_socket(socket);
         ::freeaddrinfo(hint);
-        return Err(log_error(errno, ::strerror));
+        return Err(log_error.wsa());
     }
 
     info(file, line, "Created UDP socket: " + std::to_string(socket));

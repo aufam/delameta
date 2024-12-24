@@ -68,13 +68,13 @@ void Server<TLS>::stop() {}
 #include <condition_variable>
 #include <algorithm>
 
-// Unix/Linux headers and definitions
-#include <sys/socket.h>
-#include <sys/epoll.h>
-#include <unistd.h>
-#include <arpa/inet.h>
-#include <netdb.h>
-#include <fcntl.h>
+// Windows headers and definitions
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <io.h>
+#undef min
+#undef max
+#define SHUT_RDWR SD_BOTH
 
 using namespace Project;
 using namespace Project::delameta;
@@ -235,11 +235,11 @@ TLS::~TLS() {
 }
 
 auto TLS::read() -> Result<std::vector<uint8_t>> {
-    return delameta_detail_read(file, line, socket, ssl, timeout, &is_tls_alive);
+    return delameta_detail_read(file, line, socket, ssl, timeout, &is_tls_alive, true);
 }
 
 auto TLS::read_until(size_t n) -> Result<std::vector<uint8_t>> {
-    return delameta_detail_read_until(file, line, socket, ssl, timeout, &is_tls_alive, n);
+    return delameta_detail_read_until(file, line, socket, ssl, timeout, &is_tls_alive, true, n);
 }
 
 auto TLS::read_as_stream(size_t n) -> Stream {
@@ -247,7 +247,7 @@ auto TLS::read_as_stream(size_t n) -> Stream {
 }
 
 auto TLS::write(std::string_view data) -> Result<void> {
-    return delameta_detail_write(file, line, socket, ssl, timeout, &is_tls_alive, data);
+    return delameta_detail_write(file, line, socket, ssl, timeout, &is_tls_alive, true, data);
 }
 
 auto Server<TLS>::start(const char* file, int line, Args args) -> Result<void> {
@@ -269,11 +269,11 @@ auto Server<TLS>::start(const char* file, int line, Args args) -> Result<void> {
     auto defer_socket = defer | [socket]() { delameta_detail_close_socket(socket); };
 
     if (::bind(socket, hint->ai_addr, hint->ai_addrlen) < 0) {
-        return Err(log_error(errno, ::strerror));
+        return Err(log_error.wsa());
     }
 
     if (::listen(socket, args.max_socket) < 0) {
-        return Err(log_error(errno, ::strerror));
+        return Err(log_error.wsa());
     }
 
     auto [_, conf_err] = ssl_context_configure(true, args.cert_file, args.key_file);
@@ -281,19 +281,16 @@ auto Server<TLS>::start(const char* file, int line, Args args) -> Result<void> {
 
     auto defer_conf = defer | &ssl_deinit;
 
-    int epoll_fd = ::epoll_create1(0);
-    if (epoll_fd < 0) {
-        return Err(log_error(errno, ::strerror));
-    }
+    // TODO: event handler in MinGW
+    // WSAEVENT event = WSACreateEvent();
+    // if (event == WSA_INVALID_EVENT) {
+    //     return Err(log_error.wsa());
+    // }
 
-    auto defer_epoll = defer | [epoll_fd]() { ::close(epoll_fd); };
-
-    epoll_event event;
-    event.events = EPOLLIN;
-    event.data.fd = socket;
-    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, socket, &event) < 0) {
-        return Err(log_error(errno, ::strerror));
-    }
+    // auto defer_epoll = defer | [event]() { WSACloseEvent(event); };
+    // if (WSAEventSelect(socket, event, FD_ACCEPT) == SOCKET_ERROR) {
+    //     return Err(log_error.wsa());
+    // }
 
     std::vector<std::thread> threads;
     std::mutex mtx;
@@ -366,16 +363,16 @@ auto Server<TLS>::start(const char* file, int line, Args args) -> Result<void> {
     }
 
     while (is_running) {
-        std::vector<epoll_event> events(args.max_socket);
-        int num_events = epoll_wait(epoll_fd, events.data(), args.max_socket, 10);
-
-        for (int i = 0; i < num_events; ++i) if (events[i].data.fd == socket)
+        // TODO: event handler in MinGW ?
+        // DWORD dwEventIndex = WSAWaitForMultipleEvents(1, &event, FALSE, 10, FALSE);
+        std::this_thread::sleep_for(10ms);
         {
             int new_sock_client = ::accept(socket, nullptr, nullptr);
             if (new_sock_client < 0) {
-                if (errno == EWOULDBLOCK || errno == EAGAIN) {
+                auto errno_ = WSAGetLastError();
+                if (errno_ == WSAEWOULDBLOCK) {
                 } else {
-                    WARNING(delameta_detail_log_format_fd(socket, "accept() failed, ") + strerror(errno));
+                    WARNING(delameta_detail_log_format_fd(socket, "accept() failed, ") + delameta_detail_strerror(errno_));
                 }
                 continue;
             }

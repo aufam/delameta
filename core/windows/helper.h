@@ -10,6 +10,7 @@ bool delameta_detail_is_fd_alive(int fd);
 bool delameta_detail_is_socket_alive(int socket);
 auto delameta_detail_get_ip(int socket) -> std::string;
 auto delameta_detail_get_filename(int fd) -> std::string;
+std::string delameta_detail_strerror(int errorCode);
 
 auto delameta_detail_log_format_fd(
     int fd,
@@ -26,7 +27,8 @@ auto delameta_detail_read(
     const char* file, int line, 
     int fd, void* ssl,
     int timeout, 
-    bool(*is_alive)(int)
+    bool(*is_alive)(int),
+    bool is_wsa
 ) -> Project::delameta::Result<std::vector<uint8_t>>;
 
 auto delameta_detail_recvfrom(
@@ -39,7 +41,9 @@ auto delameta_detail_read_until(
     const char* file, int line, 
     int fd, void* ssl,
     int timeout, 
-    bool(*is_alive)(int), size_t n
+    bool(*is_alive)(int),
+    bool is_wsa,
+    size_t n
 ) -> Project::delameta::Result<std::vector<uint8_t>>;
 
 auto delameta_detail_recvfrom_until(
@@ -58,7 +62,9 @@ auto delameta_detail_write(
     const char* file, int line, 
     int fd, void* ssl,
     int timeout, 
-    bool(*is_alive)(int), std::string_view data
+    bool(*is_alive)(int),
+    bool is_wsa,
+    std::string_view data
 ) -> Project::delameta::Result<void>;
 
 auto delameta_detail_sendto(
@@ -79,10 +85,17 @@ namespace Project::delameta {
             warning(file, line, what);
             return Error{code, std::move(what)};
         }
+
+        Error wsa() const;
+        Error non_wsa() const;
     };
 }
 
 auto delameta_detail_create_socket(void* hint, const Project::delameta::LogError& log_error) -> Project::delameta::Result<int>;
 void delameta_detail_close_socket(int socket);
+
+auto delameta_detail_windows_serial_read(const char* file, int line, void* fd, int timeout) -> Project::delameta::Result<std::vector<uint8_t>>;
+auto delameta_detail_windows_serial_read_until(const char* file, int line, void* fd, int timeout, size_t n) -> Project::delameta::Result<std::vector<uint8_t>>;
+auto delameta_detail_windows_serial_write(const char* file, int line, void* fd, int timeout, std::string_view data) -> Project::delameta::Result<void>;
 
 #endif

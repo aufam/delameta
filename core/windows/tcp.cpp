@@ -8,11 +8,13 @@
 #include <atomic>
 #include <algorithm>
 
-// Unix/Linux headers and definitions
-#include <sys/socket.h>
-#include <sys/epoll.h>
-#include <arpa/inet.h>
-#include <netdb.h>
+// Windows headers and definitions
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <io.h>
+#undef min
+#undef max
+#define SHUT_RDWR SD_BOTH
 
 using namespace Project;
 using namespace Project::delameta;
@@ -57,9 +59,9 @@ auto TCP::Open(const char* file, int line, Args args) -> Result<TCP> {
 
         auto socket = *sock;
         if (::connect(socket, p->ai_addr, p->ai_addrlen) != 0) {
-            if (errno != EINPROGRESS) {
+            if (WSAGetLastError() != WSAEINPROGRESS) {
                 delameta_detail_close_socket(socket);
-                err = log_error(errno, ::strerror);
+                err = log_error.wsa();
                 continue;
             }
 
@@ -73,16 +75,16 @@ auto TCP::Open(const char* file, int line, Args args) -> Result<TCP> {
 
             if (::select(socket + 1, nullptr, &write_fds, nullptr, &tv) <= 0) {
                 delameta_detail_close_socket(socket);
-                err = log_error(errno, ::strerror);
+                err = log_error.wsa();
                 continue;
             }
 
             // Connection established or error occurred
             int error_code = 0;
             socklen_t len = sizeof(error_code);
-            if (::getsockopt(socket, SOL_SOCKET, SO_ERROR, &error_code, &len) != 0 || error_code != 0) {
+            if (::getsockopt(socket, SOL_SOCKET, SO_ERROR, (char*)&error_code, &len) != 0 || error_code != 0) {
                 delameta_detail_close_socket(socket);
-                err = log_error(errno, ::strerror);
+                err = log_error.wsa();
                 continue;
             }
         } 
@@ -126,11 +128,11 @@ TCP::~TCP() {
 }
 
 auto TCP::read() -> Result<std::vector<uint8_t>> {
-    return delameta_detail_read(file, line, socket, nullptr, timeout, delameta_detail_is_socket_alive);
+    return delameta_detail_read(file, line, socket, nullptr, timeout, delameta_detail_is_socket_alive, true);
 }
 
 auto TCP::read_until(size_t n) -> Result<std::vector<uint8_t>> {
-    return delameta_detail_read_until(file, line, socket, nullptr, timeout, delameta_detail_is_socket_alive, n);
+    return delameta_detail_read_until(file, line, socket, nullptr, timeout, delameta_detail_is_socket_alive, true, n);
 }
 
 auto TCP::read_as_stream(size_t n) -> Stream {
@@ -138,7 +140,7 @@ auto TCP::read_as_stream(size_t n) -> Stream {
 }
 
 auto TCP::write(std::string_view data) -> Result<void> {
-    return delameta_detail_write(file, line, socket, nullptr, timeout, delameta_detail_is_socket_alive, data);
+    return delameta_detail_write(file, line, socket, nullptr, timeout, delameta_detail_is_socket_alive, true, data);
 }
 
 auto Server<TCP>::start(const char* file, int line, Args args) -> Result<void> {
@@ -160,26 +162,23 @@ auto Server<TCP>::start(const char* file, int line, Args args) -> Result<void> {
     auto defer_socket = defer | [socket]() { delameta_detail_close_socket(socket); };
 
     if (::bind(socket, hint->ai_addr, hint->ai_addrlen) < 0) {
-        return Err(log_error(errno, ::strerror));
+        return Err(log_error.wsa());
     }
 
     if (::listen(socket, args.max_socket) < 0) {
-        return Err(log_error(errno, ::strerror));
+        return Err(log_error.wsa());
     }
 
-    int epoll_fd = ::epoll_create1(0);
-    if (epoll_fd < 0) {
-        return Err(log_error(errno, ::strerror));
-    }
+    // TODO: event handler in MinGW
+    // WSAEVENT event = WSACreateEvent();
+    // if (event == WSA_INVALID_EVENT) {
+    //     return Err(log_error.wsa());
+    // }
 
-    auto defer_epoll = defer | [epoll_fd]() { ::close(epoll_fd); };
-
-    epoll_event event;
-    event.events = EPOLLIN;
-    event.data.fd = socket;
-    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, socket, &event) < 0) {
-        return Err(log_error(errno, ::strerror));
-    }
+    // auto defer_epoll = defer | [event]() { WSACloseEvent(event); };
+    // if (WSAEventSelect(socket, event, FD_ACCEPT) == SOCKET_ERROR) {
+    //     return Err(log_error.wsa());
+    // }
 
     std::vector<std::thread> threads;
     std::mutex mtx;
@@ -246,16 +245,17 @@ auto Server<TCP>::start(const char* file, int line, Args args) -> Result<void> {
     }
 
     while (is_running) {
-        std::vector<epoll_event> events(args.max_socket);
-        int num_events = epoll_wait(epoll_fd, events.data(), args.max_socket, 10);
-
-        for (int i = 0; i < num_events; ++i) if (events[i].data.fd == socket)
+        // TODO: event handler in MinGW?
+        // DWORD dwEventIndex = WSAWaitForMultipleEvents(1, &event, FALSE, 10, FALSE);
+        // if (dwEventIndex == WAIT_OBJECT_0)
+        std::this_thread::sleep_for(10ms);
         {
             int new_sock_client = ::accept(socket, nullptr, nullptr);
             if (new_sock_client < 0) {
-                if (errno == EWOULDBLOCK || errno == EAGAIN) {
+                auto errno_ = WSAGetLastError();
+                if (errno_ == WSAEWOULDBLOCK) {
                 } else {
-                    WARNING(delameta_detail_log_format_fd(socket, "accept() failed, ") + strerror(errno));
+                    WARNING(delameta_detail_log_format_fd(socket, "accept() failed, ") + delameta_detail_strerror(errno_));
                 }
                 continue;
             }
