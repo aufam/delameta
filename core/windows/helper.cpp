@@ -458,7 +458,7 @@ auto delameta_detail_write(const char* file, int line, int fd, [[maybe_unused]] 
 #endif
             if (is_wsa) {
                 auto errno_ = WSAGetLastError();
-                if (errno_ == WSAEAGAIN) {
+                if (errno_ == WSAEWOULDBLOCK) {
                     std::this_thread::sleep_for(10ms);
                     continue; // maybe try again
                 }
@@ -671,11 +671,11 @@ auto delameta_detail_windows_serial_write(const char* file, int line, void* fd, 
 }
 
 
-Error LogError::wsa() {
+Error LogError::wsa() const {
     return operator()(WSAGetLastError(), delameta_detail_strerror);
 }
 
-Error LogError::non_wsa() {
+Error LogError::non_wsa() const {
     return operator()(GetLastError(), delameta_detail_strerror);
 }
 
