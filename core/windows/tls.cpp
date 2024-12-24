@@ -306,6 +306,13 @@ auto Server<TLS>::start(const char* file, int line, Args args) -> Result<void> {
     };
 
     auto work = [this, file, line, &args, &is_running, &mtx, &cv, &semaphore, &sock_client](int idx) {
+        WSADATA wsaData;
+        if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+            return;
+        }
+
+        auto wsa_defer = etl::defer | &WSACleanup;
+
         info(file, line, "Spawned worker thread: " + std::to_string(idx));
         while (is_running) {
             {

@@ -135,6 +135,13 @@ auto Server<UDP>::start(const char* file, int line, Args args) -> Result<void> {
                 data=std::move(read_result.unwrap()), 
                 &threads, &mtx, &is_running
         ]() mutable {
+            WSADATA wsaData;
+            if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+                return;
+            }
+
+            auto wsa_defer = etl::defer | &WSACleanup;
+
             auto stream = execute_stream_session(session, delameta_detail_get_ip(session.socket), data);
             stream >> session;
             session.socket = -1; // prevent closing the socket

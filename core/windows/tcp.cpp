@@ -1,5 +1,6 @@
 #include "delameta/tcp.h"
 #include "helper.h"
+#include <etl/utility_basic.h>
 #include <string>
 #include <cstring>
 #include <thread>
@@ -87,7 +88,7 @@ auto TCP::Open(const char* file, int line, Args args) -> Result<TCP> {
                 err = log_error.wsa();
                 continue;
             }
-        } 
+        }
 
         return Ok(TCP(file, line, socket, args.timeout));
     }
@@ -194,6 +195,13 @@ auto Server<TCP>::start(const char* file, int line, Args args) -> Result<void> {
     };
 
     auto work = [this, file, line, &args, &is_running, &mtx, &cv, &sock_client, &semaphore](int idx) {
+        WSADATA wsaData;
+        if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+            return;
+        }
+
+        auto wsa_defer = etl::defer | &WSACleanup;
+
         info(file, line, "Spawned worker thread: " + std::to_string(idx));
         while (is_running) {
             {
