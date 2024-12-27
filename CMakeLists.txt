@@ -49,7 +49,6 @@ if (NOT DELAMETA_TARGET_STM32)
 		-Wall
 		-Wextra
 		-pedantic
-		-Wnull-dereference
 		-fmacro-prefix-map=${CMAKE_CURRENT_SOURCE_DIR}=delameta
 		$<$<COMPILE_LANGUAGE:CXX>:-Wno-literal-suffix>
 		$<$<COMPILE_LANGUAGE:CXX>:-Wno-unknown-pragmas>
