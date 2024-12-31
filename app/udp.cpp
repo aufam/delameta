@@ -2,6 +2,7 @@
 #include <delameta/debug.h>
 #include <delameta/http/http.h>
 #include <delameta/udp.h>
+#include <thread>
 
 using namespace Project;
 using namespace std::literals;
@@ -44,14 +45,15 @@ static HTTP_ROUTE(
         return s;
     };
 
-    server_stopper = [&]() { 
+    std::thread([=, svr=std::move(svr)]() mutable {
+        server_stopper = [&]() {
+            return svr.stop();
+        };
+
+        svr.start(FL, {host, tout});
         server_stopper = {};
-        return svr.stop(); 
-    };
+    }).detach();
 
-    TRY(svr.start(FL, {host, tout}));
-
-    server_stopper = {};
     return Ok();
 }
 
