@@ -663,14 +663,8 @@ response.body_stream >> [&](std::string_view sv) {
 std::cout << response.status << '\n'; // 200
 std::cout << body << '\n'; // Hello world
 ```
-You can do HTTPS request as well by providing certificate and private key files
+You can do HTTPS request as well if ca-certificates is installed
 ```c++
-extern std::string delameta_https_cert_file;
-extern std::string delameta_https_key_file;
-
-delameta_https_cert_file = "/path/to/certificate.crt";
-delameta_https_key_file = "/path/to/private.key";
-
 delameta::Result<http::ResponseReader> request_result = http::request(http::RequestWriter {
   .method="GET",
   .url="https://www.example.com",

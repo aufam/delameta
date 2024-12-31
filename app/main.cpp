@@ -163,12 +163,6 @@ OPTS_MAIN(
     // create response using http request
     auto res = [&]() {
         if (not url_str.empty()) {
-            extern std::string delameta_https_cert_file;
-            extern std::string delameta_https_key_file;
-
-            delameta_https_cert_file = cert;
-            delameta_https_key_file = key;
-
             req.url = url_str;
             return http::request(std::move(req));
         }

@@ -60,9 +60,10 @@ auto TCP::Open(const char* file, int line, Args args) -> Result<TCP> {
 
         auto socket = *sock;
         if (::connect(socket, p->ai_addr, p->ai_addrlen) != 0) {
-            if (WSAGetLastError() != WSAEINPROGRESS) {
+            auto errno_ = WSAGetLastError();
+            if (errno_ != WSAEWOULDBLOCK && errno_ != WSAEINPROGRESS) {
                 delameta_detail_close_socket(socket);
-                err = log_error.wsa();
+                err = log_error(errno_, delameta_detail_strerror);
                 continue;
             }
 
@@ -261,7 +262,7 @@ auto Server<TCP>::start(const char* file, int line, Args args) -> Result<void> {
             int new_sock_client = ::accept(socket, nullptr, nullptr);
             if (new_sock_client < 0) {
                 auto errno_ = WSAGetLastError();
-                if (errno_ == WSAEWOULDBLOCK) {
+                if (errno_ == WSAEWOULDBLOCK || errno_ == WSAEINPROGRESS) {
                 } else {
                     WARNING(delameta_detail_log_format_fd(socket, "accept() failed, ") + delameta_detail_strerror(errno_));
                 }

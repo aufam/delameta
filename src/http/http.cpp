@@ -2,7 +2,6 @@
 #include "delameta/http/chunked.h"
 #include "delameta/tcp.h"
 #include "delameta/tls.h"
-#include "delameta/utils.h"
 #include <algorithm>
 #include "../time_helper.ipp"
 
@@ -10,9 +9,6 @@ using namespace Project;
 using namespace Project::delameta;
 using etl::Err;
 using etl::Ok;
-
-std::string delameta_https_cert_file;
-std::string delameta_https_key_file;
 
 http::Error::Error(int status) : status(status), what("") {}
 http::Error::Error(int status, std::string what) : status(status), what(std::move(what)) {}
@@ -98,9 +94,7 @@ auto http::request(StreamSessionClient&& session, RequestWriter req) -> delameta
 auto http::request(RequestWriter req) -> delameta::Result<ResponseReader> {
     if (req.url.url.size() >= 8 && req.url.url.substr(0, 8) == "https://") {
         auto [session, err] = TLS::Open(__FILE__, __LINE__, TLS::Args{
-            .host=req.url.url, 
-            .cert_file=delameta_https_cert_file,
-            .key_file=delameta_https_key_file,
+            .host=req.url.url,
         });
         if (err) return Err(std::move(*err));
         return request(StreamSessionClient(new TLS(std::move(*session))), std::move(req));

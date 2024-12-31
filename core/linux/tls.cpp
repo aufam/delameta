@@ -168,30 +168,55 @@ static auto ssl_handshake(const char* file, int line, int socket, bool as_server
 }
 
 static auto ssl_context_configure(bool is_server, const std::string& cert_file, const std::string& key_file) -> Result<void> {
-    auto [_, err] = ssl_init();
+    auto [_, err] = ssl_init(); // Initialize SSL library
     if (err) return Err(std::move(*err));
 
     auto ctx = is_server ? ssl_context_server : ssl_context_client;
 
-    if (SSL_CTX_use_certificate_file(ctx, cert_file.c_str(), SSL_FILETYPE_PEM) <= 0) {
-        --ssl_counter;
-        return Err(ssl_get_error());
-    }
+    // Server Configuration
+    if (is_server) {
+        if (cert_file.empty() || key_file.empty()) {
+            return Err("Server requires both certificate and private key files");
+        }
 
-    if (SSL_CTX_use_PrivateKey_file(ctx, key_file.c_str(), SSL_FILETYPE_PEM) <= 0) {
-        --ssl_counter;
-        return Err(ssl_get_error());
-    }
+        // Load server certificate
+        if (SSL_CTX_use_certificate_file(ctx, cert_file.c_str(), SSL_FILETYPE_PEM) <= 0) {
+            --ssl_counter;
+            return Err(ssl_get_error());
+        }
 
-    if (!SSL_CTX_check_private_key(ctx)) {
-        --ssl_counter;
-        return Err(ssl_get_error());
+        // Load server private key
+        if (SSL_CTX_use_PrivateKey_file(ctx, key_file.c_str(), SSL_FILETYPE_PEM) <= 0) {
+            --ssl_counter;
+            return Err(ssl_get_error());
+        }
+
+        // Validate private key
+        if (!SSL_CTX_check_private_key(ctx)) {
+            --ssl_counter;
+            return Err(ssl_get_error());
+        }
+    } 
+    // Client Configuration
+    else {
+        if (cert_file.empty()) {
+            if (SSL_CTX_load_verify_locations(ctx, "/etc/ssl/certs/ca-certificates.crt", nullptr) <= 0) {
+                --ssl_counter;
+                return Err(ssl_get_error());
+            }
+        } else {
+            // Optional: Allow client to use a custom CA file
+            if (SSL_CTX_load_verify_locations(ctx, cert_file.c_str(), nullptr) <= 0) {
+                --ssl_counter;
+                return Err(ssl_get_error());
+            }
+        }
     }
 
     return Ok();
 }
 
-static bool is_tls_alive(int) { 
+static bool is_tls_alive(int) {
     return true;
 }
 
@@ -205,7 +230,7 @@ auto TLS::Open(const char* file, int line, Args args) -> Result<TLS> {
 
     delameta_detail_set_blocking(tcp->socket);
 
-    auto [_, conf_err] = ssl_context_configure(false, args.cert_file, args.key_file);
+    auto [_, conf_err] = ssl_context_configure(false, args.cert_file, "");
     if (conf_err) return Err(std::move(*conf_err));
 
     auto [ssl, ssl_err] = ssl_handshake(file, line, tcp->socket, false);
@@ -373,7 +398,8 @@ auto Server<TLS>::start(const char* file, int line, Args args) -> Result<void> {
         {
             int new_sock_client = ::accept(socket, nullptr, nullptr);
             if (new_sock_client < 0) {
-                if (errno == EWOULDBLOCK || errno == EAGAIN) {
+                auto errno_ = errno;
+                if (errno_ == EWOULDBLOCK || errno_ == EINPROGRESS) {
                 } else {
                     WARNING(delameta_detail_log_format_fd(socket, "accept() failed, ") + strerror(errno));
                 }

@@ -57,7 +57,7 @@ bool delameta_detail_is_socket_alive(int socket) {
         return false; // connection close
     if (res > 0)
         return true; // data available, socket is alive
-    if (res < 0 && (errno == EWOULDBLOCK || errno == EAGAIN))
+    if (auto errno_ = errno; res < 0 && (errno_ == EWOULDBLOCK || errno_ == EINPROGRESS))
         return true; // no data available, socket is alive
     return false;
 }
@@ -408,7 +408,7 @@ auto delameta_detail_write(const char* file, int line, int fd, [[maybe_unused]] 
             }
 #endif
             auto errno_ = errno;
-            if (errno_ == EAGAIN || errno_ == EWOULDBLOCK) {
+            if (errno_ == EWOULDBLOCK || errno_ == EINPROGRESS) {
                 std::this_thread::sleep_for(10ms);
                 continue; // maybe try again
             }

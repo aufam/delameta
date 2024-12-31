@@ -17,8 +17,7 @@ namespace Project::delameta {
 
         struct Args {
             std::string host;
-            std::string cert_file;
-            std::string key_file;
+            std::string cert_file = "";
             int timeout = -1;
             int connection_timeout = 5;
         };

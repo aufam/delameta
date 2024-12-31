@@ -1,5 +1,6 @@
 #include "delameta/tcp.h"
 #include "helper.h"
+#include <cerrno>
 #include <string>
 #include <cstring>
 #include <thread>
@@ -57,9 +58,10 @@ auto TCP::Open(const char* file, int line, Args args) -> Result<TCP> {
 
         auto socket = *sock;
         if (::connect(socket, p->ai_addr, p->ai_addrlen) != 0) {
-            if (errno != EINPROGRESS) {
+            auto errno_ = errno;
+            if (errno_ != EWOULDBLOCK && errno_ != EINPROGRESS) {
                 delameta_detail_close_socket(socket);
-                err = log_error(errno, ::strerror);
+                err = log_error(errno_, ::strerror);
                 continue;
             }
 
@@ -253,7 +255,8 @@ auto Server<TCP>::start(const char* file, int line, Args args) -> Result<void> {
         {
             int new_sock_client = ::accept(socket, nullptr, nullptr);
             if (new_sock_client < 0) {
-                if (errno == EWOULDBLOCK || errno == EAGAIN) {
+                auto errno_ = errno;
+                if (errno_ == EWOULDBLOCK || errno_ == EINPROGRESS) {
                 } else {
                     WARNING(delameta_detail_log_format_fd(socket, "accept() failed, ") + strerror(errno));
                 }
