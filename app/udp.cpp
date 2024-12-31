@@ -1,3 +1,4 @@
+#include "delameta/http/response.h"
 #include <boost/preprocessor.hpp>
 #include <delameta/debug.h>
 #include <delameta/http/http.h>
@@ -36,6 +37,10 @@ static HTTP_ROUTE(
         (int        , tout, http::arg::default_val("timeout", 5)),
     (http::Result<void>)
 ) {
+    if (server_stopper) {
+        return Err(http::Error{http::StatusConflict, "UDP server is already running"});
+    }
+
     Server<UDP> svr;
     svr.handler = [](delameta::Descriptor&, const std::string& peer, const std::vector<uint8_t>& data) -> Stream {
         Stream s;
@@ -60,7 +65,11 @@ static HTTP_ROUTE(
 static HTTP_ROUTE(
     ("/test/udp/stop", ("GET")),
     (test_udp_stop),,
-    (void)
+    (http::Result<void>)
 ) {
-    if (server_stopper) server_stopper();
+    if (server_stopper) {
+        server_stopper();
+        return Ok();
+    }
+    return Err(http::Error{http::StatusNotFound, "UDP server is not running"});
 }
