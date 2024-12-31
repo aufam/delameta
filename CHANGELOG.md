@@ -1,3 +1,11 @@
+## [0.2.1] - 2024-12-31
+### Improved
+- Using system default ca certificates for HTTPS request
+- Better system error handling
+
+### Fixed
+- UDP server endpoint
+
 ## [0.2.0] - 2024-12-03
 ### Changed
 - Debug macros
