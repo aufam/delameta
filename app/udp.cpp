@@ -1,4 +1,5 @@
 #include "delameta/http/response.h"
+#include "delameta/utils.h"
 #include <boost/preprocessor.hpp>
 #include <delameta/debug.h>
 #include <delameta/http/http.h>
@@ -44,7 +45,6 @@ static HTTP_ROUTE(
     Server<UDP> svr;
     svr.handler = [](delameta::Descriptor&, const std::string& peer, const std::vector<uint8_t>& data) -> Stream {
         Stream s;
-        s << "UDP response: ";
         s << data;
         INFO("peer = " + peer);
         return s;

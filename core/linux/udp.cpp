@@ -134,7 +134,9 @@ auto Server<UDP>::start(const char* file, int line, Args args) -> Result<void> {
                 data=std::move(read_result.unwrap()), 
                 &threads, &mtx, &is_running
         ]() mutable {
-            auto stream = execute_stream_session(session, delameta_detail_get_ip(session.socket), data);
+            char ip_str[INET6_ADDRSTRLEN];
+            ::inet_ntop(sa_in->sin_family, &sa_in->sin_addr, ip_str, sizeof(ip_str));
+            auto stream = execute_stream_session(session, ip_str, data);
             stream >> session;
             session.socket = -1; // prevent closing the socket
             session.peer = nullptr;
