@@ -129,7 +129,7 @@ std::vector<uint8_t> Stream::pop_once() {
     if (!again) rules.pop_front();
 
     return res;
-};
+}
 
 StreamSessionServer::StreamSessionServer(StreamSessionHandler handler) : handler(std::move(handler)) {}
 
