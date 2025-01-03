@@ -76,7 +76,6 @@ void Server<TLS>::stop() {}
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <netdb.h>
-#include <fcntl.h>
 
 using namespace Project;
 using namespace Project::delameta;

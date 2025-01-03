@@ -12,6 +12,7 @@
 // Unix/Linux headers and definitions
 #include <sys/socket.h>
 #include <sys/epoll.h>
+#include <unistd.h>
 #include <arpa/inet.h>
 #include <netdb.h>
 

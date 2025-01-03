@@ -22,7 +22,7 @@ static auto log_errno(const char* file, int line) {
     std::string what = ::strerror(code);
     warning(file, line, what);
     return Err(Error{code, std::move(what)});
-};
+}
 
 auto File::Open(const char* file, int line, Args args) -> Result<File> {
     int __oflag = O_RDONLY;
