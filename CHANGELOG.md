@@ -1,3 +1,7 @@
+## [0.2.2] - 2025-01-03
+### Fixed
+- Duplicate client socket on aarch
+
 ## [0.2.1] - 2024-12-31
 ### Improved
 - Using system default ca certificates for HTTPS request

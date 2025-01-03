@@ -61,12 +61,14 @@ void Server<TLS>::stop() {}
 #include "helper.h"
 #include <openssl/ssl.h>
 #include <openssl/err.h>
+#include <cerrno>
 #include <cstring>
+#include <unordered_set>
+#include <deque>
 #include <thread>
 #include <mutex>
-#include <atomic>
 #include <condition_variable>
-#include <algorithm>
+#include <atomic>
 
 // Windows headers and definitions
 #include <winsock2.h>
@@ -318,11 +320,11 @@ auto Server<TLS>::start(const char* file, int line, Args args) -> Result<void> {
     // }
 
     std::vector<std::thread> threads;
+    std::unordered_set<int> client_set;
+    std::deque<int> client_que;
     std::mutex mtx;
     std::condition_variable cv;
     std::atomic_bool is_running {true};
-    std::atomic_int semaphore {0};
-    int sock_client = -1;
 
     on_stop = [this, &is_running, &cv]() { 
         is_running = false;
@@ -330,7 +332,7 @@ auto Server<TLS>::start(const char* file, int line, Args args) -> Result<void> {
         on_stop = {};
     };
 
-    auto work = [this, file, line, &args, &is_running, &mtx, &cv, &semaphore, &sock_client](int idx) {
+    auto work = [this, file, line, &args, &is_running, &mtx, &cv, &client_set, &client_que](int idx) {
         WSADATA wsaData;
         if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
             return;
@@ -340,15 +342,19 @@ auto Server<TLS>::start(const char* file, int line, Args args) -> Result<void> {
 
         info(file, line, "Spawned worker thread: " + std::to_string(idx));
         while (is_running) {
+            int sock_client;
             {
                 std::unique_lock<std::mutex> lock(mtx);
                 cv.wait(lock);
+                if (not is_running) break;
+                sock_client = client_que.front();
+                client_que.pop_front();
             }
-
-            if (not is_running) break;
 
             auto [ssl, ssl_err] = ssl_handshake(file, line, sock_client, true);
             if (ssl_err) {
+                std::lock_guard<std::mutex> lock(mtx);
+                client_set.erase(sock_client);
                 delameta_detail_close_socket(sock_client);
                 continue;
             }
@@ -385,7 +391,10 @@ auto Server<TLS>::start(const char* file, int line, Args args) -> Result<void> {
                 info(file, line, delameta_detail_log_format_fd(sock_client, "closed by peer"));
             }
 
-            --semaphore;
+            {
+                std::lock_guard<std::mutex> lock(mtx);
+                client_set.erase(sock_client);
+            }
         }
     };
 
@@ -402,24 +411,26 @@ auto Server<TLS>::start(const char* file, int line, Args args) -> Result<void> {
             int new_sock_client = ::accept(socket, nullptr, nullptr);
             if (new_sock_client < 0) {
                 auto errno_ = WSAGetLastError();
-                if (errno_ == WSAEWOULDBLOCK || errno_ == WSAEINPROGRESS) {
-                } else {
+                if (errno_ != WSAEWOULDBLOCK && errno_ != WSAEINPROGRESS) {
                     WARNING(delameta_detail_log_format_fd(socket, "accept() failed, ") + delameta_detail_strerror(errno_));
                 }
                 continue;
             }
-            if (semaphore >= args.max_socket) {
+
+            std::lock_guard<std::mutex> lock(mtx);
+            if ((int)client_set.size() >= args.max_socket) {
                 ::shutdown(new_sock_client, SHUT_RDWR);
                 WARNING(delameta_detail_log_format_fd(socket, "Thread pool is full"));
                 continue;
             }
 
-            ++semaphore;
-            {
-                std::lock_guard<std::mutex> lock(mtx);
-                sock_client = new_sock_client;
+            auto [_, ok] = client_set.insert(new_sock_client);
+            if (not ok) {
+                WARNING(delameta_detail_log_format_fd(new_sock_client, "Duplicate socket"));
+                continue;
             }
 
+            client_que.push_back(new_sock_client);
             cv.notify_one(); // notify thread pool
         }
     }

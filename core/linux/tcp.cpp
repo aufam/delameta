@@ -1,13 +1,13 @@
 #include "delameta/tcp.h"
 #include "helper.h"
 #include <cerrno>
-#include <string>
 #include <cstring>
+#include <unordered_set>
+#include <deque>
 #include <thread>
 #include <mutex>
 #include <condition_variable>
 #include <atomic>
-#include <algorithm>
 
 // Unix/Linux headers and definitions
 #include <sys/socket.h>
@@ -87,7 +87,7 @@ auto TCP::Open(const char* file, int line, Args args) -> Result<TCP> {
                 err = log_error(errno, ::strerror);
                 continue;
             }
-        } 
+        }
 
         return Ok(TCP(file, line, socket, args.timeout));
     }
@@ -169,7 +169,7 @@ auto Server<TCP>::start(const char* file, int line, Args args) -> Result<void> {
         return Err(log_error(errno, ::strerror));
     }
 
-    int epoll_fd = ::epoll_create1(0);
+    auto epoll_fd = ::epoll_create1(0);
     if (epoll_fd < 0) {
         return Err(log_error(errno, ::strerror));
     }
@@ -184,27 +184,29 @@ auto Server<TCP>::start(const char* file, int line, Args args) -> Result<void> {
     }
 
     std::vector<std::thread> threads;
+    std::unordered_set<int> client_set;
+    std::deque<int> client_que;
     std::mutex mtx;
     std::condition_variable cv;
     std::atomic_bool is_running {true};
-    std::atomic_int semaphore {0};
-    int sock_client = -1;
 
-    on_stop = [this, &is_running, &cv]() { 
+    on_stop = [this, &is_running, &cv]() {
         is_running = false;
         cv.notify_all();
         on_stop = {};
     };
 
-    auto work = [this, file, line, &args, &is_running, &mtx, &cv, &sock_client, &semaphore](int idx) {
+    auto work = [this, file, line, &args, &is_running, &mtx, &cv, &client_set, &client_que](int idx) {
         info(file, line, "Spawned worker thread: " + std::to_string(idx));
         while (is_running) {
+            int sock_client;
             {
                 std::unique_lock<std::mutex> lock(mtx);
                 cv.wait(lock);
+                if (not is_running) break;
+                sock_client = client_que.front();
+                client_que.pop_front();
             }
-
-            if (not is_running) break;
 
             info(file, line, "processing in thread " + std::to_string(idx) + ", socket = " + std::to_string(sock_client));
 
@@ -238,11 +240,15 @@ auto Server<TCP>::start(const char* file, int line, Args args) -> Result<void> {
                 info(file, line, delameta_detail_log_format_fd(sock_client, "closed by peer"));
             }
 
-            --semaphore;
+            {
+                std::lock_guard<std::mutex> lock(mtx);
+                client_set.erase(sock_client);
+            }
         }
     };
 
     threads.reserve(args.max_socket);
+    client_set.reserve(args.max_socket);
     for (int i = 0; i < args.max_socket; ++i) {
         threads.emplace_back(work, i);
     }
@@ -253,35 +259,41 @@ auto Server<TCP>::start(const char* file, int line, Args args) -> Result<void> {
 
         for (int i = 0; i < num_events; ++i) if (events[i].data.fd == socket)
         {
+            if (events[i].events & (EPOLLERR | EPOLLHUP)) {
+                WARNING("Epoll error or hang-up detected on fd: " + std::to_string(events[i].data.fd));
+                continue;
+            }
+
             int new_sock_client = ::accept(socket, nullptr, nullptr);
             if (new_sock_client < 0) {
-                auto errno_ = errno;
-                if (errno_ == EWOULDBLOCK || errno_ == EINPROGRESS) {
-                } else {
-                    WARNING(delameta_detail_log_format_fd(socket, "accept() failed, ") + strerror(errno));
+                if (auto errno_ = errno; errno_ != EWOULDBLOCK && errno_ != EINPROGRESS) {
+                    WARNING(delameta_detail_log_format_fd(socket, "accept() failed, ") + strerror(errno_));
                 }
                 continue;
             }
-            if (semaphore >= args.max_socket) {
+
+            std::lock_guard<std::mutex> lock(mtx);
+            if ((int)client_set.size() >= args.max_socket) {
                 ::shutdown(new_sock_client, SHUT_RDWR);
                 WARNING(delameta_detail_log_format_fd(socket, "Thread pool is full"));
                 continue;
             }
 
-            ++semaphore;
-            {
-                std::lock_guard<std::mutex> lock(mtx);
-                sock_client = new_sock_client;
+            auto [_, ok] = client_set.insert(new_sock_client);
+            if (not ok) {
+                WARNING(delameta_detail_log_format_fd(new_sock_client, "Duplicate socket"));
+                continue;
             }
 
-            cv.notify_one(); // notify thread pool
+            client_que.push_back(new_sock_client);
+            cv.notify_one();
         }
     }
 
     for (auto& thd : threads) if (thd.joinable()) {
         thd.join();
     }
-    return etl::Ok();
+    return Ok();
 }
 
 void Server<TCP>::stop() {
