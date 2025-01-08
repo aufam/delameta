@@ -296,16 +296,9 @@ void http::Http::bind(StreamSessionServer& server, BindArg is_tcp_server) const 
 }
 
 auto http::Http::listen(http::Http::ListenArgs args) const -> delameta::Result<void> {
-        Server<TCP> svr;
-        delameta_detail_on_sigint([&]() { svr.stop(); });
-        return svr.start(__FILE__, __LINE__, Server<TCP>::Args{
-            .host=args.host,
-            .max_socket=args.max_socket,
-            .keep_alive=args.keep_alive,
-            .timeout=args.timeout
-        });
     if (args.cert_file.empty()) {
         Server<TCP> svr;
+        bind(svr, BindArg{.is_tcp_server=true});
         delameta_detail_on_sigint([&]() { svr.stop(); });
         return svr.start(__FILE__, __LINE__, Server<TCP>::Args{
             .host=args.host,
@@ -315,6 +308,7 @@ auto http::Http::listen(http::Http::ListenArgs args) const -> delameta::Result<v
         });
     } else {
         Server<TLS> svr;
+        bind(svr, BindArg{.is_tcp_server=true});
         delameta_detail_on_sigint([&]() { svr.stop(); });
         return svr.start(__FILE__, __LINE__, Server<TLS>::Args{
             .host=args.host,
