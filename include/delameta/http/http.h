@@ -155,14 +155,24 @@ namespace Project::delameta::http {
         std::unordered_multimap<std::string, Router> routers;
         bool show_response_time = false;
 
-        struct BindArg {
-            bool is_tcp_server;
-        };
-
-        void bind(StreamSessionServer& server, BindArg is_tcp_server = {false}) const;
         void execute(const RequestReader& req, ResponseWriter& res) const;
         std::pair<RequestReader, ResponseWriter> execute(Descriptor& desc) const;
         std::pair<RequestReader, ResponseWriter> execute(Descriptor& desc, std::vector<uint8_t>& data) const;
+
+        struct BindArg {
+            bool is_tcp_server;
+        };
+        void bind(StreamSessionServer& server, BindArg is_tcp_server = {false}) const;
+
+        struct ListenArgs {
+            std::string host;
+            std::string cert_file = "";
+            std::string key_file = "";
+            int max_socket = 4;
+            bool keep_alive = true;
+            int timeout = 1;
+        };
+        delameta::Result<void> listen(ListenArgs args) const;
 
     protected:
         struct Context {

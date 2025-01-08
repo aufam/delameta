@@ -18,18 +18,16 @@ using etl::Ok;
 
 HTTP_DEFINE_OBJECT(app);
 
-static auto format_time_now() {
-    auto now = std::chrono::system_clock::now();
-    std::time_t time_now = std::chrono::system_clock::to_time_t(now);
-    return fmt::localtime(time_now);
-}
-
 using Headers = std::unordered_map<std::string, std::string>;
 
 template<>
 auto Opts::convert_string_into(const std::string& str) -> Result<Headers> {
     if (str == "") return Ok(Headers{});
     return json::deserialize<Headers>(str).except([](const char* err) { return Error{-1, err}; });
+}
+
+static auto now() {
+    return std::chrono::time_point_cast<std::chrono::seconds>(std::chrono::system_clock::now());
 }
 
 OPTS_MAIN(
@@ -79,27 +77,13 @@ OPTS_MAIN(
 
     // launch http server if cmd and url are not specified
     if (cmd == "" and url_str == "") {
-        if (cert == "" and key == "") {
-            Server<TCP> tcp;
-
-            app.bind(tcp, {.is_tcp_server=true});
-            at_exit = [&] { tcp.stop(); };
-
-            fmt::println("Server is starting on {}", host);
-            return tcp.start(FL, {.host=host, .max_socket=n_sock});
-        } else if (cert != "" and key != "") {
-            Server<TLS> tls;
-
-            app.bind(tls, {.is_tcp_server=true});
-            at_exit = [&] { tls.stop(); };
-
-            fmt::println("Server is starting on {}", host);
-            return tls.start(FL, {.host=host, .cert_file=cert, .key_file=key, .max_socket=n_sock});
-        } else if (cert == "") {
-            return Err(Error{-1, "TLS certificate file is not provided"});
-        } else if (key == "") {
-            return Err(Error{-1, "TLS key file is not provided"});
-        }
+        fmt::println("Server is running on {}", host);
+        return app.listen(http::Http::ListenArgs{
+            .host=host,
+            .cert_file=cert,
+            .key_file=key,
+            .max_socket=n_sock,
+        });
     }
 
     // setup request/response
@@ -143,29 +127,29 @@ OPTS_MAIN(
     }
 
     // dummy client with string stream
-    class DummyClient : public StreamSessionClient {
-    public:
-        http::Http& http;
-        StringStream ss;
-        DummyClient(http::Http& http) : StreamSessionClient(ss), http(http), ss() {}
 
-        delameta::Result<std::vector<uint8_t>> request(Stream& in_stream) override {
-            in_stream >> ss;
-            auto [req, res] = http.execute(ss);
-            ss.flush();
-            res.dump() >> ss;
-            return Ok(std::vector<uint8_t>());
-        }
-    };
-
-    DummyClient dummy_client(app);
-
-    // create response using http request
     auto res = [&]() {
+        // create response using http request
         if (not url_str.empty()) {
             req.url = url_str;
             return http::request(std::move(req));
         }
+
+        class DummyClient : public StreamSessionClient {
+        public:
+            http::Http& http;
+            StringStream ss;
+            DummyClient(http::Http& http) : StreamSessionClient(ss), http(http), ss() {}
+
+            delameta::Result<std::vector<uint8_t>> request(Stream& in_stream) override {
+                in_stream >> ss;
+                auto [req, res] = http.execute(ss);
+                ss.flush();
+                res.dump() >> ss;
+                return Ok(std::vector<uint8_t>());
+            }
+        };
+        DummyClient dummy_client(app);
 
         // create response using cmd from router path
         req.url = host + cmd;
@@ -191,7 +175,7 @@ OPTS_MAIN(
         File* p_log_out = nullptr;
         if (log != "") {
             auto log_out = TRY(File::Open(FL, {.filename=log, .mode="wa"}));
-            TRY(log_out.write(fmt::format("{:%Y-%m-%d %H:%M:%S}: ", format_time_now())));
+            TRY(log_out.write(fmt::format("{:%Y-%m-%d %H:%M:%S}: ", now())));
 
             p_log_out = new File(std::move(log_out));
         }
@@ -228,14 +212,14 @@ static constexpr char FORMAT[] = "{}{:%H:%M:%S} {}:{} {}{}{}:{} {}";
 
 void delameta::info(const char* file, int line, const std::string& msg) {
     if (Opts::verbose and file)
-        fmt::println(FORMAT, BLUE, format_time_now(), file, line, BOLD, GREEN, "info", RESET, msg);
+        fmt::println(FORMAT, BLUE, now(), file, line, BOLD, GREEN, "info", RESET, msg);
 }
 void delameta::warning(const char* file, int line, const std::string& msg) {
     if (file)
-        fmt::println(FORMAT, BLUE, format_time_now(), file, line, BOLD, YELLOW, "warning", RESET, msg);
+        fmt::println(FORMAT, BLUE, now(), file, line, BOLD, YELLOW, "warning", RESET, msg);
 }
 void delameta::panic(const char* file, int line, const std::string& msg) {
     if (file)
-        fmt::println(FORMAT, BLUE, format_time_now(), file, line, BOLD, RED, "panic", RESET, msg);
+        fmt::println(FORMAT, BLUE, now(), file, line, BOLD, RED, "panic", RESET, msg);
     exit(1);
 }

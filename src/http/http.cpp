@@ -122,49 +122,6 @@ auto http::Http::reroute(std::string path, etl::Ref<const RequestReader> req, et
     return Err(Error{StatusNotFound, "path " + path + " is not found"});
 }
 
-void http::Http::bind(StreamSessionServer& server, BindArg is_tcp_server) const {
-    server.handler = [this, is_tcp_server](Descriptor& desc, const std::string& name, std::vector<uint8_t>& data) -> Stream {
-        auto [req, res] = execute(desc, data);
-
-        // handle socket configuration
-        if (is_tcp_server.is_tcp_server) {
-            if (auto socket = static_cast<TCP*>(&desc); socket) {
-                auto it = req.headers.find("Connection");
-                if (it == req.headers.end()) {
-                    it = req.headers.find("connection");
-                }
-                if (it != req.headers.end()) {
-                    if (it->second == "keep-alive") {
-                        socket->keep_alive = true;
-                    } else if (it->second == "close") {
-                        socket->keep_alive = false;
-                    }
-                }
-
-                // handle keep alive
-                it = req.headers.find("Keep-Alive");
-                if (it == req.headers.end()) {
-                    it = req.headers.find("keep-alive");
-                }
-                if (it != req.headers.end()) {
-                    std::string_view value = it->second;
-                    auto timeout_idx = value.find("timeout=");
-                    if (timeout_idx < value.size()) {
-                        socket->timeout = ::atoi(value.data() + timeout_idx + 9);
-                    }
-                    auto max_idx = value.find("max=");
-                    if (max_idx < value.size()) {
-                        socket->max = ::atoi(value.data() + max_idx + 5);
-                    }
-                }
-            }
-        }
-
-        if (logger) logger(name, req, res);
-        return res.dump();
-    };
-}
-
 void http::Http::execute(const http::RequestReader& req, http::ResponseWriter& res) const {
     auto start = delameta_detail_get_time_stamp();
 
@@ -288,9 +245,84 @@ bool http::Http::Context::content_type_starts_with(std::string_view prefix) cons
     return content_type.length() >= prefix.length() && content_type.substr(0, prefix.length()) == prefix;
 }
 
-auto http::Http::Context::form_at(const char* key) const -> http::Result<std::string_view> {
+auto http::Http::Context::form_at(const char* key) const -> Result<std::string_view> {
     const std::string k = key;
     auto it = form.find(k);
-    if (it == form.end()) return etl::Err(Error{StatusBadRequest, "key '" + k + "' not found"});
-    return etl::Ok(std::string_view(it->second));
+    if (it == form.end()) return Err(Error{StatusBadRequest, "key '" + k + "' not found"});
+    return Ok(std::string_view(it->second));
+}
+
+void http::Http::bind(StreamSessionServer& server, BindArg is_tcp_server) const {
+    server.handler = [this, is_tcp_server](Descriptor& desc, const std::string& name, std::vector<uint8_t>& data) -> Stream {
+        auto [req, res] = execute(desc, data);
+
+        // handle socket configuration
+        if (is_tcp_server.is_tcp_server) {
+            if (auto socket = static_cast<TCP*>(&desc); socket) {
+                auto it = req.headers.find("Connection");
+                if (it == req.headers.end()) {
+                    it = req.headers.find("connection");
+                }
+                if (it != req.headers.end()) {
+                    if (it->second == "keep-alive") {
+                        socket->keep_alive = true;
+                    } else if (it->second == "close") {
+                        socket->keep_alive = false;
+                    }
+                }
+
+                // handle keep alive
+                it = req.headers.find("Keep-Alive");
+                if (it == req.headers.end()) {
+                    it = req.headers.find("keep-alive");
+                }
+                if (it != req.headers.end()) {
+                    std::string_view value = it->second;
+                    auto timeout_idx = value.find("timeout=");
+                    if (timeout_idx < value.size()) {
+                        socket->timeout = ::atoi(value.data() + timeout_idx + 9);
+                    }
+                    auto max_idx = value.find("max=");
+                    if (max_idx < value.size()) {
+                        socket->max = ::atoi(value.data() + max_idx + 5);
+                    }
+                }
+            }
+        }
+
+        if (logger) logger(name, req, res);
+        return res.dump();
+    };
+}
+
+auto http::Http::listen(http::Http::ListenArgs args) const -> delameta::Result<void> {
+        Server<TCP> svr;
+        delameta_detail_on_sigint([&]() { svr.stop(); });
+        return svr.start(__FILE__, __LINE__, Server<TCP>::Args{
+            .host=args.host,
+            .max_socket=args.max_socket,
+            .keep_alive=args.keep_alive,
+            .timeout=args.timeout
+        });
+    if (args.cert_file.empty()) {
+        Server<TCP> svr;
+        delameta_detail_on_sigint([&]() { svr.stop(); });
+        return svr.start(__FILE__, __LINE__, Server<TCP>::Args{
+            .host=args.host,
+            .max_socket=args.max_socket,
+            .keep_alive=args.keep_alive,
+            .timeout=args.timeout
+        });
+    } else {
+        Server<TLS> svr;
+        delameta_detail_on_sigint([&]() { svr.stop(); });
+        return svr.start(__FILE__, __LINE__, Server<TLS>::Args{
+            .host=args.host,
+            .cert_file=args.cert_file,
+            .key_file=args.key_file,
+            .max_socket=args.max_socket,
+            .keep_alive=args.keep_alive,
+            .timeout=args.timeout
+        });
+    }
 }
