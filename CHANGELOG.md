@@ -1,6 +1,9 @@
-## [0.2.3] - 2025-01-08
+## [0.2.3] - 2025-01-10
 ### Added
 - Http::listen
+
+### Fixed
+- File and socket descriptor implementation on windows
 
 ## [0.2.2] - 2025-01-03
 ### Fixed

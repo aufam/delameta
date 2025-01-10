@@ -195,7 +195,7 @@ auto Server<TCP>::start(const char* file, int line, Args args) -> Result<void> {
         on_stop = {};
     };
 
-    auto work = [this, file, line, &args, &is_running, &mtx, &cv, &sock_client, &semaphore](int idx) {
+    auto work = [this, file, line, &args, &is_running, &mtx, &cv, &client_set, &client_que](int idx) {
         WSADATA wsaData;
         if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
             return;

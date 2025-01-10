@@ -44,7 +44,7 @@ auto File::Open(const char* file, int line, Args args) -> Result<File> {
         return Err(std::move(err));
     }
 
-    int fd = __oflag & (O_WRONLY | O_RDWR) ? ::open(__file, __oflag, 0644) : ::open(__file, __oflag);
+    int fd = __oflag & (O_WRONLY | O_RDWR) ? ::_open(__file, __oflag, 0644) : ::_open(__file, __oflag);
     if (fd < 0) {
         return log_errno(file, line);
     } else {
@@ -67,7 +67,7 @@ File::File(File&& other)
 
 File::~File() {
     if (fd < 0) return;
-    ::close(fd);
+    ::_close(fd);
     info(file, line, delameta_detail_log_format_fd(fd, "closed"));
     fd = -1;
 }
@@ -89,21 +89,9 @@ auto File::write(std::string_view data) -> Result<void> {
 }
 
 auto File::file_size() -> size_t {
-    off_t cp = lseek(fd, 0, SEEK_CUR);
-    if (cp == -1) {
-        PANIC(delameta_detail_log_format_fd(fd, std::string("lseek() failed, ") + strerror(errno)));
-    }
-
-    off_t size = lseek(fd, 0, SEEK_END);
-    if (size == -1) {
-        PANIC(delameta_detail_log_format_fd(fd, std::string("lseek() failed, ") + strerror(errno)));
-    }
-
-    if (lseek(fd, cp, SEEK_SET) == -1) {
-        PANIC(delameta_detail_log_format_fd(fd, std::string("lseek() failed, ") + strerror(errno)));
-    }
-
-    return size;
+    auto res = _filelength(fd);
+    if (res < 0) PANIC("_filelength() of fd " + std::to_string(fd) + " is " + std::to_string(res));
+    return res;
 }
 
 auto File::operator<<(Stream& other) -> File& {

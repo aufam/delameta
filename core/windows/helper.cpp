@@ -40,6 +40,16 @@ using namespace std::literals;
 using etl::Err;
 using etl::Ok;
 
+static int get_bytes_available(int fd, bool is_wsa, u_long& bytes_available) {
+    if (is_wsa) return IOCTL(fd, FIONREAD, &bytes_available);
+    auto l = _filelength(fd);
+    if (l >= 0) {
+        bytes_available = (u_long)l;
+        return 0;
+    }
+    return -1;
+}
+
 int delameta_detail_set_non_blocking(int socket) {
     u_long mode = 1; // 1 = non-blocking mode
     return ::ioctlsocket(socket, FIONBIO, &mode) == 0 ? 0 : -1;
@@ -262,7 +272,7 @@ auto delameta_detail_read(const char* file, int line, int fd, [[maybe_unused]] v
 #endif
 
     while (is_alive(fd)) {
-        if (IOCTL(fd, FIONREAD, &bytes_available) == -1) {
+        if (get_bytes_available(fd, is_wsa, bytes_available) == -1) {
             return log_err(file, line, fd, last_error(is_wsa));
         }
 
@@ -277,9 +287,9 @@ auto delameta_detail_read(const char* file, int line, int fd, [[maybe_unused]] v
         std::vector<uint8_t> buffer(bytes_available);
 
 #ifndef DELAMETA_DISABLE_OPENSSL
-        auto size = ssl ? SSL_read(ssl_, buffer.data(), bytes_available) : ::read(fd, buffer.data(), bytes_available);
+        auto size = ssl ? SSL_read(ssl_, buffer.data(), bytes_available) : is_wsa ? ::recv(fd, (char*)buffer.data(), bytes_available, 0) : ::_read(fd, buffer.data(), bytes_available);
 #else
-        auto size = ::read(fd, (char*)buffer.data(), bytes_available);
+        auto size = is_wsa ? ::recv(fd, (char*)buffer.data(), bytes_available, 0) : ::_read(fd, buffer.data(), bytes_available);
 #endif
         if (size < 0) {
             return log_err(file, line, fd, last_error(is_wsa));
@@ -297,7 +307,7 @@ auto delameta_detail_recvfrom(const char* file, int line, int fd, int timeout, v
     u_long bytes_available = 0;
 
     while (delameta_detail_is_socket_alive(fd)) {
-        if (IOCTL(fd, FIONREAD, &bytes_available) == -1) {
+        if (get_bytes_available(fd, true, bytes_available) == -1) {
             return log_err(file, line, fd, last_error(true));
         }
 
@@ -339,8 +349,8 @@ auto delameta_detail_read_until(const char* file, int line, int fd, [[maybe_unus
     auto ptr = buffer.data();
 
     while (is_alive(fd)) {
-        if (IOCTL(fd, FIONREAD, &bytes_available) == -1) {
-            return log_err(file, line, fd, last_error(true));
+        if (get_bytes_available(fd, is_wsa, bytes_available) == -1) {
+            return log_err(file, line, fd, last_error(is_wsa));
         }
 
         if (bytes_available == 0) {
@@ -351,13 +361,24 @@ auto delameta_detail_read_until(const char* file, int line, int fd, [[maybe_unus
             continue;
         }
 
-        auto size = ::read(fd, ptr, std::min((int)bytes_available, remaining_size));
+        auto expected_length = std::min((int)bytes_available, remaining_size);
+        auto size = is_wsa ? ::recv(fd, (char*)ptr, expected_length, 0) : ::_read(fd, ptr, expected_length);
         if (size < 0) {
             return log_err(file, line, fd, last_error(is_wsa));
         }
 
+        static size_t debug_total_size;
+        if (not is_wsa) {
+            debug_total_size += size;
+        }
+
         ptr += size;
         remaining_size -= size;
+
+        if (size == 0) {
+            buffer.resize(n - remaining_size);
+            return log_received_ok(file, line, fd, buffer);
+        }
 
         if (remaining_size <= 0) {
             return log_received_ok(file, line, fd, buffer);
@@ -375,7 +396,7 @@ auto delameta_detail_recvfrom_until(const char* file, int line, int fd, int time
     u_long bytes_available = 0;
 
     while (delameta_detail_is_socket_alive(fd)) {
-        if (IOCTL(fd, FIONREAD, &bytes_available) == -1) {
+        if (get_bytes_available(fd, true, bytes_available) == -1) {
             return log_err(file, line, fd, last_error(true));
         }
 
@@ -440,9 +461,9 @@ auto delameta_detail_write(const char* file, int line, int fd, [[maybe_unused]] 
 
         auto n = std::min<size_t>(MAX_HANDLE_SZ, data.size() - i);
 #ifndef DELAMETA_DISABLE_OPENSSL
-        auto sent = ssl ? SSL_write(ssl_, &data[i], n) : ::write(fd, &data[i], n);
+        auto sent = ssl ? SSL_write(ssl_, &data[i], n) : is_wsa ? ::send(fd, &data[i], n, 0) : ::_write(fd, &data[i], n);
 #else
-        auto sent = ::write(fd, &data[i], n);
+        auto sent = is_wsa ? ::send(fd, &data[i], n, 0) : ::_write(fd, &data[i], n);
 #endif
 
         if (sent == 0) {

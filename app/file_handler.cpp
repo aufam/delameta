@@ -40,7 +40,7 @@ static HTTP_ROUTE(
     (file_size), (std::string, filename, http::arg::arg("filename")),
     (http::Result<size_t>)
 ) {
-    return File::Open(FL, {filename}).then([](File file) {
+    return File::Open(FL, File::Args{filename}).then([](File file) {
         return file.file_size();
     });
 }
@@ -52,7 +52,7 @@ static HTTP_ROUTE(
         (Ref<http::ResponseWriter>, res     , http::arg::response       ),
     (http::Result<void>)
 ) {
-    return File::Open(FL, {filename}).then([&](File file) {
+    return File::Open(FL, File::Args{filename}).then([&](File file) {
         res->headers["Content-Type"] = delameta::get_content_type_from_file(filename);
         file >> res->body_stream;
     });
@@ -65,7 +65,7 @@ static HTTP_ROUTE(
         (Stream     , body_stream, http::arg::body           ),
     (http::Result<void>)
 ) {
-    return File::Open(FL, {filename, "w"}).then([&](File file) {
+    return File::Open(FL, File::Args{filename, "w"}).then([&](File file) {
         file << body_stream;
     });
 }
