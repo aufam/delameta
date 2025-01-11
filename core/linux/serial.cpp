@@ -138,7 +138,7 @@ auto Serial::Open(const char* file, int line, Args args) -> Result<Serial> {
     ::tcflush(fd, TCIOFLUSH); // clear rx buffer
 
     delameta_detail_set_non_blocking(fd);
-    handlers.emplace_back(args.port, fd, 1);
+    handlers.push_back(FileDescriptorHandler{args.port, fd, 1});
     info(file, line, delameta_detail_log_format_fd(fd, "created"));
 
     return Ok(Serial(file, line, fd, args.timeout));
