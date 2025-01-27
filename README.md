@@ -6,6 +6,7 @@ C++ framework for socket and serial programming for Linux and STM32
 - [Introduction](#delameta)
 - [Table of Contents](#table-of-contents)
 - [Project Structure](#project-structure)
+- [Docker Repository](#docker-repository)
 - [How to Use](#how-to-use)
 - [Code Considerations and Structure](#code-considerations-and-structure)
 - [Features](#features)
@@ -21,6 +22,11 @@ C++ framework for socket and serial programming for Linux and STM32
     │   └── stm32_hal/              # Source files for STM32
     ├── src/                        # Source files
     └── test/                       # Unit testing
+
+## Docker Repository
+```bash
+docker run -d -p 5000:5000 aufam/delameta:latest
+```
 
 ## How to Use
 You can add this library as an external dependency in your CMake configuration as follows:

@@ -36,9 +36,8 @@ COPY test/ test/
 
 RUN cmake -B build && \
     cmake --build build -t main && \
-    cmake --build build -t test_all
-
-RUN ctest --test-dir build --output-on-failure
+    cmake --build build -t test_all && \
+    ctest --test-dir build --output-on-failure
 
 FROM alpine:3.20.3
 

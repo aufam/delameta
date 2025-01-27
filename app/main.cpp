@@ -3,13 +3,10 @@
 #include <fmt/color.h>
 #include <delameta/debug.h>
 #include <delameta/http/http.h>
-#include <delameta/tcp.h>
-#include <delameta/tls.h>
 #include <delameta/file.h>
 #include <delameta/opts.h>
 #include <delameta/endpoint.h>
 #include <delameta/utils.h>
-#include <csignal>
 
 using namespace Project;
 using namespace Project::delameta;
@@ -72,9 +69,6 @@ OPTS_MAIN(
 
     Opts::verbose = verbose;
 
-    static std::function<void()> at_exit;
-    signal(SIGINT, +[](int) { if (at_exit) at_exit(); });
-
     // launch http server if cmd and url are not specified
     if (cmd == "" and url_str == "") {
         fmt::println("Server is running on {}", host);
@@ -86,9 +80,8 @@ OPTS_MAIN(
         });
     }
 
-    // setup request/response
+    // setup request
     http::RequestWriter req;
-
     req.version = "HTTP/1.1";
     req.headers = std::move(args);
 
@@ -126,8 +119,7 @@ OPTS_MAIN(
         req.method = std::move(method);
     }
 
-    // dummy client with string stream
-
+    // create http response
     auto res = [&]() {
         // create response using http request
         if (not url_str.empty()) {
@@ -135,6 +127,7 @@ OPTS_MAIN(
             return http::request(std::move(req));
         }
 
+        // dummy client with string stream
         class DummyClient : public StreamSessionClient {
         public:
             http::Http& http;
@@ -174,7 +167,7 @@ OPTS_MAIN(
         auto ep_out = TRY(Endpoint::Open(FL, output));
         File* p_log_out = nullptr;
         if (log != "") {
-            auto log_out = TRY(File::Open(FL, {.filename=log, .mode="wa"}));
+            auto log_out = TRY(File::Open(FL, File::Args{.filename=log, .mode="wa"}));
             TRY(log_out.write(fmt::format("{:%Y-%m-%d %H:%M:%S}: ", now())));
 
             p_log_out = new File(std::move(log_out));
@@ -202,24 +195,24 @@ OPTS_MAIN(
     }
 }
 
-static const char* const RESET   = "\033[0m";   // Reset to default
-static const char* const BOLD    = "\033[1m";   // Bold text
-static const char* const RED     = "\033[31m";  // Red text
-static const char* const GREEN   = "\033[32m";  // Green text
-static const char* const YELLOW  = "\033[33m";  // Yellow text
-static const char* const BLUE    = "\033[34m";  // Blue
-static constexpr char FORMAT[] = "{}{:%H:%M:%S} {}:{} {}{}{}:{} {}";
-
 void delameta::info(const char* file, int line, const std::string& msg) {
-    if (Opts::verbose and file)
-        fmt::println(FORMAT, BLUE, now(), file, line, BOLD, GREEN, "info", RESET, msg);
+    if (not Opts::verbose or not file) return;
+    fmt::print(fmt::fg(fmt::terminal_color::blue), "{:%H:%M:%S} {}:{} ", now(), file, line);
+    fmt::print(fmt::fg(fmt::terminal_color::green) | fmt::emphasis::bold, "[INFO] ");
+    fmt::println("{}", msg);
 }
+
 void delameta::warning(const char* file, int line, const std::string& msg) {
-    if (file)
-        fmt::println(FORMAT, BLUE, now(), file, line, BOLD, YELLOW, "warning", RESET, msg);
+    if (not file) return;
+    fmt::print(fmt::fg(fmt::terminal_color::blue), "{:%H:%M:%S} {}:{} ", now(), file, line);
+    fmt::print(fmt::fg(fmt::terminal_color::yellow) | fmt::emphasis::bold, "[WARNING] ");
+    fmt::println("{}", msg);
 }
+
 void delameta::panic(const char* file, int line, const std::string& msg) {
-    if (file)
-        fmt::println(FORMAT, BLUE, now(), file, line, BOLD, RED, "panic", RESET, msg);
+    if (not file) exit(1);
+    fmt::print(fmt::fg(fmt::terminal_color::blue), "{:%H:%M:%S} {}:{} ", now(), file, line);
+    fmt::print(fmt::fg(fmt::terminal_color::red) | fmt::emphasis::bold, "[PANIC] ");
+    fmt::println("{}", msg);
     exit(1);
 }
