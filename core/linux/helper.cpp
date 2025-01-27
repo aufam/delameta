@@ -206,7 +206,7 @@ static auto log_sent_ok(const char* file, size_t line, int fd, size_t n) {
 
 auto delameta_detail_read(const char* file, int line, int fd, [[maybe_unused]] void* ssl, int timeout, bool(*is_alive)(int)) -> Result<std::vector<uint8_t>> {
     auto start = std::chrono::high_resolution_clock::now();
-    u_long bytes_available = 0;
+    unsigned long bytes_available = 0;
 
 #ifndef DELAMETA_DISABLE_OPENSSL
     auto ssl_ = reinterpret_cast<SSL*>(ssl);
@@ -245,7 +245,7 @@ auto delameta_detail_read(const char* file, int line, int fd, [[maybe_unused]] v
 
 auto delameta_detail_recvfrom(const char* file, int line, int fd, int timeout, void *peer) -> Result<std::vector<uint8_t>> {
     auto start = std::chrono::high_resolution_clock::now();
-    u_long bytes_available = 0;
+    unsigned long bytes_available = 0;
 
     while (delameta_detail_is_socket_alive(fd)) {
         if (IOCTL(fd, FIONREAD, &bytes_available) == -1) {
@@ -286,7 +286,7 @@ auto delameta_detail_read_until(const char* file, int line, int fd, [[maybe_unus
     std::vector<uint8_t> buffer(n);
 
     int remaining_size = n;
-    u_long bytes_available = 0;
+    unsigned long bytes_available = 0;
     auto ptr = buffer.data();
 
     while (is_alive(fd)) {
@@ -323,7 +323,7 @@ auto delameta_detail_recvfrom_until(const char* file, int line, int fd, int time
     std::vector<uint8_t> buffer(n);
 
     int remaining_size = n;
-    u_long bytes_available = 0;
+    unsigned long bytes_available = 0;
 
     while (delameta_detail_is_socket_alive(fd)) {
         if (IOCTL(fd, FIONREAD, &bytes_available) == -1) {
